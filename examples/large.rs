@@ -1,14 +1,11 @@
 
 extern crate memmap;
-#[macro_use]
-extern crate npy_derive;
 extern crate npy;
 
 use std::fs::File;
 use memmap::MmapOptions;
 
-
-#[derive(Serializable, Debug, Default)]
+#[derive(npy::Serialize, npy::Deserialize, Debug, Default)]
 struct Array {
     a: i32,
     b: f32,

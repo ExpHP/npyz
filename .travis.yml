@@ -7,3 +7,7 @@ matrix:
   allow_failures:
     - rust: nightly
     
+script:
+  - cargo build --verbose
+  - cargo build --verbose --features derive --examples
+  - cargo test --verbose --features derive

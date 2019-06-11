@@ -18,6 +18,51 @@ members = [ "npy-derive" ]
 byteorder = "1"
 nom = "3"
 
+[dependencies.npy-derive]
+path = "npy-derive"
+version = "0.4"
+optional = true
+default-features = false
+
 [dev-dependencies]
 memmap = "0.6"
-npy-derive = { path = "npy-derive", version = "0.4" }
+
+[features]
+default = []
+
+# Reexports the derive macros so that you can use them qualified under `npy::`:
+#
+#     #[derive(npy::Serialize, npy::Deserialize, npy::AutoSerialize)]
+#     struct Struct { ... }
+#
+# This is a nicer alternative to `#[macro_use] extern crate npy_derive`, which
+# directly imports things like `#[derive(Serialize)]` that may conflict with
+# other crates (e.g. `serde`).
+derive = ["npy-derive"]
+
+[[example]]
+name = "plain"
+
+[[example]]
+name = "large"
+required-features = ["derive"]
+
+[[example]]
+name = "simple"
+required-features = ["derive"]
+
+[[example]]
+name = "roundtrip"
+required-features = ["derive"]
+
+[[test]]
+name = "derive_hygiene"
+required-features = ["derive"]
+
+[[test]]
+name = "roundtrip"
+required-features = ["derive"]
+
+[[test]]
+name = "serialize_array"
+required-features = ["derive"]

@@ -1,11 +1,10 @@
-
 #[macro_use]
 extern crate npy_derive;
 extern crate npy;
 
 use std::io::Read;
 
-#[derive(Serializable, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, AutoSerialize, Debug, PartialEq, Clone)]
 struct Array {
     a: i32,
     b: f32,

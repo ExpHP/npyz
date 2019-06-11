@@ -1,11 +1,8 @@
-
 use nom::*;
 use std::io::{Result, ErrorKind, Error};
-use std::marker::PhantomData;
 
 use header::{Value, DType, parse_header};
-use serializable::Serializable;
-
+use serialize::{Deserialize, TypeRead};
 
 /// The data structure representing a deserialized `npy` file.
 ///
@@ -13,17 +10,29 @@ use serializable::Serializable;
 /// as a byte array, and deserialized only on-demand to minimize unnecessary allocations.
 /// The whole contents of the file can be deserialized by the [`to_vec`](#method.to_vec)
 /// member function.
-pub struct NpyData<'a, T> {
+pub struct NpyData<'a, T: Deserialize> {
     data: &'a [u8],
+    dtype: DType,
     n_records: usize,
-    _t: PhantomData<T>,
+    item_size: usize,
+    reader: <T as Deserialize>::Reader,
 }
 
-impl<'a, T: Serializable> NpyData<'a, T> {
+impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Deserialize a NPY file represented as bytes
     pub fn from_bytes(bytes: &'a [u8]) -> ::std::io::Result<NpyData<'a, T>> {
-        let (data_slice, ns) = Self::get_data_slice(bytes)?;
-        Ok(NpyData { data: data_slice, n_records: ns as usize, _t: PhantomData })
+        let (dtype, data, ns) = Self::get_data_slice(bytes)?;
+        let reader = match T::reader(&dtype) {
+            Ok(reader) => reader,
+            Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),
+        };
+        let item_size = dtype.num_bytes();
+        Ok(NpyData { data, dtype, n_records: ns as usize, item_size, reader })
+    }
+
+    /// Get the dtype as written in the file.
+    pub fn dtype(&self) -> DType {
+        self.dtype.clone()
     }
 
     /// Gets a single data-record with the specified index. Returns None, if the index is
@@ -46,9 +55,9 @@ impl<'a, T: Serializable> NpyData<'a, T> {
         self.n_records == 0
     }
 
-    /// Gets a single data-record wit the specified index. Panics, if the index is out of bounds.
+    /// Gets a single data-record with the specified index. Panics if the index is out of bounds.
     pub fn get_unchecked(&self, i: usize) -> T {
-        T::read(&self.data[i * T::n_bytes()..])
+        self.reader.read_one(&self.data[i * self.item_size..]).0
     }
 
     /// Construct a vector with the deserialized contents of the whole file
@@ -60,7 +69,7 @@ impl<'a, T: Serializable> NpyData<'a, T> {
         v
     }
 
-    fn get_data_slice(bytes: &[u8]) -> Result<(&[u8], i64)> {
+    fn get_data_slice(bytes: &[u8]) -> Result<(DType, &[u8], i64)> {
         let (data, header) = match parse_header(bytes) {
             IResult::Done(data, header) => {
                 Ok((data, header))
@@ -95,35 +104,28 @@ impl<'a, T: Serializable> NpyData<'a, T> {
                     "\'descr\' field is not present or doesn't contain a list."))?;
 
         if let Ok(dtype) = DType::from_descr(descr.clone()) {
-            let expected_dtype = T::dtype();
-            if dtype != expected_dtype {
-                return Err(Error::new(ErrorKind::InvalidData,
-                    format!("Types don't match! found: {:?}, expected: {:?}", dtype, expected_dtype)
-                ));
-            }
+            Ok((dtype, data, ns))
         } else {
-            return Err(Error::new(ErrorKind::InvalidData, format!("fail?!?")));
+            Err(Error::new(ErrorKind::InvalidData, format!("fail?!?")))
         }
-
-        Ok((data, ns))
     }
 }
 
 /// A result of NPY file deserialization.
 ///
 /// It is an iterator to offer a lazy interface in case the data don't fit into memory.
-pub struct IntoIter<'a, T: 'a> {
+pub struct IntoIter<'a, T: 'a + Deserialize> {
     data: NpyData<'a, T>,
     i: usize,
 }
 
-impl<'a, T> IntoIter<'a, T> {
+impl<'a, T> IntoIter<'a, T> where T: Deserialize {
     fn new(data: NpyData<'a, T>) -> Self {
         IntoIter { data, i: 0 }
     }
 }
 
-impl<'a, T: 'a + Serializable> IntoIterator for NpyData<'a, T> {
+impl<'a, T: 'a> IntoIterator for NpyData<'a, T> where T: Deserialize {
     type Item = T;
     type IntoIter = IntoIter<'a, T>;
 
@@ -132,7 +134,7 @@ impl<'a, T: 'a + Serializable> IntoIterator for NpyData<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for IntoIter<'a, T> where T: Serializable {
+impl<'a, T> Iterator for IntoIter<'a, T> where T: Deserialize {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -145,4 +147,4 @@ impl<'a, T> Iterator for IntoIter<'a, T> where T: Serializable {
     }
 }
 
-impl<'a, T> ExactSizeIterator for IntoIter<'a, T> where T: Serializable {}
+impl<'a, T> ExactSizeIterator for IntoIter<'a, T> where T: Deserialize {}
