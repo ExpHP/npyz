@@ -1,6 +1,13 @@
+# nippy
+
+Fork of [the `npy` crate](https://github.com/potocpav/npy-rs/issues), under a new name so that I can track my own issues without flooding the original author' repository (because I've yet to hear back from them and I don't want to completely overwhelm them when they return).
+
+If I still haven't heard back from the original author in a month or two, I may rename the crate to `nippy` and publish it to crates.io.
+
+---
 
 # npy-rs
-[![crates.io version](https://img.shields.io/crates/v/npy.svg)](https://crates.io/crates/npy) [![Documentation](https://docs.rs/npy/badge.svg)](https://docs.rs/npy/) [![Build Status](https://travis-ci.org/potocpav/npy-rs.svg?branch=master)](https://travis-ci.org/potocpav/npy-rs)
+[![crates.io version](https://img.shields.io/crates/v/npy.svg)](https://crates.io/crates/npy) [![Documentation](https://docs.rs/npy/badge.svg)](https://docs.rs/npy/) [![Build Status](https://travis-ci.org/ExpHP/nippy.svg?branch=master)](https://travis-ci.org/ExpHP/nippy)
 
 Numpy format (*.npy) serialization and deserialization.
 
