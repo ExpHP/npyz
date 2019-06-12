@@ -152,7 +152,7 @@ mod type_str;
 mod serialize;
 
 pub use header::{DType, Field};
-pub use npy_data::NpyData;
+pub use npy_data::{NpyData, Order};
 pub use out_file::{to_file, OutFile, NpyWriter};
 pub use serialize::{Serialize, Deserialize, AutoSerialize};
 pub use serialize::{TypeRead, TypeWrite, TypeWriteDyn, DTypeError};

@@ -133,7 +133,7 @@ fn convert_tuple_to_record_field(tuple: &[Value]) -> Result<Field> {
                 Ok(Field { name: name.clone(), dtype: DType::Plain {
                     ty: convert_string_to_type_str(dtype)?,
                     shape: if let &Some(ref s) = shape {
-                        convert_value_to_shape(s)?
+                        convert_value_to_field_shape(s)?
                     } else {
                         vec![]
                     }
@@ -152,7 +152,8 @@ fn convert_tuple_to_record_field(tuple: &[Value]) -> Result<Field> {
     }
 }
 
-fn convert_value_to_shape(field: &Value) -> Result<Vec<u64>> {
+// FIXME: Remove; no reason to forbid size 0
+fn convert_value_to_field_shape(field: &Value) -> Result<Vec<u64>> {
     if let Value::List(ref lengths) = *field {
         first_error(lengths.iter().map(convert_value_to_positive_integer))
     } else {
@@ -169,6 +170,26 @@ fn convert_value_to_positive_integer(number: &Value) -> Result<u64> {
         }
     } else {
         invalid_data("must be a number")
+    }
+}
+
+pub(crate) fn convert_value_to_shape(field: &Value) -> Result<Vec<u64>> {
+    if let Value::List(ref lengths) = *field {
+        first_error(lengths.iter().map(convert_value_to_shape_integer))
+    } else {
+        invalid_data("shape must be list or tuple")
+    }
+}
+
+pub fn convert_value_to_shape_integer(number: &Value) -> Result<u64> {
+    if let Value::Integer(number) = *number {
+        if number >= 0 {
+            Ok(number as u64)
+        } else {
+            invalid_data("shape integer cannot be negative")
+        }
+    } else {
+        invalid_data("shape elements must be number")
     }
 }
 
@@ -449,7 +470,7 @@ mod tests {
     #[test]
     fn errors_when_shape_is_not_a_list() {
         let no_shape = parse("1");
-        assert!(convert_value_to_shape(&no_shape).is_err());
+        assert!(convert_value_to_field_shape(&no_shape).is_err());
     }
 
     #[test]
