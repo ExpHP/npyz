@@ -9,6 +9,8 @@ use header::DType;
 
 const FILLER: &'static [u8] = &[42; 19];
 
+const BYTES_BEFORE_DICT: usize = 10;
+
 /// Serialize into a file one row at a time. To serialize an iterator, use the
 /// [`to_file`](fn.to_file.html) function.
 pub struct NpyWriter<Row: Serialize, W: Write + Seek> {
@@ -66,7 +68,7 @@ impl<Row: Serialize, W: Write + Seek> NpyWriter<Row, W> {
         fw.write_all(b"NUMPY")?;
         fw.write_all(&[0x01u8, 0x00])?;
 
-        let (header, shape_offset) = create_header(dtype);
+        let (dict_bytes, shape_offset) = create_dict(dtype);
         let shape_pos = start_pos + shape_offset as u64;
 
         let writer = match Row::writer(dtype) {
@@ -76,15 +78,15 @@ impl<Row: Serialize, W: Write + Seek> NpyWriter<Row, W> {
 
 
         let mut padding: Vec<u8> = vec![];
-        padding.extend(&::std::iter::repeat(b' ').take(15 - ((header.len() + 10) % 16)).collect::<Vec<_>>());
+        padding.extend(&::std::iter::repeat(b' ').take(15 - ((dict_bytes.len() + BYTES_BEFORE_DICT) % 16)).collect::<Vec<_>>());
         padding.extend(&[b'\n']);
 
-        let len = header.len() + padding.len();
+        let len = dict_bytes.len() + padding.len();
         assert! (len <= ::std::u16::MAX as usize);
-        assert_eq!((len + 10) % 16, 0);
+        assert_eq!((len + BYTES_BEFORE_DICT) % 16, 0);
 
         fw.write_u16::<LittleEndian>(len as u16)?;
-        fw.write_all(&header)?;
+        fw.write_all(&dict_bytes)?;
         // Padding to 16 bytes
         fw.write_all(&padding)?;
 
@@ -122,12 +124,12 @@ impl<Row: Serialize, W: Write + Seek> NpyWriter<Row, W> {
     }
 }
 
-fn create_header(dtype: &DType) -> (Vec<u8>, usize) {
+fn create_dict(dtype: &DType) -> (Vec<u8>, usize) {
     let mut header: Vec<u8> = vec![];
     header.extend(&b"{'descr': "[..]);
     header.extend(dtype.descr().as_bytes());
     header.extend(&b", 'fortran_order': False, 'shape': ("[..]);
-    let shape_pos = header.len() + 10;
+    let shape_pos = header.len() + BYTES_BEFORE_DICT;
     header.extend(FILLER);
     header.extend(&b",), }"[..]);
     (header, shape_pos)
