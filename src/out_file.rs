@@ -168,11 +168,13 @@ mod tests {
     fn write_simple() -> io::Result<()> {
         let mut cursor = Cursor::new(vec![]);
 
-        let mut writer = NpyWriter::begin(&mut cursor)?;
-        for x in vec![1.0, 3.0, 5.0] {
-            writer.push(&x)?;
+        {
+            let mut writer = NpyWriter::begin(&mut cursor)?;
+            for x in vec![1.0, 3.0, 5.0] {
+                writer.push(&x)?;
+            }
+            writer.finish()?;
         }
-        writer.finish()?;
 
         let raw_buffer = cursor.into_inner();
         let reader = NpyData::<f64>::from_bytes(&raw_buffer)?;
@@ -190,11 +192,13 @@ mod tests {
 
         // write to the cursor both before and after writing the file
         cursor.write_all(prefix)?;
-        let mut writer = NpyWriter::begin(&mut cursor)?;
-        for x in vec![1.0, 3.0, 5.0] {
-            writer.push(&x)?;
+        {
+            let mut writer = NpyWriter::begin(&mut cursor)?;
+            for x in vec![1.0, 3.0, 5.0] {
+                writer.push(&x)?;
+            }
+            writer.finish()?;
         }
-        writer.finish()?;
         cursor.write_all(suffix)?;
 
         // check that `OutFile` did not interfere with our extra writes
