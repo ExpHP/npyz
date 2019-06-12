@@ -111,10 +111,10 @@ fn impl_npy_serialize(ast: &syn::DeriveInput) -> Tokens {
 
             #[allow(unused_mut)]
             fn write_one<W: io::Write>(&self, mut w: W, value: &Self::Value) -> io::Result<()> {
-                #(
+                #({ // braces for pre-NLL
                     let method = <<#types as _npy::Serialize>::Writer as _npy::TypeWrite>::write_one;
                     method(&self.writers.#idents, &mut w, &value.#idents_1)?;
-                )*
+                })*
                 p::Ok(())
             }
         }
