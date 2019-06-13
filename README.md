@@ -1,8 +1,8 @@
 # nippy
 
-Fork of [the `npy` crate](https://github.com/potocpav/npy-rs/issues), under a new name so that I can track my own issues without flooding the original author's repository (because I've yet to hear back from them and I don't want to completely overwhelm them when they return).
+Fork of [the `npy` crate](https://github.com/potocpav/npy-rs/issues), under a new name so that I can track my own issues without flooding the original author's repository.  This is where I prototype ideas.
 
-If I still haven't heard back from the original author in a month or two, I may rename the crate to `nippy` and publish it to crates.io.
+
 
 ---
 
