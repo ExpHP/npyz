@@ -2,7 +2,7 @@ extern crate npy;
 extern crate byteorder;
 
 use byteorder::ByteOrder;
-use std::io::{Read, Write};
+use std::io::{Read, Write, Cursor};
 use byteorder::{WriteBytesExt, LittleEndian};
 use npy::{DType, Field, OutFile, Serialize, Deserialize, AutoSerialize};
 
@@ -377,6 +377,36 @@ fn roundtrip_bytes_byteorder() {
     out_file.close().unwrap();
 
     let buffer = std::fs::read(path).unwrap();
+    assert!(buffer.ends_with(&expected_data_bytes));
+
+    let data = npy::NpyData::<Row>::from_bytes(&buffer).unwrap();
+    assert_eq!(data.to_vec(), vec![row]);
+    assert_eq!(data.dtype(), dtype);
+}
+
+// Try ndim == 0
+#[test]
+fn roundtrip_scalar() {
+    // This is format.npy in a bsr formatted matrix.
+    type Row = i32;
+    let row: Row = 1;
+    let dtype = DType::new_scalar("<i4".parse().unwrap());
+
+    let expected_data_bytes = b"\x01\x00\x00\x00".to_vec();
+
+    let mut cursor = Cursor::new(vec![]);
+    {
+        let mut writer = {
+            npy::Builder::new()
+                .dtype(dtype.clone())
+                .begin_nd(&mut cursor, &[])
+                .unwrap()
+        };
+        writer.push(&row).unwrap();
+        writer.finish().unwrap();
+    }
+
+    let buffer = cursor.into_inner();
     assert!(buffer.ends_with(&expected_data_bytes));
 
     let data = npy::NpyData::<Row>::from_bytes(&buffer).unwrap();

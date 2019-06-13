@@ -29,6 +29,12 @@ pub enum Order {
     Fortran,
 }
 
+impl Order {
+    pub(crate) fn from_fortran_order(fortran_order: bool) -> Order {
+        if fortran_order { Order::Fortran } else { Order::C }
+    }
+}
+
 impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Deserialize a NPY file represented as bytes
     pub fn from_bytes(bytes: &'a [u8]) -> ::std::io::Result<NpyData<'a, T>> {
@@ -123,8 +129,7 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
         };
 
         let order = match expect_key("fortran_order")? {
-            &Value::Bool(false) => Order::C,
-            &Value::Bool(true) => Order::Fortran,
+            &Value::Bool(b) => Order::from_fortran_order(b),
             _ => return Err(invalid_data(format!("'fortran_order' value is not a bool"))),
         };
 
