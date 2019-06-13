@@ -153,7 +153,7 @@ mod serialize;
 
 pub use header::{DType, Field};
 pub use npy_data::{NpyData, Order};
-pub use out_file::{to_file, OutFile, NpyWriter};
+pub use out_file::{to_file, OutFile, NpyWriter, Builder};
 pub use serialize::{Serialize, Deserialize, AutoSerialize};
 pub use serialize::{TypeRead, TypeWrite, TypeWriteDyn, DTypeError};
 pub use type_str::{TypeStr, ParseTypeStrError};
