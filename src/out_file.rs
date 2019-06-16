@@ -18,7 +18,7 @@ const BYTES_BEFORE_DICT: usize = 10;
 pub struct Builder<Row> {
     order: Order,
     dtype: Option<DType>,
-    _marker: PhantomData<fn(&Row)>, // contravariant
+    _marker: PhantomData<fn(Row)>, // contravariant
 }
 
 impl<Row> Builder<Row> {
@@ -62,23 +62,23 @@ impl<Row> Builder<Row> {
 impl<Row: Serialize> Builder<Row> {
     // TODO: remove Seek bound via some PanicSeek newtype wrapper
     /// Begin writing an array of known shape.
-    pub fn begin_nd<W: Write + Seek>(&self, w: W, shape: &[usize]) -> io::Result<NpyWriter<Row, W>> {
-        NpyWriter::_begin(self, w, Some(shape))
+    pub fn begin_nd<'w, W: Write + 'w>(&self, w: W, shape: &[usize]) -> io::Result<NpyWriter<'w, Row, W>> {
+        NpyWriter::_begin(self, MaybeSeek::Isnt(w), Some(shape))
     }
 
     /// Begin writing a 1d array, of length to be inferred.
-    pub fn begin_1d<W: Write + Seek>(&self, w: W) -> io::Result<NpyWriter<Row, W>> {
-        NpyWriter::_begin(self, w, None)
+    pub fn begin_1d<'w, W: Write + Seek + 'w>(&self, w: W) -> io::Result<NpyWriter<'w, Row, W>> {
+        NpyWriter::_begin(self, MaybeSeek::Is(Box::new(w)), None)
     }
 }
 
 /// Serialize into a file one item at a time. To serialize an iterator, use the
 /// [`to_file`](fn.to_file.html) function.
-pub struct NpyWriter<Row: Serialize, W: Write + Seek> {
+pub struct NpyWriter<'w, Row: Serialize, W: Write> {
     start_pos: u64,
     shape_info: ShapeInfo,
     num_items: usize,
-    fw: W,
+    fw: MaybeSeek<'w, W>,
     writer: <Row as Serialize>::Writer,
 }
 
@@ -91,7 +91,7 @@ enum ShapeInfo {
 }
 
 /// [`NpyWriter`] that writes an entire file.
-pub type OutFile<Row> = NpyWriter<Row, BufWriter<File>>;
+pub type OutFile<Row> = NpyWriter<'static, Row, BufWriter<File>>;
 
 impl<Row: AutoSerialize> OutFile<Row> {
     /// Create a file, using the default format for the given type.
@@ -117,18 +117,16 @@ impl<Row: Serialize> OutFile<Row> {
     }
 }
 
-impl<Row: AutoSerialize, W: Write + Seek> NpyWriter<Row, W> {
+impl<'w, Row: Serialize, W: Write + Seek + 'w> NpyWriter<'w, Row, W> {
     /// Construct around an existing writer, using the default format for the given type.
     ///
     /// The header will be written immediately.
-    pub fn begin(fw: W) -> io::Result<Self> {
+    pub fn begin(fw: W) -> io::Result<Self> where Row: AutoSerialize {
         Builder::new()
             .default_dtype()
             .begin_1d(fw)
     }
-}
 
-impl<Row: Serialize, W: Write + Seek> NpyWriter<Row, W> {
     /// Construct around an existing writer.
     ///
     /// The header will be written immediately.
@@ -137,8 +135,10 @@ impl<Row: Serialize, W: Write + Seek> NpyWriter<Row, W> {
             .dtype(dtype.clone())
             .begin_1d(fw)
     }
+}
 
-    fn _begin(builder: &Builder<Row>, mut fw: W, shape: Option<&[usize]>) -> io::Result<Self> {
+impl<'w, Row: Serialize, W: Write> NpyWriter<'w, Row, W> {
+    fn _begin(builder: &Builder<Row>, mut fw: MaybeSeek<'w, W>, shape: Option<&[usize]>) -> io::Result<Self> {
         let &Builder { ref dtype, order, _marker } = builder;
         let dtype = dtype.as_ref().expect("Builder::dtype was never called!");
 
@@ -250,7 +250,7 @@ fn create_dict(dtype: &DType, order: Order, shape: Option<&[usize]>) -> (Vec<u8>
     }
 }
 
-impl<Row: Serialize, W: Write + Seek> Drop for NpyWriter<Row, W> {
+impl<Row: Serialize, W: Write> Drop for NpyWriter<'_, Row, W> {
     fn drop(&mut self) {
         let _ = self.finish_(); // Ignore the errors
     }
@@ -271,6 +271,45 @@ pub fn to_file<S, T, P>(filename: P, data: T) -> ::std::io::Result<()> where
         of.push(&row)?;
     }
     of.close()
+}
+
+use self::maybe_seek::MaybeSeek;
+mod maybe_seek {
+    use super::*;
+
+    pub(crate) trait WriteSeek: Write + Seek {}
+
+    impl<W: Write + Seek> WriteSeek for W {}
+
+    pub(crate) enum MaybeSeek<'w, W> {
+        Is(Box<dyn WriteSeek + 'w>),
+        Isnt(W),
+    }
+
+    impl<W: Write> Write for MaybeSeek<'_, W> {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            match self {
+                MaybeSeek::Is(w) => (*w).write(buf),
+                MaybeSeek::Isnt(w) => w.write(buf),
+            }
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            match self {
+                MaybeSeek::Is(w) => (*w).flush(),
+                MaybeSeek::Isnt(w) => w.flush(),
+            }
+        }
+    }
+
+    impl<W> Seek for MaybeSeek<'_, W> {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            match self {
+                MaybeSeek::Is(w) => (*w).seek(pos),
+                MaybeSeek::Isnt(_) => unreachable!("(BUG!) .seek() called on MaybeSeek::Isnt!"),
+            }
+        }
+    }
 }
 
 #[cfg(test)]
