@@ -62,23 +62,23 @@ impl<Row> Builder<Row> {
 impl<Row: Serialize> Builder<Row> {
     // TODO: remove Seek bound via some PanicSeek newtype wrapper
     /// Begin writing an array of known shape.
-    pub fn begin_nd<'w, W: Write + 'w>(&self, w: W, shape: &[usize]) -> io::Result<NpyWriter<'w, Row, W>> {
+    pub fn begin_nd<W: Write>(&self, w: W, shape: &[usize]) -> io::Result<NpyWriter<Row, W>> {
         NpyWriter::_begin(self, MaybeSeek::Isnt(w), Some(shape))
     }
 
     /// Begin writing a 1d array, of length to be inferred.
-    pub fn begin_1d<'w, W: Write + Seek + 'w>(&self, w: W) -> io::Result<NpyWriter<'w, Row, W>> {
-        NpyWriter::_begin(self, MaybeSeek::Is(Box::new(w)), None)
+    pub fn begin_1d<W: Write + Seek>(&self, w: W) -> io::Result<NpyWriter<Row, W>> {
+        NpyWriter::_begin(self, MaybeSeek::new_seek(w), None)
     }
 }
 
 /// Serialize into a file one item at a time. To serialize an iterator, use the
 /// [`to_file`](fn.to_file.html) function.
-pub struct NpyWriter<'w, Row: Serialize, W: Write> {
+pub struct NpyWriter<Row: Serialize, W: Write> {
     start_pos: u64,
     shape_info: ShapeInfo,
     num_items: usize,
-    fw: MaybeSeek<'w, W>,
+    fw: MaybeSeek<W>,
     writer: <Row as Serialize>::Writer,
 }
 
@@ -91,7 +91,7 @@ enum ShapeInfo {
 }
 
 /// [`NpyWriter`] that writes an entire file.
-pub type OutFile<Row> = NpyWriter<'static, Row, BufWriter<File>>;
+pub type OutFile<Row> = NpyWriter<Row, BufWriter<File>>;
 
 impl<Row: AutoSerialize> OutFile<Row> {
     /// Create a file, using the default format for the given type.
@@ -117,7 +117,7 @@ impl<Row: Serialize> OutFile<Row> {
     }
 }
 
-impl<'w, Row: Serialize, W: Write + Seek + 'w> NpyWriter<'w, Row, W> {
+impl<Row: Serialize, W: Write + Seek> NpyWriter<Row, W> {
     /// Construct around an existing writer, using the default format for the given type.
     ///
     /// The header will be written immediately.
@@ -137,8 +137,8 @@ impl<'w, Row: Serialize, W: Write + Seek + 'w> NpyWriter<'w, Row, W> {
     }
 }
 
-impl<'w, Row: Serialize, W: Write> NpyWriter<'w, Row, W> {
-    fn _begin(builder: &Builder<Row>, mut fw: MaybeSeek<'w, W>, shape: Option<&[usize]>) -> io::Result<Self> {
+impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
+    fn _begin(builder: &Builder<Row>, mut fw: MaybeSeek<W>, shape: Option<&[usize]>) -> io::Result<Self> {
         let &Builder { ref dtype, order, _marker } = builder;
         let dtype = dtype.as_ref().expect("Builder::dtype was never called!");
 
@@ -250,7 +250,7 @@ fn create_dict(dtype: &DType, order: Order, shape: Option<&[usize]>) -> (Vec<u8>
     }
 }
 
-impl<Row: Serialize, W: Write> Drop for NpyWriter<'_, Row, W> {
+impl<Row: Serialize, W: Write> Drop for NpyWriter<Row, W> {
     fn drop(&mut self) {
         let _ = self.finish_(); // Ignore the errors
     }
@@ -277,16 +277,16 @@ use self::maybe_seek::MaybeSeek;
 mod maybe_seek {
     use super::*;
 
-    pub(crate) trait WriteSeek: Write + Seek {}
+    pub(crate) trait WriteSeek<W>: Write + Seek {}
 
-    impl<W: Write + Seek> WriteSeek for W {}
+    impl<W: Write + Seek> WriteSeek<W> for W {}
 
-    pub(crate) enum MaybeSeek<'w, W> {
-        Is(Box<dyn WriteSeek + 'w>),
+    pub(crate) enum MaybeSeek<W> {
+        Is(Box<dyn WriteSeek<W>>),
         Isnt(W),
     }
 
-    impl<W: Write> Write for MaybeSeek<'_, W> {
+    impl<W: Write> Write for MaybeSeek<W> {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             match self {
                 MaybeSeek::Is(w) => (*w).write(buf),
@@ -302,12 +302,24 @@ mod maybe_seek {
         }
     }
 
-    impl<W> Seek for MaybeSeek<'_, W> {
+    impl<W> Seek for MaybeSeek<W> {
         fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
             match self {
                 MaybeSeek::Is(w) => (*w).seek(pos),
                 MaybeSeek::Isnt(_) => unreachable!("(BUG!) .seek() called on MaybeSeek::Isnt!"),
             }
+        }
+    }
+
+    impl<W: WriteSeek<W>> MaybeSeek<W> {
+        pub fn new_seek(w: W) -> Self {
+            let inner = unsafe {
+                std::mem::transmute::<
+                    Box<dyn WriteSeek<W> + '_>,
+                    Box<dyn WriteSeek<W> + 'static>,
+                >(Box::new(w))
+            };
+            MaybeSeek::Is(inner)
         }
     }
 }
