@@ -75,7 +75,7 @@ impl<Row: Serialize> Builder<Row> {
 /// Serialize into a file one item at a time. To serialize an iterator, use the
 /// [`to_file`](fn.to_file.html) function.
 pub struct NpyWriter<Row: Serialize, W: Write> {
-    start_pos: u64,
+    start_pos: Option<u64>,
     shape_info: ShapeInfo,
     num_items: usize,
     fw: MaybeSeek<W>,
@@ -142,7 +142,10 @@ impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
         let &Builder { ref dtype, order, _marker } = builder;
         let dtype = dtype.as_ref().expect("Builder::dtype was never called!");
 
-        let start_pos = fw.seek(SeekFrom::Current(0))?;
+        let start_pos = match fw {
+            MaybeSeek::Is(ref mut fw) => Some(fw.seek(SeekFrom::Current(0))?),
+            MaybeSeek::Isnt(_) => None,
+        };
 
         if let DType::Plain { ref shape, .. } = dtype {
             assert!(shape.len() == 0, "plain non-scalar dtypes not supported");
@@ -197,7 +200,7 @@ impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
             },
             ShapeInfo::Automatic { offset_in_dict_string } => {
                 // Write the size to the header
-                let shape_pos = self.start_pos + BYTES_BEFORE_DICT as u64 + offset_in_dict_string;
+                let shape_pos = self.start_pos.unwrap() + BYTES_BEFORE_DICT as u64 + offset_in_dict_string;
                 let end_pos = self.fw.seek(SeekFrom::Current(0))?;
 
                 self.fw.seek(SeekFrom::Start(shape_pos))?;
