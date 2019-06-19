@@ -314,6 +314,12 @@ mod maybe_seek {
     impl<W: WriteSeek<W>> MaybeSeek<W> {
         pub fn new_seek(w: W) -> Self {
             let inner = unsafe {
+                // The Self type is W, so all lifetime information contained in the unnamed
+                // lifetime here is also contained in W.
+                //
+                // Because `dyn WriteSeek<W> + '_` is invariant in W, the compiler will
+                // conservatively assume that it carries all borrows held by W; just as if
+                // we *hadn't* erased the lifetime.
                 std::mem::transmute::<
                     Box<dyn WriteSeek<W> + '_>,
                     Box<dyn WriteSeek<W> + 'static>,
