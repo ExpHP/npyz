@@ -9,5 +9,5 @@ matrix:
     
 script:
   - cargo build --verbose
-  - cargo build --verbose --features derive --examples
-  - cargo test --verbose --features derive
+  - cargo build --verbose --all-features --examples
+  - cargo test --verbose --all-features
