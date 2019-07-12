@@ -1,10 +1,12 @@
 use header::DType;
 use type_str::{TypeStr, Endianness, TypeKind};
-use byteorder::{ByteOrder, NativeEndian, WriteBytesExt};
 use self::{TypeKind::*};
 use std::io;
 use std::fmt;
 use std::convert::TryFrom;
+use std::marker::PhantomData;
+#[cfg(feature = "complex")]
+use num_complex::Complex;
 
 /// Trait that permits reading a type from an `.npy` file.
 ///
@@ -240,94 +242,175 @@ impl<T: ?Sized> TypeWrite for Box<dyn TypeWriteDyn<Value=T>> {
     }
 }
 
+// extension trait for things that can be read directly from an array of bytes
+pub trait PrimitiveReadWrite: Sized {
+    fn primitive_read_one(bytes: &[u8], swap_bytes: bool) -> (Self, &[u8]);
+    fn primitive_write_one<W: io::Write>(&self, writer: W, swap_bytes: bool) -> io::Result<()>;
+}
+
+macro_rules! derive_int_primitive_read_write {
+    ($($int:ident)*) => {$(
+        impl PrimitiveReadWrite for $int {
+            #[inline]
+            fn primitive_read_one(bytes: &[u8], swap_bytes: bool) -> ($int, &[u8]) {
+                use std::mem::size_of;
+
+                let mut buf = [0u8; size_of::<$int>()];
+                let (src, rest) = bytes.split_at(size_of::<$int>());
+                buf.copy_from_slice(src);
+
+                let out = $int::from_ne_bytes(buf);
+                let swapped = match swap_bytes {
+                    true => out.swap_bytes(),
+                    false => out,
+                };
+                (swapped, rest)
+            }
+
+            #[inline]
+            fn primitive_write_one<W: io::Write>(&self, mut writer: W, swap_bytes: bool) -> io::Result<()> {
+                let swapped = match swap_bytes {
+                    true => self.swap_bytes(),
+                    false => *self,
+                };
+
+                writer.write_all(&swapped.to_ne_bytes())?;
+
+                Ok(())
+            }
+        }
+    )*};
+}
+
+macro_rules! derive_float_primitive_read_write {
+    ($float:ident as $int:ident) => {
+        impl PrimitiveReadWrite for $float {
+            #[inline]
+            fn primitive_read_one(bytes: &[u8], swap_bytes: bool) -> ($float, &[u8]) {
+                let (bits, rest) = <$int>::primitive_read_one(bytes, swap_bytes);
+                (<$float>::from_bits(bits), rest)
+            }
+
+            #[inline]
+            fn primitive_write_one<W: io::Write>(&self, writer: W, swap_bytes: bool) -> io::Result<()> {
+                self.to_bits().primitive_write_one(writer, swap_bytes)
+            }
+        }
+    };
+}
+
+derive_int_primitive_read_write!{ u8 u16 u32 u64 }
+derive_int_primitive_read_write!{ i8 i16 i32 i64 }
+derive_float_primitive_read_write!{ f32 as u32 }
+derive_float_primitive_read_write!{ f64 as u64 }
+
+/// Implementation of [`TypeRead`] using [`PrimitiveReadWrite`].
+#[doc(hidden)]
+pub struct PrimitiveReader<T> {
+    swap_bytes: bool,
+    _marker: PhantomData<T>
+}
+
+/// Implementation of [`TypeWrite`] using [`PrimitiveReadWrite`].
+#[doc(hidden)]
+pub struct PrimitiveWriter<T> {
+    swap_bytes: bool,
+    _marker: PhantomData<T>
+}
+
+impl<T> PrimitiveReader<T> {
+    pub(super) fn new(swap_bytes: bool) -> Self {
+        PrimitiveReader {
+            swap_bytes,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T> PrimitiveWriter<T> {
+    pub(super) fn new(swap_bytes: bool) -> Self {
+        PrimitiveWriter {
+            swap_bytes,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T: PrimitiveReadWrite> TypeRead for PrimitiveReader<T> {
+    type Value = T;
+
+    #[inline(always)]
+    fn read_one<'a>(&self, bytes: &'a [u8]) -> (Self::Value, &'a [u8]) {
+        T::primitive_read_one(bytes, self.swap_bytes)
+    }
+}
+
+impl<T: PrimitiveReadWrite> TypeWrite for PrimitiveWriter<T> {
+    type Value = T;
+
+    #[inline(always)]
+    fn write_one<W: io::Write>(&self, writer: W, value: &Self::Value) -> io::Result<()> {
+        value.primitive_write_one(writer, self.swap_bytes)
+    }
+}
+
+#[cfg(feature = "complex")]
+pub struct ComplexReader<F> { pub(super) float: PrimitiveReader<F> }
+#[cfg(feature = "complex")]
+pub struct ComplexWriter<F> { pub(super) float: PrimitiveWriter<F> }
+
+#[cfg(feature = "complex")]
+impl<F: PrimitiveReadWrite> TypeRead for ComplexReader<F> {
+    type Value = Complex<F>;
+
+    #[inline]
+    fn read_one<'a>(&self, bytes: &'a [u8]) -> (Complex<F>, &'a [u8]) {
+        let (re, bytes) = self.float.read_one(bytes);
+        let (im, bytes) = self.float.read_one(bytes);
+        (Complex { re, im }, bytes)
+    }
+}
+
+#[cfg(feature = "complex")]
+impl<F: PrimitiveReadWrite> TypeWrite for ComplexWriter<F> {
+    type Value = Complex<F>;
+
+    #[inline]
+    fn write_one<W: io::Write>(&self, mut writer: W, value: &Complex<F>) -> io::Result<()> {
+        self.float.write_one(&mut writer, &value.re)?;
+        self.float.write_one(&mut writer, &value.im)?;
+        Ok(())
+    }
+}
+
 fn invalid_data<T>(message: &str) -> io::Result<T> {
     Err(io::Error::new(io::ErrorKind::InvalidData, message.to_string()))
 }
 
-// Takes info about each data size, from largest to smallest.
+fn expect_scalar_dtype<'a>(dtype: &'a DType, rust_type: &'static str) -> Result<&'a TypeStr, DTypeError> {
+    dtype.as_scalar().ok_or_else(|| {
+        DTypeError::expected_scalar(dtype, rust_type)
+    })
+}
+
 macro_rules! impl_integer_serializable {
-    ( @iterate
-        meta: $meta:tt
-        remaining: []
-    ) => {};
-
-    ( @iterate
-        meta: $meta:tt
-        remaining: [$first:tt $($smaller:tt)*]
-    ) => {
-        impl_integer_serializable! {
-          @generate
-            meta: $meta
-            current: $first
-        }
-
-        impl_integer_serializable! {
-          @iterate
-            meta: $meta
-            remaining: [ $($smaller)* ]
-        }
-    };
-
     (
-        @generate
         meta: [ (main_ty: $Int:ident) (date_ty: $DateTime:ident) ]
-        current: [ $size:literal $int:ident
-                   (size1: $size1_cfg:meta) $read_int:ident $write_int:ident
-                 ]
-    ) => {
-        mod $int {
-            use super::*;
-
-            pub struct AnyEndianReader { pub(super) swap_byteorder: bool }
-            pub struct AnyEndianWriter { pub(super) swap_byteorder: bool }
-
-            pub(super) fn expect_scalar_dtype(dtype: &DType) -> Result<&TypeStr, DTypeError> {
-                dtype.as_scalar().ok_or_else(|| {
-                    DTypeError::expected_scalar(dtype, stringify!($int))
-                })
-            }
-
-            #[inline]
-            fn maybe_swap(swap: bool, x: $int) -> $int {
-                match swap {
-                    true => x.swap_bytes(),
-                    false => x,
-                }
-            }
-
-            impl TypeRead for AnyEndianReader {
-                type Value = $int;
-
-                #[inline(always)]
-                fn read_one<'a>(&self, bytes: &'a [u8]) -> (Self::Value, &'a [u8]) {
-                    let value = maybe_swap(self.swap_byteorder, NativeEndian::$read_int(bytes));
-                    (value, &bytes[$size..])
-                }
-            }
-
-            impl TypeWrite for AnyEndianWriter {
-                type Value = $int;
-
-                #[inline(always)]
-                fn write_one<W: io::Write>(&self, mut writer: W, &value: &Self::Value) -> io::Result<()> {
-                    writer.$write_int::<NativeEndian>(maybe_swap(self.swap_byteorder, value))
-                }
-            }
-        }
-
+        ints: [ $([$size:tt $int:ty])* ]
+    ) => {$(
         impl Deserialize for $int {
-            type Reader = $int::AnyEndianReader;
+            type Reader = PrimitiveReader<$int>;
 
             fn reader(dtype: &DType) -> Result<Self::Reader, DTypeError> {
-                match $int::expect_scalar_dtype(dtype)? {
-                    // Read an integer of the same size and signedness.
+                match expect_scalar_dtype(dtype, stringify!($int))? {
+                    // Read an integer of the correct size and signedness.
                     //
                     // DateTime is an unsigned integer and TimeDelta is a signed integer,
                     // so we support those too.
                     TypeStr { size: $size, endianness, type_kind: $Int, .. } |
                     TypeStr { size: $size, endianness, type_kind: $DateTime, .. } => {
                         let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
-                        Ok($int::AnyEndianReader { swap_byteorder })
+                        Ok(PrimitiveReader::new(swap_byteorder))
                     },
                     type_str => Err(DTypeError::bad_scalar("read", type_str, stringify!($int))),
                 }
@@ -335,15 +418,15 @@ macro_rules! impl_integer_serializable {
         }
 
         impl Serialize for $int {
-            type Writer = $int::AnyEndianWriter;
+            type Writer = PrimitiveWriter<$int>;
 
             fn writer(dtype: &DType) -> Result<Self::Writer, DTypeError> {
-                match $int::expect_scalar_dtype(dtype)? {
-                    // Write a signed integer of the correct size
+                match expect_scalar_dtype(dtype, stringify!($int))? {
+                    // Write an integer of the correct size and signedness.
                     TypeStr { size: $size, endianness, type_kind: $Int, .. } |
                     TypeStr { size: $size, endianness, type_kind: $DateTime, .. } => {
                         let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
-                        Ok($int::AnyEndianWriter { swap_byteorder })
+                        Ok(PrimitiveWriter::new(swap_byteorder))
                     },
                     type_str => Err(DTypeError::bad_scalar("write", type_str, stringify!($int))),
                 }
@@ -355,102 +438,31 @@ macro_rules! impl_integer_serializable {
                 DType::new_scalar(TypeStr::with_auto_endianness($Int, $size, None))
             }
         }
-    };
+    )*};
 }
 
-// Needed by the macro: Methods missing from byteorder
-trait ReadSingleByteExt {
-    #[inline(always)] fn read_u8_(bytes: &[u8]) -> u8 { bytes[0] }
-    #[inline(always)] fn read_i8_(bytes: &[u8]) -> i8 { i8::from_ne_bytes([bytes[0]]) }
-}
-
-impl<E: ByteOrder> ReadSingleByteExt for E {}
-
-/// Needed by the macro: Methods modified to take a generic type param
-trait WriteSingleByteExt: WriteBytesExt {
-    #[inline(always)] fn write_u8_<B>(&mut self, value: u8) -> io::Result<()> { self.write_u8(value) }
-    #[inline(always)] fn write_i8_<B>(&mut self, value: i8) -> io::Result<()> { self.write_i8(value) }
-}
-
-impl<W: WriteBytesExt + ?Sized> WriteSingleByteExt for W {}
-
-// `all()` means "true", `any()` means "false". (these get put inside `cfg`)
 impl_integer_serializable! {
-    @iterate
     meta: [ (main_ty: Int) (date_ty: TimeDelta) ]
-    remaining: [
-        // numpy doesn't support i128
-        [ 8  i64 (size1: any()) read_i64  write_i64 ]
-        [ 4  i32 (size1: any()) read_i32  write_i32 ]
-        [ 2  i16 (size1: any()) read_i16  write_i16 ]
-        [ 1   i8 (size1: all()) read_i8_  write_i8_ ]
-    ]
+    ints: [ [1 i8] [2 i16] [4 i32] [8 i64] ]
 }
 
 impl_integer_serializable! {
-    @iterate
     meta: [ (main_ty: Uint) (date_ty: DateTime) ]
-    remaining: [
-        // numpy doesn't support i128
-        [ 8  u64 (size1: any()) read_u64  write_u64 ]
-        [ 4  u32 (size1: any()) read_u32  write_u32 ]
-        [ 2  u16 (size1: any()) read_u16  write_u16 ]
-        [ 1   u8 (size1: all()) read_u8_  write_u8_ ]
-    ]
+    ints: [ [1 u8] [2 u16] [4 u32] [8 u64] ]
 }
 
 // Takes info about each data size, from largest to smallest.
 macro_rules! impl_float_serializable {
-    ( $( [ $size:literal $float:ident $Complex:ident $read_float:ident $write_float:ident ] )+ ) => { $(
-        mod $float {
-            use super::*;
-
-            pub struct AnyEndianReader { pub(super) swap_byteorder: bool }
-            pub struct AnyEndianWriter { pub(super) swap_byteorder: bool }
-
-            #[inline]
-            pub(super) fn maybe_swap(swap: bool, x: $float) -> $float {
-                match swap {
-                    true => $float::from_bits(x.to_bits().swap_bytes()),
-                    false => x,
-                }
-            }
-
-            pub(super) fn expect_scalar_dtype(dtype: &DType) -> Result<&TypeStr, DTypeError> {
-                dtype.as_scalar().ok_or_else(|| {
-                    DTypeError::expected_scalar(dtype, stringify!($float))
-                })
-            }
-
-            impl TypeRead for AnyEndianReader {
-                type Value = $float;
-
-                #[inline(always)]
-                fn read_one<'a>(&self, bytes: &'a [u8]) -> ($float, &'a [u8]) {
-                    let value = maybe_swap(self.swap_byteorder, NativeEndian::$read_float(bytes));
-                    (value, &bytes[$size..])
-                }
-            }
-
-            impl TypeWrite for AnyEndianWriter {
-                type Value = $float;
-
-                #[inline(always)]
-                fn write_one<W: io::Write>(&self, mut writer: W, &value: &$float) -> io::Result<()> {
-                    writer.$write_float::<NativeEndian>(maybe_swap(self.swap_byteorder, value))
-                }
-            }
-        }
-
+    ( $( [ $size:literal $float:ident ] )+ ) => { $(
         impl Deserialize for $float {
-            type Reader = $float::AnyEndianReader;
+            type Reader = PrimitiveReader<$float>;
 
             fn reader(dtype: &DType) -> Result<Self::Reader, DTypeError> {
-                match $float::expect_scalar_dtype(dtype)? {
+                match expect_scalar_dtype(dtype, stringify!($float))? {
                     // Read a float of the correct size
                     TypeStr { size: $size, endianness, type_kind: Float, .. } => {
                         let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
-                        Ok($float::AnyEndianReader { swap_byteorder })
+                        Ok(PrimitiveReader::new(swap_byteorder))
                     },
                     type_str => Err(DTypeError::bad_scalar("read", type_str, stringify!($float))),
                 }
@@ -458,14 +470,14 @@ macro_rules! impl_float_serializable {
         }
 
         impl Serialize for $float {
-            type Writer = $float::AnyEndianWriter;
+            type Writer = PrimitiveWriter<$float>;
 
             fn writer(dtype: &DType) -> Result<Self::Writer, DTypeError> {
-                match $float::expect_scalar_dtype(dtype)? {
+                match expect_scalar_dtype(dtype, stringify!($float))? {
                     // Write a float of the correct size
                     TypeStr { size: $size, endianness, type_kind: Float, .. } => {
                         let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
-                        Ok($float::AnyEndianWriter { swap_byteorder })
+                        Ok(PrimitiveWriter::new(swap_byteorder))
                     },
                     type_str => Err(DTypeError::bad_scalar("write", type_str, stringify!($float))),
                 }
@@ -479,80 +491,44 @@ macro_rules! impl_float_serializable {
         }
 
         #[cfg(feature = "complex")]
-        #[allow(non_snake_case)]
-        mod $Complex {
-            use super::*;
-            use num_complex::$Complex;
-
-            pub struct AnyEndianReader { pub(super) swap_byteorder: bool }
-            pub struct AnyEndianWriter { pub(super) swap_byteorder: bool }
-
-            pub(super) fn expect_scalar_dtype(dtype: &DType) -> Result<&TypeStr, DTypeError> {
-                dtype.as_scalar().ok_or_else(|| {
-                    DTypeError::expected_scalar(dtype, stringify!($Complex))
-                })
-            }
-
-            impl TypeRead for AnyEndianReader {
-                type Value = $Complex;
-
-                #[inline(always)]
-                fn read_one<'a>(&self, bytes: &'a [u8]) -> ($Complex, &'a [u8]) {
-                    let re = $float::maybe_swap(self.swap_byteorder, NativeEndian::$read_float(bytes));
-                    let im = $float::maybe_swap(self.swap_byteorder, NativeEndian::$read_float(&bytes[$size..]));
-                    ($Complex { re, im }, &bytes[$size..])
-                }
-            }
-
-            impl TypeWrite for AnyEndianWriter {
-                type Value = $Complex;
-
-                #[inline(always)]
-                fn write_one<W: io::Write>(&self, mut writer: W, &value: &$Complex) -> io::Result<()> {
-                    writer.$write_float::<NativeEndian>($float::maybe_swap(self.swap_byteorder, value.re))?;
-                    writer.$write_float::<NativeEndian>($float::maybe_swap(self.swap_byteorder, value.im))?;
-                    Ok(())
-                }
-            }
-
-            pub(super) const SIZE: u64 = $size * 2;
-        }
-
-        #[cfg(feature = "complex")]
         /// _This impl is only available with the **`complex`** feature._
-        impl Deserialize for num_complex::$Complex {
-            type Reader = $Complex::AnyEndianReader;
+        impl Deserialize for Complex<$float> {
+            type Reader = ComplexReader<$float>;
 
             fn reader(dtype: &DType) -> Result<Self::Reader, DTypeError> {
-                match $float::expect_scalar_dtype(dtype)? {
-                    TypeStr { size: $Complex::SIZE, endianness, type_kind: Complex, .. } => {
+                const SIZE: u64 = 2 * $size;
+
+                match expect_scalar_dtype(dtype, stringify!(Complex<$float>))? {
+                    TypeStr { size: SIZE, endianness, type_kind: Complex, .. } => {
                         let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
-                        Ok($Complex::AnyEndianReader { swap_byteorder })
+                        Ok(ComplexReader { float: PrimitiveReader::new(swap_byteorder) })
                     },
-                    type_str => Err(DTypeError::bad_scalar("read", type_str, stringify!($Complex))),
+                    type_str => Err(DTypeError::bad_scalar("read", type_str, stringify!(Complex<$float>))),
                 }
             }
         }
 
         #[cfg(feature = "complex")]
         /// _This impl is only available with the **`complex`** feature._
-        impl Serialize for num_complex::$Complex {
-            type Writer = $Complex::AnyEndianWriter;
+        impl Serialize for Complex<$float> {
+            type Writer = ComplexWriter<$float>;
 
             fn writer(dtype: &DType) -> Result<Self::Writer, DTypeError> {
-                match $float::expect_scalar_dtype(dtype)? {
-                    TypeStr { size: $Complex::SIZE, endianness, type_kind: Complex, .. } => {
+                const SIZE: u64 = 2 * $size;
+
+                match expect_scalar_dtype(dtype, stringify!(Complex<$float>))? {
+                    TypeStr { size: SIZE, endianness, type_kind: Complex, .. } => {
                         let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
-                        Ok($Complex::AnyEndianWriter { swap_byteorder })
+                        Ok(ComplexWriter { float: PrimitiveWriter::new(swap_byteorder) })
                     },
-                    type_str => Err(DTypeError::bad_scalar("write", type_str, stringify!($Complex))),
+                    type_str => Err(DTypeError::bad_scalar("write", type_str, stringify!(Complex<$float>))),
                 }
             }
         }
 
         #[cfg(feature = "complex")]
         /// _This impl is only available with the **`complex`** feature._
-        impl AutoSerialize for num_complex::$Complex {
+        impl AutoSerialize for Complex<$float> {
             fn default_dtype() -> DType {
                 DType::new_scalar(TypeStr::with_auto_endianness(Complex, $size, None))
             }
@@ -560,11 +536,8 @@ macro_rules! impl_float_serializable {
     )+};
 }
 
-impl_float_serializable! {
-    // TODO: numpy supports f16, f128
-    [ 8 f64 Complex64 read_f64 write_f64 ]
-    [ 4 f32 Complex32 read_f32 write_f32 ]
-}
+// TODO: numpy supports f16, f128
+impl_float_serializable! { [ 4 f32 ] [ 8 f64 ] }
 
 pub struct BytesReader {
     size: usize,
