@@ -17,6 +17,7 @@ members = [ "npy-derive" ]
 [dependencies]
 byteorder = "1"
 nom = "3"
+num-complex = { version = "0.2", optional = true }
 
 [dependencies.npy-derive]
 path = "npy-derive"
@@ -39,6 +40,9 @@ default = []
 # directly imports things like `#[derive(Serialize)]` that may conflict with
 # other crates (e.g. `serde`).
 derive = ["npy-derive"]
+
+# Enables deserialization of the types from num-complex.
+complex = ["num-complex"]
 
 [[example]]
 name = "plain"

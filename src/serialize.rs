@@ -290,7 +290,7 @@ macro_rules! impl_integer_serializable {
             #[inline]
             fn maybe_swap(swap: bool, x: $int) -> $int {
                 match swap {
-                    true => x.to_be().to_le(),
+                    true => x.swap_bytes(),
                     false => x,
                 }
             }
@@ -401,7 +401,7 @@ impl_integer_serializable! {
 
 // Takes info about each data size, from largest to smallest.
 macro_rules! impl_float_serializable {
-    ( $( [ $size:literal $float:ident $read_float:ident $write_float:ident ] )+ ) => { $(
+    ( $( [ $size:literal $float:ident $Complex:ident $read_float:ident $write_float:ident ] )+ ) => { $(
         mod $float {
             use super::*;
 
@@ -409,9 +409,9 @@ macro_rules! impl_float_serializable {
             pub struct AnyEndianWriter { pub(super) swap_byteorder: bool }
 
             #[inline]
-            fn maybe_swap(swap: bool, x: $float) -> $float {
+            pub(super) fn maybe_swap(swap: bool, x: $float) -> $float {
                 match swap {
-                    true => $float::from_bits(x.to_bits().to_be().to_le()),
+                    true => $float::from_bits(x.to_bits().swap_bytes()),
                     false => x,
                 }
             }
@@ -477,13 +477,93 @@ macro_rules! impl_float_serializable {
                 DType::new_scalar(TypeStr::with_auto_endianness(Float, $size, None))
             }
         }
+
+        #[cfg(feature = "complex")]
+        #[allow(non_snake_case)]
+        mod $Complex {
+            use super::*;
+            use num_complex::$Complex;
+
+            pub struct AnyEndianReader { pub(super) swap_byteorder: bool }
+            pub struct AnyEndianWriter { pub(super) swap_byteorder: bool }
+
+            pub(super) fn expect_scalar_dtype(dtype: &DType) -> Result<&TypeStr, DTypeError> {
+                dtype.as_scalar().ok_or_else(|| {
+                    DTypeError::expected_scalar(dtype, stringify!($Complex))
+                })
+            }
+
+            impl TypeRead for AnyEndianReader {
+                type Value = $Complex;
+
+                #[inline(always)]
+                fn read_one<'a>(&self, bytes: &'a [u8]) -> ($Complex, &'a [u8]) {
+                    let re = $float::maybe_swap(self.swap_byteorder, NativeEndian::$read_float(bytes));
+                    let im = $float::maybe_swap(self.swap_byteorder, NativeEndian::$read_float(&bytes[$size..]));
+                    ($Complex { re, im }, &bytes[$size..])
+                }
+            }
+
+            impl TypeWrite for AnyEndianWriter {
+                type Value = $Complex;
+
+                #[inline(always)]
+                fn write_one<W: io::Write>(&self, mut writer: W, &value: &$Complex) -> io::Result<()> {
+                    writer.$write_float::<NativeEndian>($float::maybe_swap(self.swap_byteorder, value.re))?;
+                    writer.$write_float::<NativeEndian>($float::maybe_swap(self.swap_byteorder, value.im))?;
+                    Ok(())
+                }
+            }
+
+            pub(super) const SIZE: u64 = $size * 2;
+        }
+
+        #[cfg(feature = "complex")]
+        /// _This impl is only available with the **`complex`** feature._
+        impl Deserialize for num_complex::$Complex {
+            type Reader = $Complex::AnyEndianReader;
+
+            fn reader(dtype: &DType) -> Result<Self::Reader, DTypeError> {
+                match $float::expect_scalar_dtype(dtype)? {
+                    TypeStr { size: $Complex::SIZE, endianness, type_kind: Complex, .. } => {
+                        let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
+                        Ok($Complex::AnyEndianReader { swap_byteorder })
+                    },
+                    type_str => Err(DTypeError::bad_scalar("read", type_str, stringify!($Complex))),
+                }
+            }
+        }
+
+        #[cfg(feature = "complex")]
+        /// _This impl is only available with the **`complex`** feature._
+        impl Serialize for num_complex::$Complex {
+            type Writer = $Complex::AnyEndianWriter;
+
+            fn writer(dtype: &DType) -> Result<Self::Writer, DTypeError> {
+                match $float::expect_scalar_dtype(dtype)? {
+                    TypeStr { size: $Complex::SIZE, endianness, type_kind: Complex, .. } => {
+                        let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
+                        Ok($Complex::AnyEndianWriter { swap_byteorder })
+                    },
+                    type_str => Err(DTypeError::bad_scalar("write", type_str, stringify!($Complex))),
+                }
+            }
+        }
+
+        #[cfg(feature = "complex")]
+        /// _This impl is only available with the **`complex`** feature._
+        impl AutoSerialize for num_complex::$Complex {
+            fn default_dtype() -> DType {
+                DType::new_scalar(TypeStr::with_auto_endianness(Complex, $size, None))
+            }
+        }
     )+};
 }
 
 impl_float_serializable! {
     // TODO: numpy supports f16, f128
-    [ 8 f64 read_f64 write_f64 ]
-    [ 4 f32 read_f32 write_f32 ]
+    [ 8 f64 Complex64 read_f64 write_f64 ]
+    [ 4 f32 Complex32 read_f32 write_f32 ]
 }
 
 pub struct BytesReader {
@@ -857,6 +937,48 @@ mod tests {
         assert_eq!(reader_output::<f32>(&le, &le_bytes), 42.0);
         assert_eq!(writer_output::<f32>(&be, &42.0), &be_bytes);
         assert_eq!(writer_output::<f32>(&le, &42.0), &le_bytes);
+    }
+
+    #[test]
+    #[cfg(feature = "complex")]
+    fn native_complex_types() {
+        use num_complex::{Complex32, Complex64};
+
+        let c = Complex64 { re: 42.0, im: 63.0 };
+
+        let mut be_bytes = [0; 16];
+        be_bytes[..8].copy_from_slice(&c.re.to_bits().to_be_bytes());
+        be_bytes[8..].copy_from_slice(&c.im.to_bits().to_be_bytes());
+
+        let mut le_bytes = [0; 16];
+        le_bytes[..8].copy_from_slice(&c.re.to_bits().to_le_bytes());
+        le_bytes[8..].copy_from_slice(&c.im.to_bits().to_le_bytes());
+
+        let be = DType::parse(&format!("'>c16'")).unwrap();
+        let le = DType::parse(&format!("'<c16'")).unwrap();
+
+        assert_eq!(reader_output::<Complex64>(&be, &be_bytes), c);
+        assert_eq!(reader_output::<Complex64>(&le, &le_bytes), c);
+        assert_eq!(writer_output::<Complex64>(&be, &c), &be_bytes);
+        assert_eq!(writer_output::<Complex64>(&le, &c), &le_bytes);
+
+        let c = Complex32 { re: 42.0, im: 63.0 };
+
+        let mut be_bytes = [0; 8];
+        be_bytes[..4].copy_from_slice(&c.re.to_bits().to_be_bytes());
+        be_bytes[4..].copy_from_slice(&c.im.to_bits().to_be_bytes());
+
+        let mut le_bytes = [0; 8];
+        le_bytes[..4].copy_from_slice(&c.re.to_bits().to_le_bytes());
+        le_bytes[4..].copy_from_slice(&c.im.to_bits().to_le_bytes());
+
+        let be = DType::parse(&format!("'>c8'")).unwrap();
+        let le = DType::parse(&format!("'<c8'")).unwrap();
+
+        assert_eq!(reader_output::<Complex32>(&be, &be_bytes), c);
+        assert_eq!(reader_output::<Complex32>(&le, &le_bytes), c);
+        assert_eq!(writer_output::<Complex32>(&be, &c), &be_bytes);
+        assert_eq!(writer_output::<Complex32>(&le, &c), &le_bytes);
     }
 
     #[test]
