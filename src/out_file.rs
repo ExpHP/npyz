@@ -60,7 +60,6 @@ impl<Row> Builder<Row> {
 }
 
 impl<Row: Serialize> Builder<Row> {
-    // TODO: remove Seek bound via some PanicSeek newtype wrapper
     /// Begin writing an array of known shape.
     pub fn begin_nd<W: Write>(&self, w: W, shape: &[usize]) -> io::Result<NpyWriter<Row, W>> {
         NpyWriter::_begin(self, MaybeSeek::Isnt(w), Some(shape))
