@@ -135,11 +135,17 @@ Array { a: 1, b: 2.5, c: 4 }
 Array { a: 2, b: 3.1, c: 5 }
 ```
 
+## Optional features
+
+Implementations of the serialization traits for `num_complex` complex numbers can be enabled
+by activating the `complex` feature.
 */
 
 // Reexport the macros.
 #[cfg(feature = "derive")] extern crate npy_derive;
 #[cfg(feature = "derive")] pub use npy_derive::*;
+
+#[cfg(feature = "complex")] extern crate num_complex;
 
 extern crate byteorder;
 #[macro_use]
