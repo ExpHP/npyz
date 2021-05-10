@@ -2,7 +2,24 @@
 
 Fork of [the `npy` crate](https://github.com/potocpav/npy-rs/issues), under a new name so that I can track my own issues without flooding the original author's repository.  This is where I prototype ideas.
 
+Differences from the latest `npy`:
 
+* Able to read a lot more files by supporting more dtypes.  (e.g. big endian can be read, I forget what else)
+* n-dimensional arrays.
+* Outputting to any `io::Write + io::Seek`.  Reading from `io::Read`.
+* `io::Seek` is not required when shape is provided.
+
+**Note (2021/05/10):**  It has been two years since I made this fork and tried to submit some PRs to `npy` which are still *hanging* in limbo.  I'm beginning to wonder if I should pick this back up, clean it up, add proper documentation and publish it to crates.io.
+
+Currently, this is not really in a state to be used by other people, but if you are desparate, you can do: 
+
+```toml
+[dependencies.npy]
+git = "https://github.com/ExpHP/nippy"
+rev = "bd608d41f"  # replace with the latest commit
+```
+
+Information about the new features may be found by reviewing `cargo doc` and... I guess maybe closed issues on this repo.  You're somewhat on your own here, until I have time to revisit this proper. Sorry about that!
 
 ---
 
