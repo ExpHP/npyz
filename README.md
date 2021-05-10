@@ -6,6 +6,7 @@ Differences from the latest `npy`:
 
 * Able to read a lot more files by supporting more dtypes.  (e.g. big endian can be read, I forget what else)
 * n-dimensional arrays.  (C-order or fortran order)
+  * Writing is done through some [Builder api](https://github.com/ExpHP/nippy/blob/0f3aedcf1a71988af71a8bf8ef7fc65f79924178/src/out_file.rs#L24-L72)
 * Outputting to any `io::Write + io::Seek`.  Reading from `io::Read`.
 * `io::Seek` is not required when shape is provided.
 
