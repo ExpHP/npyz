@@ -19,7 +19,7 @@ git = "https://github.com/ExpHP/nippy"
 rev = "bd608d41f"  # replace with the latest commit
 ```
 
-Information about the new features may be found by reviewing `cargo doc` and... I guess maybe closed issues on this repo.  You're somewhat on your own here, until I have time to revisit this proper. Sorry about that!
+Information about the new features may be found by reviewing `cargo doc` and... I guess maybe closed issues on this repo or [this PR for the dtype changes](https://github.com/potocpav/npy-rs/pull/15).  You're somewhat on your own here, until I have time to revisit this proper. Sorry about that!
 
 ---
 
