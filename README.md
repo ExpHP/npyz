@@ -5,11 +5,11 @@ Fork of [the `npy` crate](https://github.com/potocpav/npy-rs/issues), under a ne
 Differences from the latest `npy`:
 
 * Able to read a lot more files by supporting more dtypes.  (e.g. big endian can be read, I forget what else)
-* n-dimensional arrays.
+* n-dimensional arrays.  (C-order or fortran order)
 * Outputting to any `io::Write + io::Seek`.  Reading from `io::Read`.
 * `io::Seek` is not required when shape is provided.
 
-**Note (2021/05/10):**  It has been two years since I made this fork and tried to submit some PRs to `npy` which are still *hanging* in limbo.  I'm beginning to wonder if I should pick this back up, clean it up, add proper documentation and publish it to crates.io.
+**Note (2021/05/10):**  It has been two years since I made this fork and tried to submit some PRs to `npy` which are still hanging in limbo.  I'm beginning to wonder if I should pick this back up, clean it up, add proper documentation and publish it to crates.io.
 
 Currently, this is not really in a state to be used by other people, but if you are desparate, you can do: 
 
