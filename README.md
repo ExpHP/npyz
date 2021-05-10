@@ -11,7 +11,7 @@ Differences from the latest `npy`:
 
 **Note (2021/05/10):**  It has been two years since I made this fork and tried to submit some PRs to `npy` which are still hanging in limbo.  I'm beginning to wonder if I should pick this back up, clean it up, add proper documentation and publish it to crates.io.
 
-Currently, this is not really in a state to be used by other people, but if you are desparate, you can do: 
+Currently, this is not really in a state to be used in production, but if you are desparate, you can do: 
 
 ```toml
 [dependencies.npy]
