@@ -1,6 +1,5 @@
-use std::io::{Result, ErrorKind, Error};
-
-use header::{Value, DType, parse_header, convert_value_to_shape};
+use std::io;
+use header::{Value, DType, read_header, convert_value_to_shape};
 use serialize::{Deserialize, TypeRead};
 
 /// The data structure representing a deserialized `npy` file.
@@ -36,15 +35,19 @@ impl Order {
 
 impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Deserialize a NPY file represented as bytes
-    pub fn from_bytes(bytes: &'a [u8]) -> ::std::io::Result<NpyData<'a, T>> {
-        let (dtype, data, shape, order) = Self::get_data_slice(bytes)?;
+    pub fn from_bytes(bytes: &'a [u8]) -> io::Result<NpyData<'a, T>> {
+        let mut remaining_bytes = bytes;
+        let (dtype, shape, order) = Self::read_and_interpret_header(&mut remaining_bytes)?;
         let reader = match T::reader(&dtype) {
             Ok(reader) => reader,
-            Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),
+            Err(e) => return Err(invalid_data(e)),
         };
         let item_size = dtype.num_bytes();
         let n_records = shape.iter().product();
         let strides = strides(order, &shape);
+
+        assert_eq!(item_size * n_records, remaining_bytes.len());
+        let data = remaining_bytes;
         Ok(NpyData { data, dtype, shape, strides, n_records, item_size, reader, order })
     }
 
@@ -111,12 +114,8 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
         v
     }
 
-    fn get_data_slice(bytes: &[u8]) -> Result<(DType, &[u8], Vec<usize>, Order)> {
-        let (data, header) = match parse_header(bytes) {
-            nom::IResult::Done(data, header) => (data, header),
-            nom::IResult::Incomplete(needed) => return Err(invalid_data(format!("{:?}", needed))),
-            nom::IResult::Error(err) => return Err(invalid_data(format!("{:?}", err))),
-        };
+    fn read_and_interpret_header(mut r: impl io::Read) -> io::Result<(DType, Vec<usize>, Order)> {
+        let header = read_header(&mut r)?;
 
         let dict = match header {
             Value::Map(ref dict) => dict,
@@ -124,42 +123,42 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
         };
 
         let expect_key = |key: &str| {
-            dict.get(key).ok_or_else(|| invalid_data(format!("dict is missing key '{}'", key)))
+            dict.get(key).ok_or_else(|| invalid_data(format_args!("dict is missing key '{}'", key)))
         };
 
         let order = match expect_key("fortran_order")? {
             &Value::Bool(b) => Order::from_fortran_order(b),
-            _ => return Err(invalid_data(format!("'fortran_order' value is not a bool"))),
+            _ => return Err(invalid_data(format_args!("'fortran_order' value is not a bool"))),
         };
 
         let shape = {
             convert_value_to_shape(expect_key("shape")?)?
-                .into_iter().map(|x: u64| x as usize).collect()
+                .into_iter().map(|x: u64| x as usize).collect::<Vec<_>>()
         };
 
         let descr: &Value = expect_key("descr")?;
         let dtype = DType::from_descr(descr.clone())?;
-        Ok((dtype, data, shape, order))
+        Ok((dtype, shape, order))
     }
 }
 
 fn strides(order: Order, shape: &[usize]) -> Vec<usize> {
     match order {
         Order::C => {
-            let mut strides = prefix_products(shape.iter().rev().cloned()).collect::<Vec<_>>();
+            let mut strides = prefix_products(shape.iter().rev().copied()).collect::<Vec<_>>();
             strides.reverse();
             strides
         },
-        Order::Fortran => prefix_products(shape.iter().cloned()).collect(),
+        Order::Fortran => prefix_products(shape.iter().copied()).collect(),
     }
 }
 
-fn prefix_products<I: Iterator<Item=usize>>(iter: I) -> impl Iterator<Item=usize> {
-    iter.scan(1, |acc, x| { let old = *acc; *acc *= x; Some(old) })
+fn prefix_products<I: IntoIterator<Item=usize>>(iter: I) -> impl Iterator<Item=usize> {
+    iter.into_iter().scan(1, |acc, x| { let old = *acc; *acc *= x; Some(old) })
 }
 
-fn invalid_data<S: Into<String>>(s: S) -> Error {
-    Error::new(ErrorKind::InvalidData, s.into())
+fn invalid_data<S: ToString>(s: S) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, s.to_string())
 }
 
 /// A result of NPY file deserialization.

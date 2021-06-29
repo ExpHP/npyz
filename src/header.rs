@@ -1,7 +1,8 @@
 
 use nom::IResult;
+use byteorder::{LE, ReadBytesExt};
 use std::collections::HashMap;
-use std::io::Result;
+use std::io;
 use type_str::TypeStr;
 
 /// Representation of a Numpy type
@@ -50,12 +51,12 @@ impl DType {
                                 if shape.len() == 0 {
                                     format!("('{}', '{}'), ", name, ty)
                                 } else {
-                                    let shape_str = shape.iter().fold(String::new(), |o,n| o + &format!("{},", n));
+                                    let shape_str = shape.iter().fold(String::new(), |o, n| o + &format!("{},", n));
                                     format!("('{}', '{}', ({})), ", name, ty, shape_str)
                                 },
                             ref record@Record(_) => {
-                                    format!("('{}', {}), ", name, record.descr())
-                                },
+                                format!("('{}', {}), ", name, record.descr())
+                            },
                         }
                     )
                     .fold("[".to_string(), |o, n| o + &n) + "]",
@@ -64,29 +65,19 @@ impl DType {
     }
 
     /// Create from description AST
-    pub fn from_descr(descr: Value) -> Result<Self> {
+    pub fn from_descr(descr: Value) -> io::Result<Self> {
         use DType::*;
         match descr {
             Value::String(ref string) => Ok(Self::new_scalar(convert_string_to_type_str(string)?)),
             Value::List(ref list) => Ok(Record(convert_list_to_record_fields(list)?)),
-            _ => invalid_data("must be string or list")
+            _ => Err(invalid_data("must be string or list")),
         }
     }
 
     // not part of stable API, but needed by the serialize_array test
     #[doc(hidden)]
-    pub fn parse(source: &str) -> Result<Self> {
-        let descr = match parser::item(source.as_bytes()) {
-            IResult::Done(_, header) => {
-                Ok(header)
-            },
-            IResult::Incomplete(needed) => {
-                invalid_data(&format!("could not parse Python expression: {:?}", needed))
-            },
-            IResult::Error(err) => {
-                invalid_data(&format!("could not parse Python expression: {:?}", err))
-            },
-        }?;
+    pub fn parse(source: &str) -> io::Result<Self> {
+        let descr = parse_header_text_to_io_result(source.as_bytes())?;
         Self::from_descr(descr)
     }
 
@@ -116,16 +107,17 @@ impl DType {
     }
 }
 
-fn convert_list_to_record_fields(values: &[Value]) -> Result<Vec<Field>> {
-    first_error(values.iter()
+fn convert_list_to_record_fields(values: &[Value]) -> io::Result<Vec<Field>> {
+    values.iter()
         .map(|value| match *value {
             Value::List(ref tuple) => convert_tuple_to_record_field(tuple),
-            _ => invalid_data("list must contain list or tuple")
-        }))
+            _ => Err(invalid_data("list must contain list or tuple"))
+        })
+        .collect()
 }
 
-fn convert_tuple_to_record_field(tuple: &[Value]) -> Result<Field> {
-    use self::Value::{String,List};
+fn convert_tuple_to_record_field(tuple: &[Value]) -> io::Result<Field> {
+    use self::Value::{String, List};
 
     match tuple.len() {
         2 | 3 => match (&tuple[0], &tuple[1], tuple.get(2)) {
@@ -144,75 +136,64 @@ fn convert_tuple_to_record_field(tuple: &[Value]) -> Result<Field> {
                     dtype: DType::Record(convert_list_to_record_fields(list)?)
                 }),
             (&String(_), &List(_), Some(_)) =>
-                invalid_data("nested arrays of Record types are not supported."),
+                Err(invalid_data("nested arrays of Record types are not supported.")),
             _ =>
-                invalid_data("list entry must contain a string for id and a valid dtype")
+                Err(invalid_data("list entry must contain a string for id and a valid dtype")),
         },
-        _ => invalid_data("list entry must contain 2 or 3 items")
+        _ => Err(invalid_data("list entry must contain 2 or 3 items")),
     }
 }
 
 // FIXME: Remove; no reason to forbid size 0
-fn convert_value_to_field_shape(field: &Value) -> Result<Vec<u64>> {
+fn convert_value_to_field_shape(field: &Value) -> io::Result<Vec<u64>> {
     if let Value::List(ref lengths) = *field {
-        first_error(lengths.iter().map(convert_value_to_positive_integer))
+        lengths.iter().map(convert_value_to_positive_integer).collect()
     } else {
-        invalid_data("shape must be list or tuple")
+        Err(invalid_data("shape must be list or tuple"))
     }
 }
 
-fn convert_value_to_positive_integer(number: &Value) -> Result<u64> {
+fn convert_value_to_positive_integer(number: &Value) -> io::Result<u64> {
     if let Value::Integer(number) = *number {
         if number > 0 {
             Ok(number as u64)
         } else {
-            invalid_data("number must be positive")
+            Err(invalid_data("number must be positive"))
         }
     } else {
-        invalid_data("must be a number")
+        Err(invalid_data("must be a number"))
     }
 }
 
-pub(crate) fn convert_value_to_shape(field: &Value) -> Result<Vec<u64>> {
+pub(crate) fn convert_value_to_shape(field: &Value) -> io::Result<Vec<u64>> {
     if let Value::List(ref lengths) = *field {
-        first_error(lengths.iter().map(convert_value_to_shape_integer))
+        lengths.iter().map(convert_value_to_shape_integer).collect()
     } else {
-        invalid_data("shape must be list or tuple")
+        Err(invalid_data("shape must be list or tuple"))
     }
 }
 
-pub fn convert_value_to_shape_integer(number: &Value) -> Result<u64> {
+pub fn convert_value_to_shape_integer(number: &Value) -> io::Result<u64> {
     if let Value::Integer(number) = *number {
         if number >= 0 {
             Ok(number as u64)
         } else {
-            invalid_data("shape integer cannot be negative")
+            Err(invalid_data("shape integer cannot be negative"))
         }
     } else {
-        invalid_data("shape elements must be number")
+        Err(invalid_data("shape elements must be number"))
     }
 }
 
-fn convert_string_to_type_str(string: &str) -> Result<TypeStr> {
+fn convert_string_to_type_str(string: &str) -> io::Result<TypeStr> {
     match string.parse() {
         Ok(ty) => Ok(ty),
-        Err(e) => invalid_data(&format!("invalid type string: {}", e)),
+        Err(e) => Err(invalid_data(format_args!("invalid type string: {}", e))),
     }
 }
 
-fn first_error<I, T>(results: I) -> Result<Vec<T>>
-    where I: IntoIterator<Item=Result<T>>
-{
-    let mut vector = vec![];
-    for result in results {
-        vector.push(result?);
-    }
-    Ok(vector)
-}
-
-fn invalid_data<T>(message: &str) -> Result<T> {
-    use std::io::{Error, ErrorKind};
-    Err(Error::new(ErrorKind::InvalidData, message.to_string()))
+fn invalid_data(message: impl ToString) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message.to_string())
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -221,27 +202,99 @@ pub enum Value {
     Integer(i64),
     Bool(bool),
     List(Vec<Value>),
-    Map(HashMap<String,Value>),
+    Map(HashMap<String, Value>),
 }
 
-pub fn parse_header(bs: &[u8]) -> IResult<&[u8], Value> {
-    parser::header(bs)
+pub(crate) fn read_header(r: &mut dyn io::Read) -> io::Result<Value> {
+    let PreHeader { version_props, header_size } = read_pre_header(r)?;
+
+    // FIXME: properly account for encoding
+    let _ = version_props.encoding;
+    let mut header_text = vec![0; header_size];
+    r.read_exact(&mut header_text)?;
+
+    parse_header_text_to_io_result(&header_text)
+}
+
+fn parse_header_text_to_io_result(bytes: &[u8]) -> io::Result<Value> {
+    match parser::value(bytes) {
+        IResult::Done(remainder, header) => {
+            if !remainder.iter().all(|b| b" \t\n\r\0".contains(b)) {
+                return Err(invalid_data(format_args!("unexpected trailing data in header: {:?}", remainder)));
+            }
+            Ok(header)
+        },
+        IResult::Incomplete(needed) => {
+            Err(invalid_data(format_args!("could not parse Python expression: {:?}", needed)))
+        },
+        IResult::Error(err) => {
+            Err(invalid_data(format_args!("could not parse Python expression: {:?}", err)))
+        },
+    }
+}
+
+struct PreHeader {
+    version_props: VersionProps,
+    header_size: usize,
+}
+
+fn read_pre_header(r: &mut dyn io::Read) -> io::Result<PreHeader> {
+    let version = read_magic_and_version(r)?;
+    let version_props = get_version_props(version)?;
+
+    let header_size = match version_props.header_size_type {
+        HeaderSizeType::U32 => r.read_u32::<LE>()? as usize,
+        HeaderSizeType::U16 => r.read_u16::<LE>()? as usize,
+    };
+
+    Ok(PreHeader { version_props, header_size })
+}
+
+fn read_magic_and_version(r: &mut dyn io::Read) -> io::Result<(u8, u8)> {
+    let magic_err = || invalid_data("magic not found for NPY file");
+
+    let mut buf = [0u8; 8];
+    r.read_exact(&mut buf).map_err(|e| match e.kind() {
+        io::ErrorKind::UnexpectedEof => magic_err(),
+        _ => e,
+    })?;
+
+    if &buf[..6] != b"\x93NUMPY" {
+        return Err(magic_err());
+    }
+    Ok((buf[6], buf[7]))
+}
+
+enum HeaderSizeType { U16, U32 }
+enum HeaderEncoding {
+    // Note: there is a suspicious phrase in the documentation:
+    //
+    //    "replaces the ASCII string (which in practice was latin1)"
+    //
+    // ...which suggests that this might actually be ANSI and not ASCII?
+    Ascii,
+    Utf8,
+}
+struct VersionProps {
+    header_size_type: HeaderSizeType,
+    encoding: HeaderEncoding,
+}
+fn get_version_props(version: (u8, u8)) -> io::Result<VersionProps> {
+    use self::HeaderSizeType::*;
+    use self::HeaderEncoding::*;
+    match version {
+        (1, 0) => Ok(VersionProps { header_size_type: U16, encoding: Ascii }),
+        (2, 0) => Ok(VersionProps { header_size_type: U32, encoding: Ascii }),
+        (3, 0) => Ok(VersionProps { header_size_type: U32, encoding: Utf8 }),
+        _ => Err(invalid_data(format_args!("unsupported version: ({}, {})", version.0, version.1))),
+    }
 }
 
 mod parser {
     use super::Value;
     use nom::*;
 
-    named!(pub header<Value>,
-        do_parse!(
-            tag!(&[0x93u8]) >>
-            tag!(b"NUMPY") >>
-            tag!(&[0x01u8, 0x00]) >>
-            hdr: length_value!(le_u16, item) >>
-            (hdr)
-        )
-    );
-
+    named!(pub value<Value>, alt!(integer | boolean | string | list | map));
 
     named!(pub integer<Value>,
         map!(
@@ -283,16 +336,14 @@ mod parser {
         )
     );
 
-    named!(pub item<Value>, alt!(integer | boolean | string | list | map));
-
     named!(pub list<Value>,
         map!(
             ws!(alt!(
                 delimited!(tag!("["),
-                    terminated!(separated_list!(tag!(","), item), alt!(tag!(",") | tag!(""))),
+                    terminated!(separated_list!(tag!(","), value), alt!(tag!(",") | tag!(""))),
                     tag!("]")) |
                 delimited!(tag!("("),
-                    terminated!(separated_list!(tag!(","), item), alt!(tag!(",") | tag!(""))),
+                    terminated!(separated_list!(tag!(","), value), alt!(tag!(",") | tag!(""))),
                     tag!(")"))
             )),
             Value::List
@@ -304,7 +355,7 @@ mod parser {
             ws!(
                 delimited!(tag!("{"),
                     terminated!(separated_list!(tag!(","),
-                        separated_pair!(map_opt!(string, |it| match it { Value::String(s) => Some(s), _ => None }), tag!(":"), item)
+                        separated_pair!(map_opt!(string, |it| match it { Value::String(s) => Some(s), _ => None }), tag!(":"), value)
                     ), alt!(tag!(",") | tag!(""))),
                     tag!("}"))
             ),
@@ -485,7 +536,7 @@ mod tests {
     }
 
     fn parse(source: &str) -> Value {
-        parser::item(source.as_bytes())
+        parser::value(source.as_bytes())
             .to_result()
             .expect("could not parse Python expression")
     }
