@@ -7,8 +7,7 @@ use serialize::{Deserialize, TypeRead};
 ///
 /// The data is internally stored
 /// as a byte array, and deserialized only on-demand to minimize unnecessary allocations.
-/// The whole contents of the file can be deserialized by the [`to_vec`](#method.to_vec)
-/// member function.
+/// The whole contents of the file can be deserialized by the [`NpyData::to_vec`] method.
 pub struct NpyData<'a, T: Deserialize> {
     data: &'a [u8],
     dtype: DType,
@@ -102,8 +101,8 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Construct a vector with the deserialized contents of the whole file.
     ///
     /// The output is a flat vector with the elements in the same order that they are in the file.
-    /// To interpret the results for multidimensional data, see [`NpyData::shape`],
-    /// and [`NpyData::fortran_order`], and [`NpyData::strides`].
+    /// To help interpret the results for multidimensional data, see [`NpyData::shape`]
+    /// and [`NpyData::strides`].
     pub fn to_vec(&self) -> Vec<T> {
         let mut v = Vec::with_capacity(self.n_records);
         for i in 0..self.n_records {
