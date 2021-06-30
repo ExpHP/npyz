@@ -294,10 +294,17 @@ fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u
     let actual_props = header::get_version_props(version).expect("generated internally so must be valid");
 
     // Now pad using the final choice of version.
+    //
+    // From the numpy documentation:
+    //
+    //    It is terminated by a newline (\n) and padded with spaces (\x20) to make the total of
+    //    len(magic string) + 2 + len(length) + HEADER_LEN be evenly divisible by 64 for alignment purposes.
+    const ALIGN_TO: usize = 64;
+
     let bytes_before_text = actual_props.bytes_before_text();
-    header_utf8.extend(&::std::iter::repeat(b' ').take(15 - ((header_utf8.len() + bytes_before_text) % 16)).collect::<Vec<_>>());
+    header_utf8.extend(&::std::iter::repeat(b' ').take(ALIGN_TO - 1 - ((header_utf8.len() + bytes_before_text) % ALIGN_TO)).collect::<Vec<_>>());
     header_utf8.push(b'\n');
-    assert_eq!((header_utf8.len() + bytes_before_text) % 16, 0);
+    assert_eq!((header_utf8.len() + bytes_before_text) % ALIGN_TO, 0);
 
     (header_utf8, version, actual_props)
 }
