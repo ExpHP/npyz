@@ -265,8 +265,11 @@ fn read_magic_and_version(r: &mut dyn io::Read) -> io::Result<(u8, u8)> {
     Ok((buf[6], buf[7]))
 }
 
-enum HeaderSizeType { U16, U32 }
-enum HeaderEncoding {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum HeaderSizeType { U16, U32 }
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum HeaderEncoding {
     // Note: there is a suspicious phrase in the documentation:
     //
     //    "replaces the ASCII string (which in practice was latin1)"
@@ -275,11 +278,21 @@ enum HeaderEncoding {
     Ascii,
     Utf8,
 }
-struct VersionProps {
-    header_size_type: HeaderSizeType,
-    encoding: HeaderEncoding,
+#[derive(Debug, Clone)]
+pub(crate) struct VersionProps {
+    pub(crate) header_size_type: HeaderSizeType,
+    pub(crate) encoding: HeaderEncoding,
 }
-fn get_version_props(version: (u8, u8)) -> io::Result<VersionProps> {
+impl VersionProps {
+    pub fn bytes_before_text(&self) -> usize {
+        match self.header_size_type {
+            HeaderSizeType::U16 => 10,
+            HeaderSizeType::U32 => 12,
+        }
+    }
+}
+
+pub(crate) fn get_version_props(version: (u8, u8)) -> io::Result<VersionProps> {
     use self::HeaderSizeType::*;
     use self::HeaderEncoding::*;
     match version {
@@ -287,6 +300,16 @@ fn get_version_props(version: (u8, u8)) -> io::Result<VersionProps> {
         (2, 0) => Ok(VersionProps { header_size_type: U32, encoding: Ascii }),
         (3, 0) => Ok(VersionProps { header_size_type: U32, encoding: Utf8 }),
         _ => Err(invalid_data(format_args!("unsupported version: ({}, {})", version.0, version.1))),
+    }
+}
+
+pub(crate) fn get_minimal_version(required_props: VersionProps) -> (u8, u8) {
+    if required_props.encoding == HeaderEncoding::Utf8 {
+        (3, 0)
+    } else if required_props.header_size_type == HeaderSizeType::U32 {
+        (2, 0)
+    } else {
+        (1, 0)
     }
 }
 

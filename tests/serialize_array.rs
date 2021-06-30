@@ -4,7 +4,7 @@ use npy::{Deserialize, Serialize, AutoSerialize, DType, TypeStr, Field};
 use npy::{TypeRead, TypeWrite};
 
 // These tests ideally would be in npy::serialize::tests, but they require "derive"
-// because arrays can only exist as record fields.
+// because fixed-size array types can only exist as record fields.
 
 fn reader_output<T: Deserialize>(dtype: &DType, bytes: &[u8]) -> T {
     T::reader(dtype).unwrap_or_else(|e| panic!("{}", e)).read_one(bytes).0

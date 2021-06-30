@@ -1,3 +1,9 @@
+// * The definition of a "mixed script confusable" can change over time, so when testing unicode
+//   identifiers there is no safe identifier we can use that is guaranteed never to generate the warning.
+// * It has to be allowed at global level for the crate, because that's the level at
+//   which the warning is generated.
+#![allow(mixed_script_confusables)]
+
 extern crate npy;
 extern crate byteorder;
 
@@ -30,6 +36,13 @@ struct Array {
     v_mat_u64: [[u64; 3]; 5],
     vec: Vector5,
     nested: Nested,
+}
+
+#[derive(Serialize, Deserialize, AutoSerialize)]
+#[derive(Debug, PartialEq, Clone)]
+struct Version3 {
+    v1: f32,
+    v2: f32,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -127,6 +140,8 @@ fn roundtrip() {
     let mut buf = vec![];
     std::fs::File::open("tests/roundtrip.npy").unwrap()
         .read_to_end(&mut buf).unwrap();
+
+    assert_version(&buf, (1, 0));
 
     let arrays2 = npy::NpyData::from_bytes(&buf).unwrap().to_vec();
     assert_eq!(arrays, arrays2);
@@ -344,7 +359,7 @@ fn roundtrip_bytes_byteorder() {
         v_le: Vec<u8>,
         v_be: Vec<u8>,
         v_na: Vec<u8>,
-    };
+    }
 
     let dtype = DType::Record(vec![
         plain_field("s_le", "<S4"),
@@ -412,4 +427,49 @@ fn roundtrip_scalar() {
     let data = npy::NpyData::<Row>::from_bytes(&buffer).unwrap();
     assert_eq!(data.to_vec(), vec![row]);
     assert_eq!(data.dtype(), dtype);
+}
+
+// try a unicode field name, which forces version 3
+#[test]
+fn roundtrip_version3() {
+    #[derive(npy::Serialize, npy::Deserialize, npy::AutoSerialize)]
+    #[derive(Debug, PartialEq, Clone)]
+    struct Row {
+        num: i32,
+        αβ: i32,
+    }
+
+    let dtype = DType::Record(vec![
+        plain_field("num", "<i4"),
+        plain_field("αβ", "<i4"),
+    ]);
+
+    let row = Row { num: 1, αβ: 2 };
+    let expected_data_bytes = b"\x01\x00\x00\x00\x02\x00\x00\x00".to_vec();
+
+    let mut cursor = Cursor::new(vec![]);
+    {
+        let mut writer = {
+            npy::Builder::new()
+                .dtype(dtype.clone())
+                .begin_nd(&mut cursor, &[1])
+                .unwrap()
+        };
+        writer.push(&row).unwrap();
+        writer.finish().unwrap();
+    }
+
+    let buffer = cursor.into_inner();
+    assert!(buffer.ends_with(&expected_data_bytes));
+
+    assert_version(&buffer, (3, 0));
+
+    let data = npy::NpyData::<Row>::from_bytes(&buffer).unwrap();
+    assert_eq!(data.to_vec(), vec![row]);
+    assert_eq!(data.dtype(), dtype);
+}
+
+#[track_caller]
+fn assert_version(npy_bytes: &[u8], expected: (u8, u8)) {
+    assert_eq!(&npy_bytes[6..8], &[expected.0, expected.1]);
 }

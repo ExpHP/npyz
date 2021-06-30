@@ -6,13 +6,12 @@ use std::marker::PhantomData;
 use byteorder::{WriteBytesExt, LittleEndian};
 
 use serialize::{AutoSerialize, Serialize, TypeWrite};
-use header::DType;
+use header::{self, DType, VersionProps, HeaderSizeType, HeaderEncoding};
 use npy_data::Order;
 
-// long enough to accomodate a large integer followed by ",), }"
-const FILLER: &'static [u8] = &[42; 19];
-
-const BYTES_BEFORE_DICT: usize = 10;
+// Long enough to accomodate a large integer followed by ",), }".
+// Used when no shape is provided.
+const FILLER_FOR_UNKNOWN_SIZE: &'static [u8] = &[b'*'; 19];
 
 /// Builder for an output `.NPY` file.
 pub struct Builder<Row> {
@@ -79,11 +78,12 @@ pub struct NpyWriter<Row: Serialize, W: Write> {
     num_items: usize,
     fw: MaybeSeek<W>,
     writer: <Row as Serialize>::Writer,
+    version_props: VersionProps,
 }
 
 enum ShapeInfo {
     // No shape was written; we'll return to write a 1D shape on `finish()`.
-    Automatic { offset_in_dict_string: u64 },
+    Automatic { offset_in_header_text: u64 },
     // The complete shape has already been written.
     // Raise an error on `finish()` if the wrong number of elements is given.
     Known { expected_num_items: usize },
@@ -149,36 +149,38 @@ impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
         if let DType::Plain { ref shape, .. } = dtype {
             assert!(shape.len() == 0, "plain non-scalar dtypes not supported");
         }
+        let (dict_text, shape_info) = create_dict(dtype, order, shape);
+        let (header_text, version, version_props) = determine_required_version_and_pad_header(dict_text);
+
         fw.write_all(&[0x93u8])?;
         fw.write_all(b"NUMPY")?;
-        fw.write_all(&[0x01u8, 0x00])?;
+        fw.write_all(&[version.0, version.1])?;
 
-        let (dict_bytes, shape_info) = create_dict(dtype, order, shape);
+        assert_eq!((header_text.len() + version_props.bytes_before_text()) % 16, 0);
+        match version_props.header_size_type {
+            HeaderSizeType::U16 => {
+                assert!(header_text.len() <= ::std::u16::MAX as usize);
+                fw.write_u16::<LittleEndian>(header_text.len() as u16)?;
+            },
+            HeaderSizeType::U32 => {
+                assert!(header_text.len() <= ::std::u32::MAX as usize);
+                fw.write_u32::<LittleEndian>(header_text.len() as u32)?;
+            },
+        }
+        fw.write_all(&header_text)?;
 
         let writer = match Row::writer(dtype) {
             Ok(writer) => writer,
             Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e.to_string())),
         };
 
-        let mut padding: Vec<u8> = vec![];
-        padding.extend(&::std::iter::repeat(b' ').take(15 - ((dict_bytes.len() + BYTES_BEFORE_DICT) % 16)).collect::<Vec<_>>());
-        padding.extend(&[b'\n']);
-
-        let len = dict_bytes.len() + padding.len();
-        assert! (len <= ::std::u16::MAX as usize);
-        assert_eq!((len + BYTES_BEFORE_DICT) % 16, 0);
-
-        fw.write_u16::<LittleEndian>(len as u16)?;
-        fw.write_all(&dict_bytes)?;
-        // Padding to 16 bytes
-        fw.write_all(&padding)?;
-
         Ok(NpyWriter {
-            start_pos: start_pos,
-            shape_info: shape_info,
+            start_pos,
+            shape_info,
             num_items: 0,
-            fw: fw,
-            writer: writer,
+            fw,
+            writer,
+            version_props,
         })
     }
 
@@ -197,16 +199,16 @@ impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
                     }));
                 }
             },
-            ShapeInfo::Automatic { offset_in_dict_string } => {
+            ShapeInfo::Automatic { offset_in_header_text } => {
                 // Write the size to the header
-                let shape_pos = self.start_pos.unwrap() + BYTES_BEFORE_DICT as u64 + offset_in_dict_string;
+                let shape_pos = self.start_pos.unwrap() + self.version_props.bytes_before_text() as u64 + offset_in_header_text;
                 let end_pos = self.fw.seek(SeekFrom::Current(0))?;
 
                 self.fw.seek(SeekFrom::Start(shape_pos))?;
                 let length = format!("{}", self.num_items);
                 self.fw.write_all(length.as_bytes())?;
                 self.fw.write_all(&b",), }"[..])?;
-                self.fw.write_all(&::std::iter::repeat(b' ').take(FILLER.len() - length.len()).collect::<Vec<_>>())?;
+                self.fw.write_all(&::std::iter::repeat(b' ').take(FILLER_FOR_UNKNOWN_SIZE.len() - length.len()).collect::<Vec<_>>())?;
                 self.fw.seek(SeekFrom::Start(end_pos))?;
             },
         }
@@ -235,21 +237,22 @@ fn create_dict(dtype: &DType, order: Order, shape: Option<&[usize]>) -> (Vec<u8>
         Order::Fortran => header.extend(&b"True"[..]),
     }
     header.extend(&b", 'shape': ("[..]);
-    match shape {
+    let shape_info = match shape {
         Some(shape) => {
             for x in shape {
                 write!(header, "{}, ", x).unwrap();
             }
             header.extend(&b"), }"[..]);
-            (header, ShapeInfo::Known { expected_num_items: shape.iter().product() })
+            ShapeInfo::Known { expected_num_items: shape.iter().product() }
         },
         None => {
             let shape_offset = header.len() as u64;
-            header.extend(FILLER);
+            header.extend(FILLER_FOR_UNKNOWN_SIZE);
             header.extend(&b",), }"[..]);
-            (header, ShapeInfo::Automatic { offset_in_dict_string: shape_offset })
+            ShapeInfo::Automatic { offset_in_header_text: shape_offset }
         },
-    }
+    };
+    (header, shape_info)
 }
 
 impl<Row: Serialize, W: Write> Drop for NpyWriter<Row, W> {
@@ -258,6 +261,46 @@ impl<Row: Serialize, W: Write> Drop for NpyWriter<Row, W> {
     }
 }
 
+/// This does two things:
+///
+/// - Get the minimum version required to write a file, based on its header text.
+/// - Pad the end of the header text so that the data begins aligned to 16 bytes.
+///
+/// Why must it do these together?  It turns out there's a tricky corner-case interaction for
+/// header lengths close to but *just under* 65536, where the padding can push the length over
+/// the 65536 threshold, causing version 2 to be used and therefore use 2 additional bytes.
+/// Those additional bytes in turn could throw off the padding.
+fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u8>, (u8, u8), VersionProps) {
+    use self::HeaderSizeType::*;
+    use self::HeaderEncoding::*;
+
+    // I'm almost 100% certain that, when regarding the initial length of dict_utf8,
+    // there is a precise value at which the optimal version suddenly switches from 1 to 2.
+    // I think it is either 65524, 65525, or 65526; just not sure which.  (the newline makes it weird)
+    //
+    // Unfortunately testing this edge case is not easy, so to be safe we'll give ourselves more wiggle
+    // room than could possibly ever be affected by padding and/or pre-header bytes.   - ExpHP
+    const SAFE_U16_CUTOFF: usize = 0x1_0000_0000 - 0x400;
+
+    let required_props = VersionProps {
+        header_size_type: if header_utf8.len() >= SAFE_U16_CUTOFF { U32 } else { U16 },
+        encoding: if header_utf8.iter().any(|b| !b.is_ascii()) { Utf8 } else { Ascii },
+    };
+
+    let version = header::get_minimal_version(required_props);
+
+    // Actual props may differ from required props.  (e.g. if it has unicode, then it needs
+    // to use version 3 which will cause the size to be upgraded to U32 even if not needed)
+    let actual_props = header::get_version_props(version).expect("generated internally so must be valid");
+
+    // Now pad using the final choice of version.
+    let bytes_before_text = actual_props.bytes_before_text();
+    header_utf8.extend(&::std::iter::repeat(b' ').take(15 - ((header_utf8.len() + bytes_before_text) % 16)).collect::<Vec<_>>());
+    header_utf8.push(b'\n');
+    assert_eq!((header_utf8.len() + bytes_before_text) % 16, 0);
+
+    (header_utf8, version, actual_props)
+}
 
 // TODO: improve the interface to avoid unnecessary clones
 /// Serialize an iterator over a struct to a NPY file
