@@ -3,7 +3,7 @@
 extern crate npy;
 extern crate test;
 
-use npy::{Serialize, Deserialize, AutoSerialize, NpyWriter, OutFile};
+use npy::{AutoSerialize, NpyWriter};
 use test::Bencher;
 use test::black_box as bb;
 use std::io::Cursor;
