@@ -13,21 +13,21 @@ use num_complex::Complex;
 /// For an example of how to implement this, please see the
 /// [roundtrip test](https://github.com/potocpav/npy-rs/tree/master/tests/roundtrip.rs).
 pub trait Deserialize: Sized {
-    /// Think of this as like a `Fn(&[u8]) -> (Self, &[u8])`.
+    /// Think of this as like a `for<R: io::Read> Fn(R) -> io::Result<Self>`.
     ///
     /// There is no closure-like sugar for these; you must manually define a type that
     /// implements [`TypeRead`].
-    type Reader: TypeRead<Value=Self>;
+    type TypeReader: TypeRead<Value=Self>;
 
-    /// Get a function that deserializes a single data field at a time
+    /// Get a function that deserializes a single data field at a time.
     ///
-    /// The function receives a byte buffer containing at least
-    /// `dtype.num_bytes()` bytes.
+    /// The purpose of the `dtype` arugment is to allow e.g. specifying a length for string types,
+    /// or the endianness for integers.
     ///
     /// # Errors
     ///
     /// Returns `Err` if the `DType` is not compatible with `Self`.
-    fn reader(dtype: &DType) -> Result<Self::Reader, DTypeError>;
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError>;
 }
 
 /// Trait that permits writing a type to an `.npy` file.
@@ -39,14 +39,18 @@ pub trait Serialize {
     ///
     /// There is no closure-like sugar for these; you must manually define a type that
     /// implements [`TypeWrite`].
-    type Writer: TypeWrite<Value=Self>;
+    type TypeWriter: TypeWrite<Value=Self>;
 
     /// Get a function that serializes a single data field at a time.
+    ///
+    /// The purpose of the `dtype` arugment is to allow e.g. specifying a length for string types,
+    /// or the endianness for integers.  The derivable [`AutoSerialize`] trait is able to supply
+    /// many types with a reasonable default.
     ///
     /// # Errors
     ///
     /// Returns `Err` if the `DType` is not compatible with `Self`.
-    fn writer(dtype: &DType) -> Result<Self::Writer, DTypeError>;
+    fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError>;
 }
 
 /// Subtrait of [`Serialize`] for types which have a reasonable default [`DType`].
@@ -54,7 +58,7 @@ pub trait Serialize {
 /// This opens up some simpler APIs for serialization. (e.g. [`::to_file`])
 ///
 /// For an example of how to implement this, please see the
-/// [roundtrip test](https://github.com/potocpav/npy-rs/tree/master/tests/roundtrip.rs).
+/// [roundtrip test](https://github.com/ExpHP/nippy/tree/master/tests/roundtrip.rs).
 pub trait AutoSerialize: Serialize {
     /// A suggested format for serialization.
     ///
@@ -63,28 +67,32 @@ pub trait AutoSerialize: Serialize {
     fn default_dtype() -> DType;
 }
 
-/// Like a `Fn(&[u8]) -> (T, &[u8])`.
-///
-/// It is a separate trait from `Fn` for consistency with [`TypeWrite`], and so that
-/// default methods can potentially be added in the future that may be overriden
-/// for efficiency.
+/// Like some sort of `for<R: io::Read> Fn(R) -> io::Result<T>`.
 ///
 /// For an example of how to implement this, please see the
-/// [roundtrip test](https://github.com/potocpav/npy-rs/tree/master/tests/roundtrip.rs).
+/// [roundtrip test](https://github.com/ExpHP/nippy/tree/master/tests/roundtrip.rs).
+///
+/// # Trait objects
+///
+/// `dyn TypeRead` has no object-safe methods.
+/// If you need dynamic polymorphism, use `dyn` [`TypeReadDyn`] instead.
 pub trait TypeRead {
     /// Type returned by the function.
     type Value;
 
     /// The function.
-    ///
-    /// Receives *at least* enough bytes to read `Self::Value`, and returns the remainder.
-    fn read_one<'a>(&self, bytes: &'a [u8]) -> (Self::Value, &'a [u8]);
+    fn read_one<R: io::Read>(&self, bytes: R) -> io::Result<Self::Value> where Self: Sized;
 }
 
 /// Like some sort of `for<W: io::Write> Fn(W, &T) -> io::Result<()>`.
 ///
 /// For an example of how to implement this, please see the
-/// [roundtrip test](https://github.com/potocpav/npy-rs/tree/master/tests/roundtrip.rs).
+/// [roundtrip test](https://github.com/ExpHP/nippy/tree/master/tests/roundtrip.rs).
+///
+/// # Trait objects
+///
+/// `dyn TypeWrite` has no object-safe methods.
+/// If you need dynamic polymorphism, use `dyn` [`TypeWriteDyn`] instead.
 pub trait TypeWrite {
     /// Type accepted by the function.
     type Value: ?Sized;
@@ -92,6 +100,22 @@ pub trait TypeWrite {
     /// The function.
     fn write_one<W: io::Write>(&self, writer: W, value: &Self::Value) -> io::Result<()>
     where Self: Sized;
+}
+
+/// The proper trait to use for trait objects of [`TypeRead`].
+///
+/// `Box<dyn TypeRead>` is useless because `dyn TypeRead` has no object-safe methods.
+/// The workaround is to use `Box<dyn TypeReadDyn>` instead, which itself implements `TypeRead`.
+pub trait TypeReadDyn: TypeRead {
+    #[doc(hidden)]
+    fn read_one_dyn(&self, writer: &mut dyn io::Read) -> io::Result<Self::Value>;
+}
+
+impl<T: TypeRead> TypeReadDyn for T {
+    #[inline(always)]
+    fn read_one_dyn(&self, reader: &mut dyn io::Read) -> io::Result<Self::Value> {
+        self.read_one(reader)
+    }
 }
 
 /// The proper trait to use for trait objects of [`TypeWrite`].
@@ -218,12 +242,12 @@ impl fmt::Display for DTypeError {
     }
 }
 
-impl<T> TypeRead for Box<dyn TypeRead<Value=T>> {
+impl<T> TypeRead for Box<dyn TypeReadDyn<Value=T>> {
     type Value = T;
 
     #[inline(always)]
-    fn read_one<'a>(&self, bytes: &'a [u8]) -> (T, &'a [u8]) {
-        (**self).read_one(bytes)
+    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<T> where Self: Sized {
+        (**self).read_one_dyn(&mut reader)
     }
 }
 
@@ -242,9 +266,11 @@ impl<T: ?Sized> TypeWrite for Box<dyn TypeWriteDyn<Value=T>> {
     }
 }
 
-// extension trait for things that can be read directly from an array of bytes
+/// Implementation detail of reading and writing for primitive types.
 pub trait PrimitiveReadWrite: Sized {
-    fn primitive_read_one(bytes: &[u8], swap_bytes: bool) -> (Self, &[u8]);
+    #[doc(hidden)]
+    fn primitive_read_one<R: io::Read>(reader: R, swap_bytes: bool) -> io::Result<Self>;
+    #[doc(hidden)]
     fn primitive_write_one<W: io::Write>(&self, writer: W, swap_bytes: bool) -> io::Result<()>;
 }
 
@@ -252,19 +278,17 @@ macro_rules! derive_int_primitive_read_write {
     ($($int:ident)*) => {$(
         impl PrimitiveReadWrite for $int {
             #[inline]
-            fn primitive_read_one(bytes: &[u8], swap_bytes: bool) -> ($int, &[u8]) {
+            fn primitive_read_one<R: io::Read>(mut reader: R, swap_bytes: bool) -> io::Result<$int> {
                 use std::mem::size_of;
 
                 let mut buf = [0u8; size_of::<$int>()];
-                let (src, rest) = bytes.split_at(size_of::<$int>());
-                buf.copy_from_slice(src);
+                reader.read_exact(&mut buf)?;
 
                 let out = $int::from_ne_bytes(buf);
-                let swapped = match swap_bytes {
-                    true => out.swap_bytes(),
-                    false => out,
-                };
-                (swapped, rest)
+                match swap_bytes {
+                    true => Ok(out.swap_bytes()),
+                    false => Ok(out),
+                }
             }
 
             #[inline]
@@ -286,9 +310,9 @@ macro_rules! derive_float_primitive_read_write {
     ($float:ident as $int:ident) => {
         impl PrimitiveReadWrite for $float {
             #[inline]
-            fn primitive_read_one(bytes: &[u8], swap_bytes: bool) -> ($float, &[u8]) {
-                let (bits, rest) = <$int>::primitive_read_one(bytes, swap_bytes);
-                (<$float>::from_bits(bits), rest)
+            fn primitive_read_one<R: io::Read>(reader: R, swap_bytes: bool) -> io::Result<$float> {
+                let bits = <$int>::primitive_read_one(reader, swap_bytes)?;
+                Ok(<$float>::from_bits(bits))
             }
 
             #[inline]
@@ -340,8 +364,8 @@ impl<T: PrimitiveReadWrite> TypeRead for PrimitiveReader<T> {
     type Value = T;
 
     #[inline(always)]
-    fn read_one<'a>(&self, bytes: &'a [u8]) -> (Self::Value, &'a [u8]) {
-        T::primitive_read_one(bytes, self.swap_bytes)
+    fn read_one<R: io::Read>(&self, reader: R) -> io::Result<Self::Value> {
+        T::primitive_read_one(reader, self.swap_bytes)
     }
 }
 
@@ -364,10 +388,10 @@ impl<F: PrimitiveReadWrite> TypeRead for ComplexReader<F> {
     type Value = Complex<F>;
 
     #[inline]
-    fn read_one<'a>(&self, bytes: &'a [u8]) -> (Complex<F>, &'a [u8]) {
-        let (re, bytes) = self.float.read_one(bytes);
-        let (im, bytes) = self.float.read_one(bytes);
-        (Complex { re, im }, bytes)
+    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Self::Value> {
+        let re = self.float.read_one(&mut reader)?;
+        let im = self.float.read_one(&mut reader)?;
+        Ok(Complex { re, im })
     }
 }
 
@@ -399,9 +423,9 @@ macro_rules! impl_integer_serializable {
         ints: [ $([$size:tt $int:ty])* ]
     ) => {$(
         impl Deserialize for $int {
-            type Reader = PrimitiveReader<$int>;
+            type TypeReader = PrimitiveReader<$int>;
 
-            fn reader(dtype: &DType) -> Result<Self::Reader, DTypeError> {
+            fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
                 match expect_scalar_dtype(dtype, stringify!($int))? {
                     // Read an integer of the correct size and signedness.
                     //
@@ -418,9 +442,9 @@ macro_rules! impl_integer_serializable {
         }
 
         impl Serialize for $int {
-            type Writer = PrimitiveWriter<$int>;
+            type TypeWriter = PrimitiveWriter<$int>;
 
-            fn writer(dtype: &DType) -> Result<Self::Writer, DTypeError> {
+            fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
                 match expect_scalar_dtype(dtype, stringify!($int))? {
                     // Write an integer of the correct size and signedness.
                     TypeStr { size: $size, endianness, type_kind: $Int, .. } |
@@ -455,9 +479,9 @@ impl_integer_serializable! {
 macro_rules! impl_float_serializable {
     ( $( [ $size:literal $float:ident ] )+ ) => { $(
         impl Deserialize for $float {
-            type Reader = PrimitiveReader<$float>;
+            type TypeReader = PrimitiveReader<$float>;
 
-            fn reader(dtype: &DType) -> Result<Self::Reader, DTypeError> {
+            fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
                 match expect_scalar_dtype(dtype, stringify!($float))? {
                     // Read a float of the correct size
                     TypeStr { size: $size, endianness, type_kind: Float, .. } => {
@@ -470,9 +494,9 @@ macro_rules! impl_float_serializable {
         }
 
         impl Serialize for $float {
-            type Writer = PrimitiveWriter<$float>;
+            type TypeWriter = PrimitiveWriter<$float>;
 
-            fn writer(dtype: &DType) -> Result<Self::Writer, DTypeError> {
+            fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
                 match expect_scalar_dtype(dtype, stringify!($float))? {
                     // Write a float of the correct size
                     TypeStr { size: $size, endianness, type_kind: Float, .. } => {
@@ -493,9 +517,9 @@ macro_rules! impl_float_serializable {
         #[cfg(feature = "complex")]
         /// _This impl is only available with the **`complex`** feature._
         impl Deserialize for Complex<$float> {
-            type Reader = ComplexReader<$float>;
+            type TypeReader = ComplexReader<$float>;
 
-            fn reader(dtype: &DType) -> Result<Self::Reader, DTypeError> {
+            fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
                 const SIZE: u64 = 2 * $size;
 
                 match expect_scalar_dtype(dtype, stringify!(Complex<$float>))? {
@@ -511,9 +535,9 @@ macro_rules! impl_float_serializable {
         #[cfg(feature = "complex")]
         /// _This impl is only available with the **`complex`** feature._
         impl Serialize for Complex<$float> {
-            type Writer = ComplexWriter<$float>;
+            type TypeWriter = ComplexWriter<$float>;
 
-            fn writer(dtype: &DType) -> Result<Self::Writer, DTypeError> {
+            fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
                 const SIZE: u64 = 2 * $size;
 
                 match expect_scalar_dtype(dtype, stringify!(Complex<$float>))? {
@@ -547,12 +571,9 @@ pub struct BytesReader {
 impl TypeRead for BytesReader {
     type Value = Vec<u8>;
 
-    fn read_one<'a>(&self, bytes: &'a [u8]) -> (Vec<u8>, &'a [u8]) {
-        let mut vec = vec![];
-
-        let (src, remainder) = bytes.split_at(self.size);
-        vec.resize(self.size, 0);
-        vec.copy_from_slice(src);
+    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Vec<u8>> {
+        let mut vec = vec![0; self.size];
+        reader.read_exact(&mut vec)?;
 
         // truncate trailing zeros for type 'S'
         if self.is_byte_str {
@@ -560,14 +581,14 @@ impl TypeRead for BytesReader {
             vec.truncate(end);
         }
 
-        (vec, remainder)
+        Ok(vec)
     }
 }
 
 impl Deserialize for Vec<u8> {
-    type Reader = BytesReader;
+    type TypeReader = BytesReader;
 
-    fn reader(type_str: &DType) -> Result<Self::Reader, DTypeError> {
+    fn reader(type_str: &DType) -> Result<Self::TypeReader, DTypeError> {
         let type_str = type_str.as_scalar().ok_or_else(|| DTypeError::expected_scalar(type_str, "Vec<u8>"))?;
         let size = match usize::try_from(type_str.size) {
             Ok(size) => size,
@@ -612,9 +633,9 @@ impl TypeWrite for BytesWriter {
 }
 
 impl Serialize for [u8] {
-    type Writer = BytesWriter;
+    type TypeWriter = BytesWriter;
 
-    fn writer(dtype: &DType) -> Result<Self::Writer, DTypeError> {
+    fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
         let type_str = dtype.as_scalar().ok_or_else(|| DTypeError::expected_scalar(dtype, "[u8]"))?;
 
         let size = match usize::try_from(type_str.size) {
@@ -642,7 +663,7 @@ mod helper {
         T: Deref,
         <T as Deref>::Target: Serialize,
     {
-        pub(crate) inner: <<T as Deref>::Target as Serialize>::Writer,
+        pub(crate) inner: <<T as Deref>::Target as Serialize>::TypeWriter,
     }
 
     impl<T, U: ?Sized> TypeWrite for TypeWriteViaDeref<T>
@@ -663,10 +684,10 @@ mod helper {
             impl<$($generics)*> Serialize for $T
             $(where $($bounds)+)*
             {
-                type Writer = helper::TypeWriteViaDeref<$T>;
+                type TypeWriter = helper::TypeWriteViaDeref<$T>;
 
                 #[inline(always)]
-                fn writer(dtype: &DType) -> Result<Self::Writer, DTypeError> {
+                fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
                     Ok(helper::TypeWriteViaDeref { inner: <$Target>::writer(dtype)? })
                 }
             }
@@ -743,17 +764,13 @@ macro_rules! gen_array_serializable {
                 type Value = [I::Value; $n];
 
                 #[inline]
-                fn read_one<'a>(&self, bytes: &'a [u8]) -> (Self::Value, &'a [u8]) {
+                fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Self::Value> {
                     let mut value = [I::Value::default(); $n];
-
-                    let mut remainder = bytes;
                     for place in &mut value {
-                        let (item, new_remainder) = self.inner.read_one(remainder);
-                        *place = item;
-                        remainder = new_remainder;
+                        *place = self.inner.read_one(&mut reader)?;
                     }
 
-                    (value, remainder)
+                    Ok(value)
                 }
             }
 
@@ -789,10 +806,10 @@ macro_rules! gen_array_serializable {
             }
 
             impl<T: Deserialize + Default + Copy> Deserialize for [T; $n] {
-                type Reader = ArrayReader<<T as Deserialize>::Reader>;
+                type TypeReader = ArrayReader<<T as Deserialize>::TypeReader>;
 
                 #[inline]
-                fn reader(dtype: &DType) -> Result<Self::Reader, DTypeError> {
+                fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
                     let inner_dtype = dtype.array_inner_dtype($n)?;
                     let inner = <T>::reader(&inner_dtype)?;
                     Ok(ArrayReader { inner })
@@ -800,10 +817,10 @@ macro_rules! gen_array_serializable {
             }
 
             impl<T: Serialize> Serialize for [T; $n] {
-                type Writer = ArrayWriter<<T as Serialize>::Writer>;
+                type TypeWriter = ArrayWriter<<T as Serialize>::TypeWriter>;
 
                 #[inline]
-                fn writer(dtype: &DType) -> Result<Self::Writer, DTypeError> {
+                fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
                     let inner = <T>::writer(&dtype.array_inner_dtype($n)?)?;
                     Ok(ArrayWriter { inner })
                 }
@@ -828,7 +845,7 @@ mod tests {
     // NOTE: Tests for arrays are in tests/serialize_array.rs because they require derives
 
     fn reader_output<T: Deserialize>(dtype: &DType, bytes: &[u8]) -> T {
-        T::reader(dtype).unwrap_or_else(|e| panic!("{}", e)).read_one(bytes).0
+        T::reader(dtype).unwrap_or_else(|e| panic!("{}", e)).read_one(bytes).expect("reader_output failed")
     }
 
     fn reader_expect_err<T: Deserialize>(dtype: &DType) {
@@ -1078,10 +1095,10 @@ mod tests {
     #[test]
     fn dynamic_readers_and_writers() {
         let writer: Box<dyn TypeWriteDyn<Value=i32>> = Box::new(i32::writer(&i32::default_dtype()).unwrap());
-        let reader: Box<dyn TypeRead<Value=i32>> = Box::new(i32::reader(&i32::default_dtype()).unwrap());
+        let reader: Box<dyn TypeReadDyn<Value=i32>> = Box::new(i32::reader(&i32::default_dtype()).unwrap());
 
         let mut buf = vec![];
         writer.write_one(&mut buf, &4000).unwrap();
-        assert_eq!(reader.read_one(&buf).0, 4000);
+        assert_eq!(reader.read_one(&buf[..]).unwrap(), 4000);
     }
 }

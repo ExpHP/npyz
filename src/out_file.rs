@@ -77,7 +77,7 @@ pub struct NpyWriter<Row: Serialize, W: Write> {
     shape_info: ShapeInfo,
     num_items: usize,
     fw: MaybeSeek<W>,
-    writer: <Row as Serialize>::Writer,
+    writer: <Row as Serialize>::TypeWriter,
     version_props: VersionProps,
 }
 

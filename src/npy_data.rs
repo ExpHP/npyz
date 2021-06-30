@@ -15,7 +15,7 @@ pub struct NpyData<'a, T: Deserialize> {
     order: Order,
     n_records: usize,
     item_size: usize,
-    reader: <T as Deserialize>::Reader,
+    reader: <T as Deserialize>::TypeReader,
 }
 
 /// Order of axes in a file.
@@ -98,7 +98,7 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
 
     /// Gets a single data-record with the specified index. Panics if the index is out of bounds.
     pub fn get_unchecked(&self, i: usize) -> T {
-        self.reader.read_one(&self.data[i * self.item_size..]).0
+        self.reader.read_one(&self.data[i * self.item_size..]).unwrap()
     }
 
     /// Construct a vector with the deserialized contents of the whole file.

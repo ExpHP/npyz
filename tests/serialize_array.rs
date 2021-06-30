@@ -7,7 +7,7 @@ use npy::{TypeRead, TypeWrite};
 // because fixed-size array types can only exist as record fields.
 
 fn reader_output<T: Deserialize>(dtype: &DType, bytes: &[u8]) -> T {
-    T::reader(dtype).unwrap_or_else(|e| panic!("{}", e)).read_one(bytes).0
+    T::reader(dtype).unwrap_or_else(|e| panic!("{}", e)).read_one(bytes).expect("reader_output failed")
 }
 
 fn reader_expect_err<T: Deserialize>(dtype: &DType) {

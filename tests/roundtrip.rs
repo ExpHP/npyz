@@ -7,9 +7,8 @@
 extern crate npy;
 extern crate byteorder;
 
-use byteorder::ByteOrder;
 use std::io::{Read, Write, Cursor};
-use byteorder::{WriteBytesExt, LittleEndian};
+use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 use npy::{DType, Field, OutFile, Serialize, Deserialize, AutoSerialize};
 
 #[derive(Serialize, Deserialize, AutoSerialize)]
@@ -56,9 +55,9 @@ impl AutoSerialize for Vector5 {
 }
 
 impl Serialize for Vector5 {
-    type Writer = Vector5Writer;
+    type TypeWriter = Vector5Writer;
 
-    fn writer(dtype: &DType) -> Result<Self::Writer, npy::DTypeError> {
+    fn writer(dtype: &DType) -> Result<Self::TypeWriter, npy::DTypeError> {
         if dtype == &Self::default_dtype() {
             Ok(Vector5Writer)
         } else {
@@ -68,9 +67,9 @@ impl Serialize for Vector5 {
 }
 
 impl Deserialize for Vector5 {
-    type Reader = Vector5Reader;
+    type TypeReader = Vector5Reader;
 
-    fn reader(dtype: &DType) -> Result<Self::Reader, npy::DTypeError> {
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, npy::DTypeError> {
         if dtype == &Self::default_dtype() {
             Ok(Vector5Reader)
         } else {
@@ -98,13 +97,12 @@ impl npy::TypeRead for Vector5Reader {
     type Value = Vector5;
 
     #[inline]
-    fn read_one<'a>(&self, mut remainder: &'a [u8]) -> (Self::Value, &'a [u8]) {
+    fn read_one<R: Read>(&self, mut reader: R) -> std::io::Result<Self::Value> {
         let mut ret = Vector5(vec![]);
         for _ in 0..5 {
-            ret.0.push(LittleEndian::read_i32(remainder));
-            remainder = &remainder[4..];
+            ret.0.push(reader.read_i32::<LittleEndian>()?);
         }
-        (ret, remainder)
+        Ok(ret)
     }
 }
 

@@ -101,7 +101,7 @@ fn impl_npy_serialize(ast: &syn::DeriveInput) -> Tokens {
         }
 
         struct FieldWriters #ty_generics #where_clause {
-            #( #idents: <#types as _npy::Serialize>::Writer ,)*
+            #( #idents: <#types as _npy::Serialize>::TypeWriter ,)*
         }
 
         #field_dtypes_struct
@@ -112,7 +112,7 @@ fn impl_npy_serialize(ast: &syn::DeriveInput) -> Tokens {
             #[allow(unused_mut)]
             fn write_one<W: io::Write>(&self, mut w: W, value: &Self::Value) -> io::Result<()> {
                 #({ // braces for pre-NLL
-                    let method = <<#types as _npy::Serialize>::Writer as _npy::TypeWrite>::write_one;
+                    let method = <<#types as _npy::Serialize>::TypeWriter as _npy::TypeWrite>::write_one;
                     method(&self.writers.#idents, &mut w, &value.#idents_1)?;
                 })*
                 p::Ok(())
@@ -120,7 +120,7 @@ fn impl_npy_serialize(ast: &syn::DeriveInput) -> Tokens {
         }
 
         impl #impl_generics _npy::Serialize for #name #ty_generics #where_clause {
-            type Writer = GeneratedWriter #ty_generics;
+            type TypeWriter = GeneratedWriter #ty_generics;
 
             fn writer(dtype: &_npy::DType) -> p::Result<GeneratedWriter, _npy::DTypeError> {
                 let dtypes = FieldDTypes::extract(dtype)?;
@@ -145,12 +145,14 @@ fn impl_npy_deserialize(ast: &syn::DeriveInput) -> Tokens {
     let idents_1 = idents;
 
     wrap_in_const("Deserialize", &name, quote! {
+        use ::std::io;
+
         #vis struct GeneratedReader #ty_generics #where_clause {
             readers: FieldReaders #ty_generics,
         }
 
         struct FieldReaders #ty_generics #where_clause {
-            #( #idents: <#types as _npy::Deserialize>::Reader ,)*
+            #( #idents: <#types as _npy::Deserialize>::TypeReader ,)*
         }
 
         #field_dtypes_struct
@@ -159,18 +161,17 @@ fn impl_npy_deserialize(ast: &syn::DeriveInput) -> Tokens {
             type Value = #name #ty_generics;
 
             #[allow(unused_mut)]
-            fn read_one<'a>(&self, mut remainder: &'a [u8]) -> (Self::Value, &'a [u8]) {
+            fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Self::Value> {
                 #(
-                    let func = <<#types as _npy::Deserialize>::Reader as _npy::TypeRead>::read_one;
-                    let (#idents, new_remainder) = func(&self.readers.#idents_1, remainder);
-                    remainder = new_remainder;
+                    let func = <<#types as _npy::Deserialize>::TypeReader as _npy::TypeRead>::read_one;
+                    let #idents = func(&self.readers.#idents_1, &mut reader)?;
                 )*
-                (#name { #( #idents ),* }, remainder)
+                io::Result::Ok(#name { #( #idents ),* })
             }
         }
 
         impl #impl_generics _npy::Deserialize for #name #ty_generics #where_clause {
-            type Reader = GeneratedReader #ty_generics;
+            type TypeReader = GeneratedReader #ty_generics;
 
             fn reader(dtype: &_npy::DType) -> p::Result<GeneratedReader, _npy::DTypeError> {
                 let dtypes = FieldDTypes::extract(dtype)?;
