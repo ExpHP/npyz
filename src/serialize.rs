@@ -751,91 +751,79 @@ impl DType {
     }
 }
 
-macro_rules! gen_array_serializable {
-    ($([$n:tt in mod $mod_name:ident])+) => { $(
-        mod $mod_name {
-            use super::*;
+mod arrays {
+    use super::*;
 
-            pub struct ArrayReader<I>{ inner: I }
-            pub struct ArrayWriter<I>{ inner: I }
+    pub struct ArrayReader<I, const N: usize>{ inner: I }
+    pub struct ArrayWriter<I, const N: usize>{ inner: I }
 
-            impl<I: TypeRead> TypeRead for ArrayReader<I>
-            where I::Value: Copy + Default,
-            {
-                type Value = [I::Value; $n];
+    impl<I: TypeRead, const N: usize> TypeRead for ArrayReader<I, N>
+    where I::Value: Copy + Default,
+    {
+        type Value = [I::Value; N];
 
-                #[inline]
-                fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Self::Value> {
-                    let mut value = [I::Value::default(); $n];
-                    for place in &mut value {
-                        *place = self.inner.read_one(&mut reader)?;
-                    }
-
-                    Ok(value)
-                }
+        #[inline]
+        fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Self::Value> {
+            let mut value = [I::Value::default(); N];
+            for place in &mut value {
+                *place = self.inner.read_one(&mut reader)?;
             }
 
-            impl<I: TypeWrite> TypeWrite for ArrayWriter<I>
-            where I::Value: Sized,
-            {
-                type Value = [I::Value; $n];
+            Ok(value)
+        }
+    }
 
-                #[inline]
-                fn write_one<W: io::Write>(&self, mut writer: W, value: &Self::Value) -> io::Result<()>
-                where Self: Sized,
-                {
-                    for item in value {
-                        self.inner.write_one(&mut writer, item)?;
-                    }
-                    Ok(())
-                }
+    impl<I: TypeWrite, const N: usize> TypeWrite for ArrayWriter<I, N>
+    where I::Value: Sized,
+    {
+        type Value = [I::Value; N];
+
+        #[inline]
+        fn write_one<W: io::Write>(&self, mut writer: W, value: &Self::Value) -> io::Result<()>
+        where Self: Sized,
+        {
+            for item in value {
+                self.inner.write_one(&mut writer, item)?;
             }
+            Ok(())
+        }
+    }
 
-            impl<T: AutoSerialize + Default + Copy> AutoSerialize for [T; $n] {
-                #[inline]
-                fn default_dtype() -> DType {
-                    use DType::*;
+    impl<T: AutoSerialize + Default + Copy, const N: usize> AutoSerialize for [T; N] {
+        #[inline]
+        fn default_dtype() -> DType {
+            use DType::*;
 
-                    match T::default_dtype() {
-                        Plain { ty, mut shape } => DType::Plain {
-                            ty,
-                            shape: { shape.insert(0, $n); shape },
-                        },
-                        Record(_) => unimplemented!("arrays of nested records")
-                    }
-                }
-            }
-
-            impl<T: Deserialize + Default + Copy> Deserialize for [T; $n] {
-                type TypeReader = ArrayReader<<T as Deserialize>::TypeReader>;
-
-                #[inline]
-                fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
-                    let inner_dtype = dtype.array_inner_dtype($n)?;
-                    let inner = <T>::reader(&inner_dtype)?;
-                    Ok(ArrayReader { inner })
-                }
-            }
-
-            impl<T: Serialize> Serialize for [T; $n] {
-                type TypeWriter = ArrayWriter<<T as Serialize>::TypeWriter>;
-
-                #[inline]
-                fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
-                    let inner = <T>::writer(&dtype.array_inner_dtype($n)?)?;
-                    Ok(ArrayWriter { inner })
-                }
+            match T::default_dtype() {
+                Plain { ty, mut shape } => DType::Plain {
+                    ty,
+                    shape: { shape.insert(0, N as u64); shape },
+                },
+                Record(_) => unimplemented!("arrays of nested records")
             }
         }
-    )+ }
-}
+    }
 
-gen_array_serializable!{
-    /*  no size 0  */ [ 1 in mod  arr1] [ 2 in mod  arr2] [ 3 in mod  arr3]
-    [ 4 in mod  arr4] [ 5 in mod  arr5] [ 6 in mod  arr6] [ 7 in mod  arr7]
-    [ 8 in mod  arr8] [ 9 in mod  arr9] [10 in mod arr10] [11 in mod arr11]
-    [12 in mod arr12] [13 in mod arr13] [14 in mod arr14] [15 in mod arr15]
-    [16 in mod arr16]
+    impl<T: Deserialize + Default + Copy, const N: usize> Deserialize for [T; N] {
+        type TypeReader = ArrayReader<<T as Deserialize>::TypeReader, N>;
+
+        #[inline]
+        fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+            let inner_dtype = dtype.array_inner_dtype(N as u64)?;
+            let inner = <T>::reader(&inner_dtype)?;
+            Ok(ArrayReader { inner })
+        }
+    }
+
+    impl<T: Serialize, const N: usize> Serialize for [T; N] {
+        type TypeWriter = ArrayWriter<<T as Serialize>::TypeWriter, N>;
+
+        #[inline]
+        fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
+            let inner = <T>::writer(&dtype.array_inner_dtype(N as u64)?)?;
+            Ok(ArrayWriter { inner })
+        }
+    }
 }
 
 #[cfg(test)]

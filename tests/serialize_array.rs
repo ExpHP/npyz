@@ -35,9 +35,10 @@ struct Array23 {
     field: [[i32; 3]; 2],
 }
 
-const ARRAY3_DESCR_LE: &str = "[('field', '<i4', (3,))]";
 const ARRAY23_DESCR_LE: &str = "[('field', '<i4', (2, 3))]";
 
+// good descr for Array3
+const ARRAY3_DESCR_LE: &str = "[('field', '<i4', (3,))]";
 // various bad descrs for Array3
 const ARRAY2_DESCR_LE: &str = "[('field', '<i4', (2,))]";
 const ARRAY_SCALAR_DESCR_LE: &str = "[('field', '<i4')]";
@@ -45,6 +46,21 @@ const ARRAY_RECORD_DESCR_LE: &str = "[('field', [('lol', '<i4')])]";
 
 #[test]
 fn read_write() {
+    let dtype = <Array3 as nippy::AutoSerialize>::default_dtype();
+    let value = Array3 { field: [1, 3, 5] };
+    let mut bytes = vec![];
+    bytes.extend_from_slice(&i32::to_le_bytes(1));
+    bytes.extend_from_slice(&i32::to_le_bytes(3));
+    bytes.extend_from_slice(&i32::to_le_bytes(5));
+
+    assert_eq!(reader_output::<Array3>(&dtype, &bytes), value);
+    assert_eq!(writer_output::<Array3>(&dtype, &value), bytes);
+    reader_expect_err::<Array23>(&dtype);
+    writer_expect_err::<Array23>(&dtype);
+}
+
+#[test]
+fn read_write_explicit_dtype() {
     let dtype = DType::parse(ARRAY3_DESCR_LE).unwrap();
     let value = Array3 { field: [1, 3, 5] };
     let mut bytes = vec![];
@@ -120,4 +136,30 @@ fn default_dtype() {
             },
         },
     ]));
+}
+
+mod zero_len {
+    use super::*;
+
+    #[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)]
+    #[derive(Debug, PartialEq)]
+    struct CloseTheGap {
+        left: i64,
+        middle: [[[i32; 3]; 0]; 2],
+        right: i32,
+    }
+
+
+    #[test]
+    fn read_write() {
+        let dtype = <CloseTheGap as nippy::AutoSerialize>::default_dtype();
+        let value = CloseTheGap { left: 12, middle: [[], []], right: 5 };
+        let mut bytes = vec![];
+        bytes.extend_from_slice(&i64::to_le_bytes(12));
+        bytes.extend_from_slice(&[]); // 'middle' should serialize to no bytes
+        bytes.extend_from_slice(&i32::to_le_bytes(5));
+
+        assert_eq!(reader_output::<CloseTheGap>(&dtype, &bytes), value);
+        assert_eq!(writer_output::<CloseTheGap>(&dtype, &value), bytes);
+    }
 }
