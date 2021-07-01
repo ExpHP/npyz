@@ -26,6 +26,7 @@ macro_rules! gen_benches {
             cursor.into_inner()
         }
 
+        #[allow(deprecated)]
         #[bench]
         fn read_to_vec(b: &mut Bencher) {
             let bytes = write_array_via_push();

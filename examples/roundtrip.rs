@@ -2,28 +2,25 @@
 extern crate npy_derive;
 extern crate npy;
 
-use std::io::Read;
-
 #[derive(Serialize, Deserialize, AutoSerialize, Debug, PartialEq, Clone)]
-struct Array {
+struct Struct {
     a: i32,
     b: f32,
 }
 
-fn main() {
+fn main() -> std::io::Result<()> {
     let pi = std::f32::consts::PI;
-    let mut arrays = vec![];
+    let mut structs = vec![];
     for i in 0..360i32 {
-        arrays.push(Array { a: i, b: (i as f32 * pi / 180.0).sin() });
+        structs.push(Struct { a: i, b: (i as f32 * pi / 180.0).sin() });
     }
 
-    npy::to_file("examples/roundtrip.npy", arrays).unwrap();
+    npy::to_file("examples/roundtrip.npy", structs)?;
 
-    let mut buf = vec![];
-    std::fs::File::open("examples/roundtrip.npy").unwrap()
-        .read_to_end(&mut buf).unwrap();
+    let bytes = std::fs::read("examples/roundtrip.npy")?;
 
-    for (i, arr) in npy::NpyData::from_bytes(&buf).unwrap().into_iter().enumerate() {
-        assert_eq!(Array { a: i as i32, b: (i as f32 * pi / 180.0).sin() }, arr);
+    for (i, arr) in npy::NpyReader::new(&bytes[..]).unwrap().into_iter().enumerate() {
+        assert_eq!(Struct { a: i as i32, b: (i as f32 * pi / 180.0).sin() }, arr?);
     }
+    Ok(())
 }

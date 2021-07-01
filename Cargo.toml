@@ -25,9 +25,6 @@ version = "0.4"
 optional = true
 default-features = false
 
-[dev-dependencies]
-memmap = "0.6"
-
 [features]
 default = []
 
@@ -48,11 +45,7 @@ complex = ["num-complex"]
 name = "plain"
 
 [[example]]
-name = "large"
-required-features = ["derive"]
-
-[[example]]
-name = "simple"
+name = "structured"
 required-features = ["derive"]
 
 [[example]]

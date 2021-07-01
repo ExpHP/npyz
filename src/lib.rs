@@ -47,21 +47,20 @@ np.save('examples/plain.npy', a)
 
 Now, we can load it in Rust:
 
-```
+```rust
 extern crate npy;
 
-use std::io::Read;
-use npy::NpyData;
+use npy::NpyReader;
 
-fn main() {
-    let mut buf = vec![];
-    std::fs::File::open("examples/plain.npy").unwrap()
-        .read_to_end(&mut buf).unwrap();
+fn main() -> std::io::Result<()> {
+    let bytes = std::fs::read("examples/plain.npy")?;
 
-    let data: NpyData<f64> = NpyData::from_bytes(&buf).unwrap();
+    let data: NpyReader<f64, _> = NpyReader::new(&bytes[..])?;
     for number in data {
+        let number = number?;
         eprintln!("{}", number);
     }
+    Ok(())
 }
 ```
 
@@ -100,30 +99,29 @@ and make sure the field names and types all match up:
 // doctests, so that:
 //    - It always appears in documentation (`cargo doc`)
 //    - It is only tested when the feature is present (`cargo test --features derive`)
-#![cfg_attr(any(not(test), feature="derive"), doc = r##"
+#![cfg_attr(any(not(doctest), feature="derive"), doc = r##"
 ```
 // make sure to add `features = ["derive"]` in Cargo.toml!
 extern crate npy;
 
-use std::io::Read;
-use npy::NpyData;
+use npy::NpyReader;
 
 #[derive(npy::Deserialize, Debug)]
-struct Array {
+struct Struct {
     a: i32,
     b: f32,
     c: i64,
 }
 
-fn main() {
-    let mut buf = vec![];
-    std::fs::File::open("examples/simple.npy").unwrap()
-        .read_to_end(&mut buf).unwrap();
+fn main() -> std::io::Result<()> {
+    let bytes = std::fs::read("examples/structured.npy")?;
 
-    let data: NpyData<Array> = NpyData::from_bytes(&buf).unwrap();
-    for arr in data {
-        eprintln!("{:?}", arr);
+    let data: NpyReader<Struct, _> = NpyReader::new(&bytes[..])?;
+    for row in data {
+        let row = row?;
+        eprintln!("{:?}", row);
     }
+    Ok(())
 }
 ```
 "##)]
@@ -158,7 +156,8 @@ mod type_str;
 mod serialize;
 
 pub use header::{DType, Field};
-pub use npy_data::{NpyData, Order};
+#[allow(deprecated)]
+pub use npy_data::{NpyData, NpyReader, Order};
 pub use out_file::{to_file, OutFile, NpyWriter, Builder};
 pub use serialize::{Serialize, Deserialize, AutoSerialize};
 pub use serialize::{TypeRead, TypeWrite, TypeWriteDyn, DTypeError};

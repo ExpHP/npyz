@@ -19,8 +19,23 @@ pub enum DType {
 
         /// Shape of a type.
         ///
-        /// Scalar has zero entries. Otherwise, number of entries == number of dimensions and each
-        /// entry specifies size in the respective dimension.
+        /// This will *almost always* be an empty `vec![]`, indicating a scalar type.
+        ///
+        /// This only time it is possible to have a non-scalar type is in structured arrays, where
+        /// the members of the struct are allowed to be arrays themselves.  E.g. in the `DType` for
+        /// `dtype=[('abc', 'i4', [2, 3])]`, the [`Field`] for `abc` will have a `shape` of `vec![2, 3]`.
+        /// In rust, such an array could be read using the following element type:
+        ///
+        #[cfg_attr(any(not(doctest), feature="derive"), doc = r##"
+```
+# extern crate npy;
+# #[allow(unused)]
+#[derive(npy::Serialize, npy::Deserialize, npy::AutoSerialize)]
+struct Row {
+    abc: [[i32; 3]; 2],
+}
+```
+"##)]
         shape: Vec<u64>
     },
 

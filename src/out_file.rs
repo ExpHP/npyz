@@ -382,11 +382,49 @@ mod maybe_seek {
     }
 }
 
+/// Quick API for writing a 1D array to a vector of bytes.
+#[cfg(test)]
+pub(crate) fn to_bytes_1d<T: AutoSerialize>(data: &[T]) -> io::Result<Vec<u8>> {
+    let mut cursor = io::Cursor::new(vec![]);
+    to_writer_1d(&mut cursor, data)?;
+    Ok(cursor.into_inner())
+}
+
+/// Quick API for writing a 1D array to an io::Write.
+#[cfg(test)]
+pub(crate) fn to_writer_1d<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T]) -> io::Result<()> {
+    // we might change this later and/or remove the Seek bound from the current function, but for now this will do
+    to_writer_1d_with_seeking(writer, data)
+}
+
+/// Quick API for writing an n-d array to an io::Write.
+#[cfg(test)]
+pub(crate) fn to_writer_nd<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T], shape: &[usize]) -> io::Result<()> {
+    let mut writer = Builder::new().default_dtype().begin_nd(writer, shape)?;
+    for x in data {
+        writer.push(&x)?;
+    }
+    writer.finish()
+}
+
+/// Quick API for writing a 1D array to an io::Write in a manner which makes use of io::Seek.
+///
+/// (tests will use this instead of 'to_writer_1d' if their purpose is to test the correctness of seek behavior,
+/// so that changing 'to_writer_1d' to be Seek-less won't affect these tests)
+#[cfg(test)]
+pub(crate) fn to_writer_1d_with_seeking<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T]) -> io::Result<()> {
+    let mut writer = Builder::new().default_dtype().begin_1d(writer)?;
+    for x in data {
+        writer.push(&x)?;
+    }
+    writer.finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::{self, Cursor};
-    use ::NpyData;
+    use ::NpyReader;
 
     fn bytestring_contains(haystack: &[u8], needle: &[u8]) -> bool {
         if needle.is_empty() {
@@ -397,19 +435,10 @@ mod tests {
 
     #[test]
     fn write_1d_simple() -> io::Result<()> {
-        let mut cursor = Cursor::new(vec![]);
+        let raw_buffer = to_bytes_1d(&[1.0, 3.0, 5.0])?;
 
-        {
-            let mut writer = NpyWriter::begin(&mut cursor)?;
-            for x in vec![1.0, 3.0, 5.0] {
-                writer.push(&x)?;
-            }
-            writer.finish()?;
-        }
-
-        let raw_buffer = cursor.into_inner();
-        let reader = NpyData::<f64>::from_bytes(&raw_buffer)?;
-        assert_eq!(reader.to_vec(), vec![1.0, 3.0, 5.0]);
+        let reader = NpyReader::<f64, _>::new(&raw_buffer[..])?;
+        assert_eq!(reader.into_vec()?, vec![1.0, 3.0, 5.0]);
 
         Ok(())
     }
@@ -423,24 +452,18 @@ mod tests {
 
         // write to the cursor both before and after writing the file
         cursor.write_all(prefix)?;
-        {
-            let mut writer = NpyWriter::begin(&mut cursor)?;
-            for x in vec![1.0, 3.0, 5.0] {
-                writer.push(&x)?;
-            }
-            writer.finish()?;
-        }
+        to_writer_1d_with_seeking(&mut cursor, &[1.0, 3.0, 5.0])?;
         cursor.write_all(suffix)?;
 
-        // check that `OutFile` did not interfere with our extra writes
+        // check that the seeking did not interfere with our extra writes
         let raw_buffer = cursor.into_inner();
         assert!(raw_buffer.starts_with(prefix));
         assert!(raw_buffer.ends_with(suffix));
 
         // check the bytes written by `OutFile`
         let written_bytes = &raw_buffer[prefix.len()..raw_buffer.len() - suffix.len()];
-        let reader = NpyData::<f64>::from_bytes(&written_bytes)?;
-        assert_eq!(reader.to_vec(), vec![1.0, 3.0, 5.0]);
+        let reader = NpyReader::<f64, _>::new(&written_bytes[..])?;
+        assert_eq!(reader.into_vec()?, vec![1.0, 3.0, 5.0]);
 
         Ok(())
     }
@@ -449,13 +472,12 @@ mod tests {
     fn implicit_finish() -> io::Result<()> {
         let mut cursor = Cursor::new(vec![]);
 
-        {
-            let mut writer = NpyWriter::begin(&mut cursor)?;
-            for x in vec![1.0, 3.0, 5.0, 7.0] {
-                writer.push(&x)?;
-            }
-            // don't call finish
+        let mut writer = NpyWriter::begin(&mut cursor)?;
+        for x in vec![1.0, 3.0, 5.0, 7.0] {
+            writer.push(&x)?;
         }
+        // don't call finish
+        drop(writer);
 
         // check that the shape was written
         let raw_buffer = cursor.into_inner();
@@ -469,18 +491,12 @@ mod tests {
     fn write_nd_simple() -> io::Result<()> {
         let mut cursor = Cursor::new(vec![]);
 
-        {
-            let mut writer = Builder::new().default_dtype().begin_nd(&mut cursor, &[2, 3])?;
-            for x in vec![00, 01, 02, 10, 11, 12] {
-                writer.push(&x)?;
-            }
-            writer.finish()?;
-        }
+        to_writer_nd(&mut cursor, &[00, 01, 02, 10, 11, 12], &[2, 3])?;
 
         let raw_buffer = cursor.into_inner();
-        let reader = NpyData::<i32>::from_bytes(&raw_buffer)?;
-        assert_eq!(reader.to_vec(), vec![00, 01, 02, 10, 11, 12]);
+        let reader = NpyReader::<i32, _>::new(&raw_buffer[..])?;
         assert_eq!(reader.shape(), &[2, 3][..]);
+        assert_eq!(reader.into_vec()?, vec![00, 01, 02, 10, 11, 12]);
 
         Ok(())
     }
