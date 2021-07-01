@@ -4,9 +4,10 @@
 //   which the warning is generated.
 #![allow(mixed_script_confusables)]
 
-use std::io::{Read, Write, Cursor};
+use std::io::{self, Read, Write, Cursor};
+use std::fs;
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
-use nippy::{DType, Field, OutFile, Serialize, Deserialize, AutoSerialize};
+use nippy::{DType, Field, Serialize, Deserialize, AutoSerialize};
 
 #[derive(Serialize, Deserialize, AutoSerialize)]
 #[derive(Debug, PartialEq, Clone)]
@@ -132,9 +133,7 @@ fn roundtrip() {
 
     nippy::to_file("tests/roundtrip.npy", arrays.clone()).unwrap();
 
-    let mut buf = vec![];
-    std::fs::File::open("tests/roundtrip.npy").unwrap()
-        .read_to_end(&mut buf).unwrap();
+    let buf = fs::read("tests/roundtrip.npy").unwrap();
 
     assert_version(&buf, (1, 0));
 
@@ -155,9 +154,7 @@ fn roundtrip_with_plain_dtype() {
 
     nippy::to_file("tests/roundtrip_plain.npy", array_written.clone()).unwrap();
 
-    let mut buffer = vec![];
-    std::fs::File::open("tests/roundtrip_plain.npy").unwrap()
-        .read_to_end(&mut buffer).unwrap();
+    let buffer = fs::read("tests/roundtrip_plain.npy").unwrap();
 
     let array_read = nippy::NpyReader::new(&buffer[..]).unwrap().into_vec().unwrap();
     assert_eq!(array_written, array_read);
@@ -208,12 +205,13 @@ fn roundtrip_byteorder() {
         buf
     };
 
-    let mut out_file = OutFile::open_with_dtype(&dtype, path).unwrap();
+    let file = io::BufWriter::new(fs::File::create(path).unwrap());
+    let mut out_file = nippy::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
     out_file.push(&row).unwrap();
-    out_file.close().unwrap();
+    out_file.finish().unwrap();
 
     // Make sure it actually wrote in the correct byteorders.
-    let buffer = std::fs::read(path).unwrap();
+    let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
     let data = nippy::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
@@ -269,11 +267,12 @@ fn roundtrip_datetime() {
         buf
     };
 
-    let mut out_file = OutFile::open_with_dtype(&dtype, path).unwrap();
+    let file = io::BufWriter::new(fs::File::create(path).unwrap());
+    let mut out_file = nippy::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
     out_file.push(&row).unwrap();
-    out_file.close().unwrap();
+    out_file.finish().unwrap();
 
-    let buffer = std::fs::read(path).unwrap();
+    let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
     let data = nippy::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
@@ -327,11 +326,12 @@ fn roundtrip_bytes() {
         buf
     };
 
-    let mut out_file = OutFile::open_with_dtype(&dtype, path).unwrap();
+    let file = io::BufWriter::new(fs::File::create(path).unwrap());
+    let mut out_file = nippy::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
     out_file.push(&row).unwrap();
-    out_file.close().unwrap();
+    out_file.finish().unwrap();
 
-    let buffer = std::fs::read(path).unwrap();
+    let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
     let data = nippy::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
@@ -382,11 +382,12 @@ fn roundtrip_bytes_byteorder() {
         buf
     };
 
-    let mut out_file = OutFile::open_with_dtype(&dtype, path).unwrap();
+    let file = io::BufWriter::new(fs::File::create(path).unwrap());
+    let mut out_file = nippy::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
     out_file.push(&row).unwrap();
-    out_file.close().unwrap();
+    out_file.finish().unwrap();
 
-    let buffer = std::fs::read(path).unwrap();
+    let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
     let data = nippy::NpyReader::<Row, _>::new(&buffer[..]).unwrap();

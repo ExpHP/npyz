@@ -44,13 +44,17 @@ impl<Row> Builder<Row> {
 
     /// Use the specified dtype.
     ///
-    /// **Calling `dtype` is required.**
+    /// **Calling `dtype` (or [`Self::default_dtype`]) is required.**
+    /// (Otherwise, the build methods will panic at runtime.)
     pub fn dtype(mut self, dtype: DType) -> Self {
         self.dtype = Some(dtype);
         self
     }
 
     /// Calls [`Builder::dtype`] with the default dtype for the type to be serialized.
+    ///
+    /// **Calling this method or [`Builder::dtype`] is required.**
+    /// (Otherwise, the build methods will panic at runtime.)
     pub fn default_dtype(self) -> Self
     where Row: AutoSerialize,
     {
@@ -64,7 +68,10 @@ impl<Row: Serialize> Builder<Row> {
         NpyWriter::_begin(self, MaybeSeek::Isnt(w), Some(shape))
     }
 
-    /// Begin writing a 1d array, of length to be inferred.
+    /// Begin writing a 1d array, of length to be inferred from the number of elements written.
+    ///
+    /// Notice that, in contrast to [`Self::begin_nd`], this method requires [`Seek`].  If you have
+    /// a `Vec<u8>`, you can wrap it in an [`io::Cursor`] to satisfy this requirement.
     pub fn begin_1d<W: Write + Seek>(&self, w: W) -> io::Result<NpyWriter<Row, W>> {
         NpyWriter::_begin(self, MaybeSeek::new_seek(w), None)
     }
@@ -90,27 +97,27 @@ enum ShapeInfo {
 }
 
 /// [`NpyWriter`] that writes an entire file.
+#[deprecated(since = "0.5.0", note = "Doesn't carry its weight.  Use to_file_1d instead, or replicate the original behavior with Builder::new().default_dtype().begin_1d(std::io::BufWriter::new(std::fs::File::create(path)?))")]
 pub type OutFile<Row> = NpyWriter<Row, BufWriter<File>>;
 
+#[allow(deprecated)]
 impl<Row: AutoSerialize> OutFile<Row> {
     /// Create a file, using the default format for the given type.
+    #[deprecated(since = "0.5.0", note = "Doesn't carry its weight.  Use to_file_1d instead, or replicate the original behavior with Builder::new().default_dtype().begin_1d(std::io::BufWriter::new(std::fs::File::create(path)?))")]
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        Self::open_with_dtype(&Row::default_dtype(), path)
+        Builder::new()
+            .default_dtype()
+            .begin_1d(BufWriter::new(File::create(path)?))
     }
 }
 
+#[allow(deprecated)]
 impl<Row: Serialize> OutFile<Row> {
-    /// Create a file, using the provided dtype.
-    pub fn open_with_dtype<P: AsRef<Path>>(dtype: &DType, path: P) -> io::Result<Self> {
-        Builder::new()
-            .dtype(dtype.clone())
-            .begin_1d(BufWriter::new(File::create(path)?))
-    }
-
     /// Finish writing the file and close it.  Alias for [`NpyWriter::finish`].
     ///
     /// If omitted, the file will be closed on drop automatically, ignoring any errors
     /// encountered during the process.
+    #[deprecated(since = "0.5.0", note = "use .finish() instead")]
     pub fn close(self) -> io::Result<()> {
         self.finish()
     }
@@ -289,15 +296,21 @@ fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u
     (header_utf8, version, actual_props)
 }
 
-// TODO: improve the interface to avoid unnecessary clones
-/// Serialize an iterator over a struct to a NPY file
+#[deprecated(since = "0.5.0", note = "renamed to to_file_1d")]
+pub use to_file_1d as to_file;
+
+/// Serialize an iterator over a struct to a NPY file.
+///
+/// This only saves a 1D array.  To save an ND array, **you must use the [`Builder`] API.**
 ///
 /// A single-statement alternative to saving row by row using the [`OutFile`](struct.OutFile.html).
-pub fn to_file<S, T, P>(filename: P, data: T) -> std::io::Result<()> where
-        P: AsRef<Path>,
-        S: AutoSerialize,
-        T: IntoIterator<Item=S> {
-
+pub fn to_file_1d<S, T, P>(filename: P, data: T) -> std::io::Result<()>
+where
+    P: AsRef<Path>,
+    S: AutoSerialize,
+    T: IntoIterator<Item=S>,
+{
+    #![allow(deprecated)]
     let mut of = OutFile::open(filename)?;
     for row in data {
         of.push(&row)?;
@@ -305,11 +318,19 @@ pub fn to_file<S, T, P>(filename: P, data: T) -> std::io::Result<()> where
     of.close()
 }
 
+// module encapsulating the unsafety of MaybeSeek
 use maybe_seek::MaybeSeek;
 mod maybe_seek {
     use super::*;
 
-    pub(crate) trait WriteSeek<W>: Write + Seek {}
+    pub(crate) trait WriteSeek<W>: Write + Seek + sealed::Sealed<W> {}
+
+    mod sealed {
+        use super::*;
+
+        pub(crate) trait Sealed<W> {}
+        impl<W: Write + Seek> Sealed<W> for W {}
+    }
 
     impl<W: Write + Seek> WriteSeek<W> for W {}
 
@@ -352,6 +373,9 @@ mod maybe_seek {
                 // Because `dyn WriteSeek<W> + '_` is invariant in W, the compiler will
                 // conservatively assume that it carries all borrows held by W; just as if
                 // we *hadn't* erased the lifetime.
+                //
+                // See discussion here:
+                //   https://users.rust-lang.org/t/a-trait-object-with-an-implied-lifetime/29340
                 std::mem::transmute::<
                     Box<dyn WriteSeek<W> + '_>,
                     Box<dyn WriteSeek<W> + 'static>,

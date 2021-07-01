@@ -2,7 +2,7 @@
 
 extern crate test;
 
-use nippy::{AutoSerialize, NpyWriter};
+use nippy::{AutoSerialize};
 use test::Bencher;
 use test::black_box as bb;
 use std::io::Cursor;
@@ -16,7 +16,7 @@ macro_rules! gen_benches {
             let cap = 1000 + <$T>::default_dtype().num_bytes() * NITER;
             let mut cursor = Cursor::new(Vec::with_capacity(cap));
             {
-                let mut writer = NpyWriter::begin(&mut cursor).unwrap();
+                let mut writer = nippy::Builder::new().default_dtype().begin_1d(&mut cursor).unwrap();
                 for i in 0usize..NITER {
                     writer.push(&$new(i)).unwrap();
                 }
