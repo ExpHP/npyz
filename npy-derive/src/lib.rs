@@ -9,14 +9,13 @@ and [`Deserialize`](../npy/trait.Deserialize.html) respectively.
 
 */
 
-#[macro_use] extern crate quote;  // FIXME: remove after updating quote
-use proc_macro::TokenStream;
-use proc_macro2::Span;
-use quote::{quote, quote_spanned, Tokens};
+use proc_macro::{TokenStream as TokenStream1};
+use proc_macro2::{Span, TokenStream};
+use quote::quote;
 
 /// Macros 1.1-based custom derive function
 #[proc_macro_derive(Serialize)]
-pub fn npy_serialize(input: TokenStream) -> TokenStream {
+pub fn npy_serialize(input: TokenStream1) -> TokenStream1 {
     // Parse the string representation
     let ast = syn::parse(input).unwrap();
 
@@ -28,7 +27,7 @@ pub fn npy_serialize(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_derive(Deserialize)]
-pub fn npy_deserialize(input: TokenStream) -> TokenStream {
+pub fn npy_deserialize(input: TokenStream1) -> TokenStream1 {
     // Parse the string representation
     let ast = syn::parse(input).unwrap();
 
@@ -40,7 +39,7 @@ pub fn npy_deserialize(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_derive(AutoSerialize)]
-pub fn npy_auto_serialize(input: TokenStream) -> TokenStream {
+pub fn npy_auto_serialize(input: TokenStream1) -> TokenStream1 {
     // Parse the string representation
     let ast = syn::parse(input).unwrap();
 
@@ -54,7 +53,7 @@ pub fn npy_auto_serialize(input: TokenStream) -> TokenStream {
 struct FieldData {
     idents: Vec<syn::Ident>,
     idents_str: Vec<String>,
-    types: Vec<Tokens>,
+    types: Vec<TokenStream>,
 }
 
 impl FieldData {
@@ -69,7 +68,7 @@ impl FieldData {
         }).collect();
         let idents_str = idents.iter().map(|t| unraw(t)).collect::<Vec<_>>();
 
-        let types: Vec<Tokens> = fields.iter().map(|f| {
+        let types: Vec<TokenStream> = fields.iter().map(|f| {
             let ty = &f.ty;
             quote!( #ty )
         }).collect::<Vec<_>>();
@@ -78,7 +77,7 @@ impl FieldData {
     }
 }
 
-fn impl_npy_serialize(ast: &syn::DeriveInput) -> Tokens {
+fn impl_npy_serialize(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let vis = &ast.vis;
     let FieldData { ref idents, ref idents_str, ref types } = FieldData::extract(ast);
@@ -129,7 +128,7 @@ fn impl_npy_serialize(ast: &syn::DeriveInput) -> Tokens {
     })
 }
 
-fn impl_npy_deserialize(ast: &syn::DeriveInput) -> Tokens {
+fn impl_npy_deserialize(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let vis = &ast.vis;
     let FieldData { ref idents, ref idents_str, ref types } = FieldData::extract(ast);
@@ -180,7 +179,7 @@ fn impl_npy_deserialize(ast: &syn::DeriveInput) -> Tokens {
     })
 }
 
-fn impl_npy_auto_serialize(ast: &syn::DeriveInput) -> Tokens {
+fn impl_npy_auto_serialize(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let FieldData { idents: _, ref idents_str, ref types } = FieldData::extract(ast);
 
@@ -203,7 +202,7 @@ fn impl_npy_auto_serialize(ast: &syn::DeriveInput) -> Tokens {
 fn gen_field_dtypes_struct(
     idents: &[syn::Ident],
     idents_str: &[String],
-) -> Tokens {
+) -> TokenStream {
     assert_eq!(idents.len(), idents_str.len());
     quote!{
         struct FieldDTypes {
@@ -244,8 +243,8 @@ fn gen_field_dtypes_struct(
 fn wrap_in_const(
     trait_: &str,
     ty: &syn::Ident,
-    code: Tokens,
-) -> Tokens {
+    code: TokenStream,
+) -> TokenStream {
     let dummy_const = syn::Ident::new(
         &format!("__IMPL_npy_{}_FOR_{}", trait_, unraw(ty)),
         Span::call_site(),
