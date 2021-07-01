@@ -1,17 +1,14 @@
-extern crate npy_derive;
-extern crate npy as lol;
+// This test is responsible for making sure that the derive macros access
 
 #[no_implicit_prelude]
 mod not_root {
-    use ::npy_derive;
-
-    #[derive(npy_derive::Serialize, npy_derive::Deserialize)]
+    #[derive(::nippy_derive::Serialize, ::nippy_derive::Deserialize, ::nippy_derive::AutoSerialize)]
     struct Struct {
         foo: i32,
         bar: LocalType,
     }
 
-    #[derive(npy_derive::Serialize, npy_derive::Deserialize)]
+    #[derive(::nippy_derive::Serialize, ::nippy_derive::Deserialize, ::nippy_derive::AutoSerialize)]
     struct LocalType;
 }
 

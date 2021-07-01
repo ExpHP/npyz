@@ -1,7 +1,7 @@
-use npy::{Deserialize, Serialize, AutoSerialize, DType, TypeStr, Field};
-use npy::{TypeRead, TypeWrite};
+use nippy::{Deserialize, Serialize, AutoSerialize, DType, TypeStr, Field};
+use nippy::{TypeRead, TypeWrite};
 
-// These tests ideally would be in npy::serialize::tests, but they require "derive"
+// These tests ideally would be in nippy::serialize::tests, but they require "derive"
 // because fixed-size array types can only exist as record fields.
 
 fn reader_output<T: Deserialize>(dtype: &DType, bytes: &[u8]) -> T {
@@ -23,13 +23,13 @@ fn writer_expect_err<T: Serialize + ?Sized>(dtype: &DType) {
     T::writer(dtype).err().expect("writer_expect_err failed!");
 }
 
-#[derive(npy::Serialize, npy::Deserialize, npy::AutoSerialize)]
+#[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)]
 #[derive(Debug, PartialEq)]
 struct Array3 {
     field: [i32; 3],
 }
 
-#[derive(npy::Serialize, npy::Deserialize, npy::AutoSerialize)]
+#[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)]
 #[derive(Debug, PartialEq)]
 struct Array23 {
     field: [[i32; 3]; 2],

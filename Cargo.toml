@@ -1,41 +1,44 @@
 [package]
-name = "npy"
-version = "0.4.0"
+name = "nippy"
+version = "0.5.0-pre"
 edition = "2018"
-authors = ["Pavel Potocek <pavelpotocek@gmail.com>"]
+authors = [
+    "Michael Lamparski <diagonaldevice@gmail.com>",
+    "Pavel Potocek <pavelpotocek@gmail.com>",
+]
 license = "MIT"
-description = "NumPy file format (de-)serialization"
-repository = "https://github.com/potocpav/npy-rs"
-homepage = "https://github.com/potocpav/npy-rs"
-documentation = "https://docs.rs/npy/"
+description = "NumPy file format (de-)serialization. Fork of abandoned npy-rs."
+repository = "https://github.com/ExpHP/nippy"
+homepage = "https://github.com/ExpHP/nippy"
+documentation = "https://docs.rs/nippy/"
 keywords = ["numpy", "npy"]
 categories = ["encoding"]
 readme = "README.md"
 
 [workspace]
-members = [ "npy-derive" ]
+members = [ "derive" ]
 
 [dependencies]
 byteorder = "1"
 nom = "3"
+
+# NOTE: public dependency, so make sure the doc link to Complex in README.md is kept in sync
 num-complex = { version = "0.4", optional = true }
 
-[dependencies.npy-derive]
-path = "npy-derive"
-version = "0.4"
+[dependencies.nippy-derive]
+path = "derive"
+version = "0.5.0-pre"
 optional = true
 default-features = false
 
 [features]
 default = []
 
-# Reexports the derive macros so that you can use them qualified under `npy::`:
+# Provide #[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)].
 #
-#     #[derive(npy::Serialize, npy::Deserialize, npy::AutoSerialize)]
-#     struct Struct { ... }
-#
-# This way you don't need to grab these macros from `npy_derive`.
-derive = ["npy-derive"]
+# These are for working with structured arrays (see https://numpy.org/doc/stable/user/basics.rec.html),
+# and are not otherwise necessary.
+derive = ["nippy-derive"]
 
 # Enables deserialization of the types from num-complex.
 complex = ["num-complex"]

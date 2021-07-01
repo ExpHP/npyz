@@ -1,31 +1,33 @@
 # nippy
 
-Fork of [the `npy` crate](https://github.com/potocpav/npy-rs/issues), under a new name so that I can track my own issues without flooding the original author's repository.  This is where I prototype ideas.
+Fork of [the `npy` crate](https://github.com/potocpav/npy-rs/issues), to be published to crates.io under a new name because I got tired after years of radio silence from the original maintainer.
 
-Differences from the latest `npy`:
+Differences from `npy 0.4`:
 
-* Able to read a lot more files by supporting more dtypes.  (e.g. big endian can be read, also strings. I forget what else)
-* n-dimensional arrays.  (C-order or fortran order)
-  * Writing is done through some [Builder api](https://github.com/ExpHP/nippy/blob/0f3aedcf1a71988af71a8bf8ef7fc65f79924178/src/out_file.rs#L24-L72)
-* Outputting to any `io::Write + io::Seek`.
-* `io::Seek` is not required when shape is provided.
+* More dtypes
+  * Big endian; you can parse `>i4` to `i32`
+  * Null-terminated bytestrings `|Sn` and raw bytes `|Vn` to `Vec<u8>`
+  * `c16` and `c32` to [Complex](https://docs.rs/num-complex/0.4.0/num_complex/struct.Complex.html) (when enabling the `"complex"` feature)
+* n-dimensional arrays
+* Proper standard library integration
+  * Writing to `io::Write`
+  * Reading from `io::Read`
+  * `io::Seek` not required! (in most cases)
 
-**Note (2021/05/10):**  It has been two years since I made this fork and tried to submit some PRs to `npy` which are still hanging in limbo.  I'm beginning to wonder if I should pick this back up, clean it up, add proper documentation and publish it to crates.io.
-
-Currently, this is not really in a state to be used in production, but if you are desparate, you can do: 
-
-```toml
-[dependencies.npy]
-git = "https://github.com/ExpHP/nippy"
-rev = "bd608d41f"  # replace with the latest commit
-```
-
-Information about the new features may be found by reviewing `cargo doc` and... I guess maybe closed issues on this repo or [this PR comment for the dtype changes](https://github.com/potocpav/npy-rs/pull/15#issuecomment-498839752).  You're somewhat on your own here, until I have time to revisit this proper. Sorry about that!
+>  **Note: 2021/07/01.** The time is now.  Once again I've needed this for my own projects, and now I've been working hard to prepare it for release.  Hopefully, I will have succeeded and removed this message long before you ever have the chance to read it.
+>
+> So.  If you *are* reading this message, and 2021/07/01 was a while ago, then.... well, that sucks.  If you desparately need one of the above features, you can use this as a git dependency for now, and please drop me a message reminding me to come back and finish what I started.
+>
+> ```toml
+> [dependencies.nippy]
+> git = "https://github.com/ExpHP/nippy"
+> rev = "bd608d41f"  # replace with the latest commit
+> ```
 
 ---
 
 # npy-rs
-[![crates.io version](https://img.shields.io/crates/v/npy.svg)](https://crates.io/crates/npy) [![Documentation](https://docs.rs/npy/badge.svg)](https://docs.rs/npy/) [![Build Status](https://travis-ci.org/ExpHP/nippy.svg?branch=master)](https://travis-ci.org/ExpHP/nippy)
+[![crates.io version](https://img.shields.io/crates/v/nippy.svg)](https://crates.io/crates/nippy) [![Documentation](https://docs.rs/nippy/badge.svg)](https://docs.rs/nippy/) [![Build Status](https://travis-ci.org/ExpHP/nippy.svg?branch=master)](https://travis-ci.org/ExpHP/nippy)
 
 Numpy format (*.npy) serialization and deserialization.
 
@@ -39,20 +41,13 @@ read and write *.npy files. Files are handled using iterators, so they don't nee
 
 ## Usage
 
-To use **npy-rs**, two dependencies must be specified in `Cargo.toml`:
+To use **nippy**, two dependencies must be specified in `Cargo.toml`:
 
 ```toml
-npy = "0.4"
-npy-derive = "0.4"
+npy = {version = "0.5", features = ["derive"]}
 ```
 
 A typical way to import everything needed is:
-
-```rust
-#[macro_use]
-extern crate npy_derive;
-extern crate npy;
-```
 
 The `npy-derive` dependency is only needed for
 [structured array](https://docs.scipy.org/doc/numpy/user/basics.rec.html)
@@ -61,7 +56,7 @@ serialization.
 Data can now be imported from a `*.npy` file:
 
 ```rust
-use npy::NpyData;
+use nippy::NpyData;
 
 std::fs::File::open("data.npy").unwrap().read_to_end(&mut buf).unwrap();
 let data: Vec<f64> = NpyData::from_bytes(&buf).unwrap().to_vec();
@@ -71,15 +66,14 @@ let data: Vec<f64> = NpyData::from_bytes(&buf).unwrap().to_vec();
 and exported to a `*.npy` file:
 
 ```
-npy::to_file("data.npy", data).unwrap();
+nippy::to_file("data.npy", data).unwrap();
 ```
 
-See the [documentation](https://docs.rs/npy/) for more information.
+See the [documentation](https://docs.rs/nippy/) for more information.
 
 Several usage examples are available in the
-[examples](https://github.com/potocpav/npy-rs/tree/master/examples) directory; the
-[simple](https://github.com/potocpav/npy-rs/blob/master/examples/simple.rs) example shows how to load a file, [roundtrip](https://github.com/potocpav/npy-rs/blob/master/examples/roundtrip.rs) shows both reading
-and writing. Large files can be memory-mapped as illustrated in the
-[large example](https://github.com/potocpav/npy-rs/blob/master/examples/large.rs).
+[examples](https://github.com/ExpHP/nippy/tree/master/examples) directory; the
+[structured](https://github.com/ExpHP/nippy/blob/master/examples/structured.rs) example shows how to load a structured array, [roundtrip](https://github.com/ExpHP/nippy/blob/master/examples/roundtrip.rs) shows both reading
+and writing.
 
-[Documentation](https://docs.rs/npy/)
+[Documentation](https://docs.rs/nippy/)

@@ -1,4 +1,4 @@
-#[derive(npy::Serialize, npy::Deserialize, npy::AutoSerialize, Debug, PartialEq, Clone)]
+#[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize, Debug, PartialEq, Clone)]
 struct Struct {
     a: i32,
     b: f32,
@@ -11,11 +11,11 @@ fn main() -> std::io::Result<()> {
         structs.push(Struct { a: i, b: (i as f32 * pi / 180.0).sin() });
     }
 
-    npy::to_file("examples/roundtrip.npy", structs)?;
+    nippy::to_file("examples/roundtrip.npy", structs)?;
 
     let bytes = std::fs::read("examples/roundtrip.npy")?;
 
-    for (i, arr) in npy::NpyReader::new(&bytes[..]).unwrap().into_iter().enumerate() {
+    for (i, arr) in nippy::NpyReader::new(&bytes[..]).unwrap().into_iter().enumerate() {
         assert_eq!(Struct { a: i as i32, b: (i as f32 * pi / 180.0).sin() }, arr?);
     }
     Ok(())
