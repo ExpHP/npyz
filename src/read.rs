@@ -48,17 +48,28 @@ use crate::serialize::{Deserialize, TypeRead};
 ///     reader.into_vec().unwrap_or(|e| panic!("{}", e))
 /// ```
 ///
-/// `is_empty()` is gone due to possible ambiguity between [`len`] and [`total_len`].
+/// [`NpyData::is_empty`] is gone due to possible ambiguity between [`NpyReader::len`] and [`NpyReader::total_len`].
 /// Use the one that is appropriate for what you are doing.
 ///
-/// FIXME TODO: Random access
+/// If you were using [`NpyData::get`]... well, honestly, you should first consider
+/// just iterating over the reader instead.  But if you were using [`NpyData::get`]
+/// because you *genuinely need* random access, then there is [`NpyReader::read_at`].
 ///
+/// ```text
+/// was:
+///     // note:  0 <= i < arr.len()
+///     arr.get(i)
+/// now:
+///     // note:  0 <= i < reader.total_len()
+///     reader.read_at(i)?
+/// ```
 pub struct NpyReader<T: Deserialize, R: io::Read> {
     dtype: DType,
     shape: Vec<u64>,
     strides: Vec<u64>,
     order: Order,
     n_records: u64,
+    item_size: usize,
     type_reader: <T as Deserialize>::TypeReader,
     // stateful parts, put together like this to remind you to always update them in sync
     reader_and_current_index: (R, u64),
@@ -75,7 +86,6 @@ pub struct NpyReader<T: Deserialize, R: io::Read> {
 #[deprecated(since = "0.5.0", note = "use NpyReader instead")]
 pub struct NpyData<'a, T: Deserialize> {
     inner: NpyReader<T, &'a [u8]>,
-    item_size: usize,
 }
 
 // /// This should no longer need to exist once specialization exists.
@@ -107,9 +117,10 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> {
             Err(e) => return Err(invalid_data(e)),
         };
         let n_records = shape.iter().product();
+        let item_size = dtype.num_bytes();
         let strides = strides(order, &shape);
         Ok(NpyReader {
-            dtype, shape, strides, n_records, type_reader, order,
+            dtype, shape, strides, n_records, type_reader, order, item_size,
             reader_and_current_index: (reader, 0),
         })
     }
@@ -149,7 +160,7 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> {
         self.n_records
     }
 
-    /// Get the remaining number of records that have not yet been read.
+    /// Get the remaining number of records that lie after the read cursor.
     pub fn len(&self) -> u64 {
         self.n_records - self.reader_and_current_index.1
     }
@@ -186,15 +197,52 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> {
     }
 }
 
+/// # Random access methods
+impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
+    /// Move the read cursor to the item at the given index.
+    ///
+    /// Be aware that this will affect [`Self::len`], which is always computed
+    /// from the current position.
+    /// Seeking to [`Self::total_len`] is well defined.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index is greater than [`Self::total_len`].
+    pub fn seek_to(&mut self, index: u64) -> io::Result<()> {
+        let len = self.total_len();
+        assert!(index <= len, "index out of bounds for seeking (the index is {} but the len is {})", index, len);
+
+        let (reader, current_index) = &mut self.reader_and_current_index;
+        let delta = index as i64 - *current_index as i64;
+        if delta != 0 {
+            reader.seek(io::SeekFrom::Current(delta * self.item_size as i64))?;
+            *current_index = index;
+        }
+        Ok(())
+    }
+
+    /// Read a single item at the given position, leaving the cursor at the position after it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index is out of bounds. (`>=` to [`Self::total_len`]).
+    pub fn read_at(&mut self, index: u64) -> io::Result<T> {
+        let len = self.total_len();
+        assert!(index < len, "index out of bounds for reading (the index is {} but the len is {})", index, len);
+
+        self.seek_to(index)?;
+        self.next().unwrap()
+    }
+}
+
 #[allow(deprecated)]
 impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Deserialize a NPY file represented as bytes
     pub fn from_bytes(bytes: &'a [u8]) -> io::Result<NpyData<'a, T>> {
         let inner = NpyReader::new(bytes)?;
-        let item_size = inner.dtype.num_bytes();
 
-        assert_eq!(item_size as u64 * inner.n_records, inner.reader().len() as u64);
-        Ok(NpyData { inner, item_size })
+        assert_eq!(inner.item_size as u64 * inner.n_records, inner.reader().len() as u64);
+        Ok(NpyData { inner })
     }
 
     #[inline(always)] // this should optimize into just a copy of a pointer-sized field
@@ -234,7 +282,7 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Panics if the bytes stored for the element are invalid for the dtype,
     /// or if the index is out of bounds.
     pub fn get_unchecked(&self, i: usize) -> T {
-        let item_bytes = &self.get_data_slice()[i * self.item_size..];
+        let item_bytes = &self.get_data_slice()[i * self.inner.item_size..];
         self.inner.type_reader.read_one(item_bytes).unwrap()
     }
 
@@ -380,4 +428,49 @@ mod tests {
         assert_eq!(reader.total_len(), 7);
         assert_eq!(reader.len(), 0);  // make sure this didn't underflow...
     }
+
+    #[test]
+    fn test_methods_after_seek() {
+        let bytes = to_bytes_1d(&[100, 101, 102, 103, 104, 105, 106]).unwrap();
+        let mut reader = NpyReader::new(io::Cursor::new(&bytes[..])).unwrap();
+
+        assert_eq!(reader.total_len(), 7);
+        assert_eq!(reader.len(), 7);
+
+        assert!(matches!(reader.next(), Some(Ok(100))));
+        assert!(matches!(reader.next(), Some(Ok(101))));
+
+        reader.seek_to(4).unwrap();
+
+        assert_eq!(reader.total_len(), 7);
+        assert_eq!(reader.len(), 3);
+        assert!(matches!(reader.next(), Some(Ok(104))));
+
+        assert_eq!(reader.read_at(2).unwrap(), 102);
+        assert_eq!(reader.len(), 4);
+    }
+
+    fn check_seek_panic_boundary(items: &[i32], index: u64) {
+        let bytes = to_bytes_1d(items).unwrap();
+        let mut reader = NpyReader::<i32, _>::new(io::Cursor::new(&bytes[..])).unwrap();
+        let _ = reader.seek_to(index);
+    }
+
+    fn check_read_panic_boundary(items: &[i32], index: u64) {
+        let bytes = to_bytes_1d(items).unwrap();
+        let mut reader = NpyReader::<i32, _>::new(io::Cursor::new(&bytes[..])).unwrap();
+        let _ = reader.read_at(index);
+    }
+
+    #[test]
+    fn test_seek_boundary_ok() { check_seek_panic_boundary(&[1, 2, 3], 3) }
+    #[test]
+    #[should_panic]
+    fn test_seek_boundary_ng() { check_seek_panic_boundary(&[1, 2, 3], 4) }
+
+    #[test]
+    fn test_read_boundary_ok() { check_read_panic_boundary(&[1, 2, 3], 2) }
+    #[test]
+    #[should_panic]
+    fn test_read_boundary_ng() { check_read_panic_boundary(&[1, 2, 3], 3) }
 }
