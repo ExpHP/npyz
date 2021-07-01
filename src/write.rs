@@ -116,26 +116,6 @@ impl<Row: Serialize> OutFile<Row> {
     }
 }
 
-impl<Row: Serialize, W: Write + Seek> NpyWriter<Row, W> {
-    /// Construct around an existing writer, using the default format for the given type.
-    ///
-    /// The header will be written immediately.
-    pub fn begin(fw: W) -> io::Result<Self> where Row: AutoSerialize {
-        Builder::new()
-            .default_dtype()
-            .begin_1d(fw)
-    }
-
-    /// Construct around an existing writer.
-    ///
-    /// The header will be written immediately.
-    pub fn begin_with_dtype(dtype: &DType, fw: W) -> io::Result<Self> {
-        Builder::new()
-            .dtype(dtype.clone())
-            .begin_1d(fw)
-    }
-}
-
 impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
     fn _begin(builder: &Builder<Row>, mut fw: MaybeSeek<W>, shape: Option<&[usize]>) -> io::Result<Self> {
         let &Builder { ref dtype, order, _marker } = builder;
@@ -472,7 +452,7 @@ mod tests {
     fn implicit_finish() -> io::Result<()> {
         let mut cursor = Cursor::new(vec![]);
 
-        let mut writer = NpyWriter::begin(&mut cursor)?;
+        let mut writer = Builder::new().default_dtype().begin_1d(&mut cursor)?;
         for x in vec![1.0, 3.0, 5.0, 7.0] {
             writer.push(&x)?;
         }
