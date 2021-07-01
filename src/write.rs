@@ -64,7 +64,7 @@ impl<Row> Builder<Row> {
 
 impl<Row: Serialize> Builder<Row> {
     /// Begin writing an array of known shape.
-    pub fn begin_nd<W: Write>(&self, w: W, shape: &[usize]) -> io::Result<NpyWriter<Row, W>> {
+    pub fn begin_nd<W: Write>(&self, w: W, shape: &[u64]) -> io::Result<NpyWriter<Row, W>> {
         NpyWriter::_begin(self, MaybeSeek::Isnt(w), Some(shape))
     }
 
@@ -82,7 +82,7 @@ impl<Row: Serialize> Builder<Row> {
 pub struct NpyWriter<Row: Serialize, W: Write> {
     start_pos: Option<u64>,
     shape_info: ShapeInfo,
-    num_items: usize,
+    num_items: u64,
     fw: MaybeSeek<W>,
     writer: <Row as Serialize>::TypeWriter,
     version_props: VersionProps,
@@ -93,7 +93,7 @@ enum ShapeInfo {
     Automatic { offset_in_header_text: u64 },
     // The complete shape has already been written.
     // Raise an error on `finish()` if the wrong number of elements is given.
-    Known { expected_num_items: usize },
+    Known { expected_num_items: u64 },
 }
 
 /// [`NpyWriter`] that writes an entire file.
@@ -124,7 +124,7 @@ impl<Row: Serialize> OutFile<Row> {
 }
 
 impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
-    fn _begin(builder: &Builder<Row>, mut fw: MaybeSeek<W>, shape: Option<&[usize]>) -> io::Result<Self> {
+    fn _begin(builder: &Builder<Row>, mut fw: MaybeSeek<W>, shape: Option<&[u64]>) -> io::Result<Self> {
         let &Builder { ref dtype, order, _marker } = builder;
         let dtype = dtype.as_ref().expect("Builder::dtype was never called!");
 
@@ -214,7 +214,7 @@ impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
     }
 }
 
-fn create_dict(dtype: &DType, order: Order, shape: Option<&[usize]>) -> (Vec<u8>, ShapeInfo) {
+fn create_dict(dtype: &DType, order: Order, shape: Option<&[u64]>) -> (Vec<u8>, ShapeInfo) {
     let mut header: Vec<u8> = vec![];
     header.extend(&b"{'descr': "[..]);
     header.extend(dtype.descr().as_bytes());
@@ -297,13 +297,18 @@ fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u
 }
 
 #[deprecated(since = "0.5.0", note = "renamed to to_file_1d")]
-pub use to_file_1d as to_file;
+pub fn to_file<S, T, P>(filename: P, data: T) -> std::io::Result<()>
+where
+    P: AsRef<Path>,
+    S: AutoSerialize,
+    T: IntoIterator<Item=S>,
+{
+    to_file_1d(filename, data)
+}
 
 /// Serialize an iterator over a struct to a NPY file.
 ///
 /// This only saves a 1D array.  To save an ND array, **you must use the [`Builder`] API.**
-///
-/// A single-statement alternative to saving row by row using the [`OutFile`](struct.OutFile.html).
 pub fn to_file_1d<S, T, P>(filename: P, data: T) -> std::io::Result<()>
 where
     P: AsRef<Path>,
@@ -403,7 +408,7 @@ pub(crate) fn to_writer_1d<W: io::Write + io::Seek, T: AutoSerialize>(writer: W,
 
 /// Quick API for writing an n-d array to an io::Write.
 #[cfg(test)]
-pub(crate) fn to_writer_nd<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T], shape: &[usize]) -> io::Result<()> {
+pub(crate) fn to_writer_nd<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T], shape: &[u64]) -> io::Result<()> {
     let mut writer = Builder::new().default_dtype().begin_nd(writer, shape)?;
     for x in data {
         writer.push(&x)?;

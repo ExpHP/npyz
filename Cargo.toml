@@ -11,7 +11,7 @@ description = "NumPy file format (de-)serialization. Fork of abandoned npy-rs."
 repository = "https://github.com/ExpHP/nippy"
 homepage = "https://github.com/ExpHP/nippy"
 documentation = "https://docs.rs/nippy/"
-keywords = ["numpy", "npy"]
+keywords = ["numpy", "npy", "ndarray"]
 categories = ["encoding"]
 readme = "README.md"
 
@@ -31,6 +31,11 @@ version = "0.5.0-pre"
 optional = true
 default-features = false
 
+[dev-dependencies]
+# For examples ONLY.  We don't want to provide a public interface because ndarray undergoes
+# breaking semver bumps very frequently.
+ndarray = { version = "0.15"}
+
 [features]
 default = []
 
@@ -45,6 +50,9 @@ complex = ["num-complex"]
 
 [[example]]
 name = "plain"
+
+[[example]]
+name = "ndarray"
 
 [[example]]
 name = "structured"

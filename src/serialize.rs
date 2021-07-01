@@ -11,8 +11,16 @@ use crate::type_str::{TypeStr, Endianness, TypeKind};
 
 /// Trait that permits reading a type from an `.npy` file.
 ///
-/// For an example of how to implement this, please see the
-/// [roundtrip test](https://github.com/potocpav/npy-rs/tree/master/tests/roundtrip.rs).
+/// Examples of types that implement this:
+///
+/// * Primitive integers, floats, `Complex` (with the **`"complex"`** feature)
+/// * Owned byte containers (`Vec<u8>`)
+///
+/// _This trait is derivable when enabling the **`"derive"`** feature._ This makes it easier
+/// to work with structured arrays.
+///
+/// For an example of how to implement this manually, see `Vector5` in the
+/// [roundtrip test](https://github.com/ExpHP/nippy/tree/master/tests/roundtrip.rs).
 pub trait Deserialize: Sized {
     /// Think of this as like a `for<R: io::Read> Fn(R) -> io::Result<Self>`.
     ///
@@ -33,8 +41,16 @@ pub trait Deserialize: Sized {
 
 /// Trait that permits writing a type to an `.npy` file.
 ///
-/// For an example of how to implement this, please see the
-/// [roundtrip test](https://github.com/potocpav/npy-rs/tree/master/tests/roundtrip.rs).
+/// Examples of types that implement this:
+///
+/// * Primitive integers, floats, `Complex` (with the **`"complex"`** feature)
+/// * Byte slices (`[u8]`)
+///
+/// _This trait is derivable when enabling the **`"derive"`** feature._ This makes it easier
+/// to work with structured arrays.
+///
+/// For an example of how to implement this manually, see `Vector5` in the
+/// [roundtrip test](https://github.com/ExpHP/nippy/tree/master/tests/roundtrip.rs).
 pub trait Serialize {
     /// Think of this as some sort of `for<W: io::Write> Fn(W, &Self) -> io::Result<()>`.
     ///
@@ -56,9 +72,12 @@ pub trait Serialize {
 
 /// Subtrait of [`Serialize`] for types which have a reasonable default [`DType`].
 ///
-/// This opens up some simpler APIs for serialization. (e.g. [`::to_file`])
+/// This opens up some simpler APIs for serialization. (e.g. [`crate::to_file`], [`crate::Builder::default_dtype`])
 ///
-/// For an example of how to implement this, please see the
+/// _This trait is derivable when enabling the **`"derive"`** feature._ This makes it easier
+/// to work with structured arrays.
+///
+/// For an example of how to implement this manually, see `Vector5` in the
 /// [roundtrip test](https://github.com/ExpHP/nippy/tree/master/tests/roundtrip.rs).
 pub trait AutoSerialize: Serialize {
     /// A suggested format for serialization.
@@ -70,7 +89,7 @@ pub trait AutoSerialize: Serialize {
 
 /// Like some sort of `for<R: io::Read> Fn(R) -> io::Result<T>`.
 ///
-/// For an example of how to implement this, please see the
+/// For an example of how to implement this manually, see `Vector5` in the
 /// [roundtrip test](https://github.com/ExpHP/nippy/tree/master/tests/roundtrip.rs).
 ///
 /// # Trait objects
@@ -87,7 +106,7 @@ pub trait TypeRead {
 
 /// Like some sort of `for<W: io::Write> Fn(W, &T) -> io::Result<()>`.
 ///
-/// For an example of how to implement this, please see the
+/// For an example of how to implement this manually, see `Vector5` in the
 /// [roundtrip test](https://github.com/ExpHP/nippy/tree/master/tests/roundtrip.rs).
 ///
 /// # Trait objects

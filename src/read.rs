@@ -289,8 +289,8 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Construct a vector with the deserialized contents of the whole file.
     ///
     /// The output is a flat vector with the elements in the same order that they are in the file.
-    /// To help interpret the results for multidimensional data, see [`NpyData::shape`]
-    /// and [`NpyData::strides`].
+    /// To help interpret the results for multidimensional data, see [`NpyReader::shape`]
+    /// and [`NpyReader::strides`].
     pub fn to_vec(&self) -> Vec<T> {
         let mut reader = self.inner.reader().clone();
         (0..self.len()).map(|_| self.inner.type_reader.read_one(&mut reader).unwrap()).collect()

@@ -4,3 +4,4 @@ tests/*.npy
 benches/*.npy
 !tests/f-order.npy
 !tests/c-order.npy
+examples/ndarray-out.npy
