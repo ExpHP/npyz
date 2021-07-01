@@ -80,8 +80,8 @@ impl DType {
         }
     }
 
-    /// Create from description AST
-    pub fn from_descr(descr: Value) -> io::Result<Self> {
+    // Create from description AST
+    pub(crate) fn from_descr(descr: Value) -> io::Result<Self> {
         use DType::*;
         match descr {
             Value::String(ref string) => Ok(Self::new_scalar(convert_string_to_type_str(string)?)),
