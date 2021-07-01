@@ -1,6 +1,6 @@
 # nippy
 
-[![crates.io version](https://img.shields.io/crates/v/nippy.svg)](https://crates.io/crates/nippy) [![Documentation](https://docs.rs/nippy/badge.svg)](https://docs.rs/nippy/) [![Build Status](https://travis-ci.org/ExpHP/nippy.svg?branch=master)](https://travis-ci.org/ExpHP/nippy)
+[![crates.io version](https://img.shields.io/crates/v/nippy.svg)](https://crates.io/crates/nippy) [![Documentation](https://docs.rs/nippy/badge.svg)](https://docs.rs/nippy/) [![Build Status](https://github.com/ExpHP/nippy/actions/workflows/ci.yml/badge.svg](https://github.com/ExpHP/nippy/actions)
 
 
 >  **Note: 2021/07/01.** The time is now.  Once again I've needed this for my own projects, and now I've been working hard to prepare it for release.  Hopefully, I will have succeeded and removed this message long before you ever have the chance to read it.
@@ -73,3 +73,9 @@ please see the [documentation on the root module](https://docs.rs/nippy).
 * No `io::Write`, only one writing API that writes directly to the filesystem.
 
 Originally, `nippy` was a place for me to protype new features with reckless abandon before finally making a PR to `npy`, but even my first few foundational PRs have yet to be merged upstream.  I believe Pavel has a good head on their shoulders and a great attention to detail, and I appreciated their initial response on my PRs, but nearly two years have passed since the last time I have heard from them. Therefore, I've decided to go forward and publish the fork.
+
+## License
+
+`nippy` is Copyright 2021 Michael Lamparski, and provided under the terms of the MIT License.
+
+`nippy` is based off of `npy`.  `npy` is Copyright 2018 Pavel Potoček, which was provided under the terms of the MIT License.
