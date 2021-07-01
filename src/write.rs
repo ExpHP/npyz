@@ -297,6 +297,9 @@ fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u
 }
 
 #[deprecated(since = "0.5.0", note = "renamed to to_file_1d")]
+/// Serialize an iterator over a struct to a NPY file.
+///
+/// This only saves a 1D array.  To save an ND array, **you must use the [`Builder`] API.**
 pub fn to_file<S, T, P>(filename: P, data: T) -> std::io::Result<()>
 where
     P: AsRef<Path>,
