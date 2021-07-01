@@ -8,7 +8,6 @@ use num_complex::Complex;
 
 use crate::header::DType;
 use crate::type_str::{TypeStr, Endianness, TypeKind};
-use TypeKind::*;
 
 /// Trait that permits reading a type from an `.npy` file.
 ///
@@ -421,7 +420,7 @@ fn expect_scalar_dtype<'a>(dtype: &'a DType, rust_type: &'static str) -> Result<
 
 macro_rules! impl_integer_serializable {
     (
-        meta: [ (main_ty: $Int:ident) (date_ty: $DateTime:ident) ]
+        meta: [ (main_ty: $Int:path) (date_ty: $DateTime:path) ]
         ints: [ $([$size:tt $int:ty])* ]
     ) => {$(
         impl Deserialize for $int {
@@ -468,12 +467,12 @@ macro_rules! impl_integer_serializable {
 }
 
 impl_integer_serializable! {
-    meta: [ (main_ty: Int) (date_ty: TimeDelta) ]
+    meta: [ (main_ty: TypeKind::Int) (date_ty: TypeKind::TimeDelta) ]
     ints: [ [1 i8] [2 i16] [4 i32] [8 i64] ]
 }
 
 impl_integer_serializable! {
-    meta: [ (main_ty: Uint) (date_ty: DateTime) ]
+    meta: [ (main_ty: TypeKind::Uint) (date_ty: TypeKind::DateTime) ]
     ints: [ [1 u8] [2 u16] [4 u32] [8 u64] ]
 }
 
@@ -486,7 +485,7 @@ macro_rules! impl_float_serializable {
             fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
                 match expect_scalar_dtype(dtype, stringify!($float))? {
                     // Read a float of the correct size
-                    TypeStr { size: $size, endianness, type_kind: Float, .. } => {
+                    TypeStr { size: $size, endianness, type_kind: TypeKind::Float, .. } => {
                         let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
                         Ok(PrimitiveReader::new(swap_byteorder))
                     },
@@ -501,7 +500,7 @@ macro_rules! impl_float_serializable {
             fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
                 match expect_scalar_dtype(dtype, stringify!($float))? {
                     // Write a float of the correct size
-                    TypeStr { size: $size, endianness, type_kind: Float, .. } => {
+                    TypeStr { size: $size, endianness, type_kind: TypeKind::Float, .. } => {
                         let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
                         Ok(PrimitiveWriter::new(swap_byteorder))
                     },
@@ -512,7 +511,7 @@ macro_rules! impl_float_serializable {
 
         impl AutoSerialize for $float {
             fn default_dtype() -> DType {
-                DType::new_scalar(TypeStr::with_auto_endianness(Float, $size, None))
+                DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::Float, $size, None))
             }
         }
 
@@ -525,7 +524,7 @@ macro_rules! impl_float_serializable {
                 const SIZE: u64 = 2 * $size;
 
                 match expect_scalar_dtype(dtype, stringify!(Complex<$float>))? {
-                    TypeStr { size: SIZE, endianness, type_kind: Complex, .. } => {
+                    TypeStr { size: SIZE, endianness, type_kind: TypeKind::Complex, .. } => {
                         let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
                         Ok(ComplexReader { float: PrimitiveReader::new(swap_byteorder) })
                     },
@@ -543,7 +542,7 @@ macro_rules! impl_float_serializable {
                 const SIZE: u64 = 2 * $size;
 
                 match expect_scalar_dtype(dtype, stringify!(Complex<$float>))? {
-                    TypeStr { size: SIZE, endianness, type_kind: Complex, .. } => {
+                    TypeStr { size: SIZE, endianness, type_kind: TypeKind::Complex, .. } => {
                         let swap_byteorder = endianness.requires_swap(Endianness::of_machine());
                         Ok(ComplexWriter { float: PrimitiveWriter::new(swap_byteorder) })
                     },
@@ -556,7 +555,7 @@ macro_rules! impl_float_serializable {
         /// _This impl is only available with the **`complex`** feature._
         impl AutoSerialize for Complex<$float> {
             fn default_dtype() -> DType {
-                DType::new_scalar(TypeStr::with_auto_endianness(Complex, $size, None))
+                DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::Complex, $size, None))
             }
         }
     )+};
@@ -598,8 +597,8 @@ impl Deserialize for Vec<u8> {
         };
 
         let is_byte_str = match *type_str {
-            TypeStr { type_kind: ByteStr, .. } => true,
-            TypeStr { type_kind: RawData, .. } => false,
+            TypeStr { type_kind: TypeKind::ByteStr, .. } => true,
+            TypeStr { type_kind: TypeKind::RawData, .. } => false,
             _ => return Err(DTypeError::bad_scalar("read", type_str, "Vec<u8>")),
         };
         Ok(BytesReader { size, is_byte_str })
@@ -647,8 +646,8 @@ impl Serialize for [u8] {
 
         let type_str = type_str.clone();
         let is_byte_str = match type_str {
-            TypeStr { type_kind: ByteStr, .. } => true,
-            TypeStr { type_kind: RawData, .. } => false,
+            TypeStr { type_kind: TypeKind::ByteStr, .. } => true,
+            TypeStr { type_kind: TypeKind::RawData, .. } => false,
             _ => return Err(DTypeError::bad_scalar("read", &type_str, "[u8]")),
         };
         Ok(BytesWriter { type_str, size, is_byte_str })

@@ -337,7 +337,7 @@ impl<'a, T> ExactSizeIterator for IntoIter<'a, T> where T: Deserialize {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::out_file::to_bytes_1d;
+    use crate::write::to_bytes_1d;
 
     #[test]
     fn test_strides() {

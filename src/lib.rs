@@ -23,7 +23,7 @@ and/or [`AutoSerialize`] traits are supported. These are:
    * other structs that implement the traits,
    * arrays of types that implement the traits (including arrays) of length ≤ 16.
  * `struct`s with manual trait implementations. An example of this can be found in the
-   [roundtrip test](https://github.com/potocpav/npy-rs/tree/master/tests/roundtrip.rs).
+   [roundtrip test](https://github.com/ExpHP/nippy/tree/master/tests/roundtrip.rs).
 
 To successfully import an array from NPY using the `#[derive(nippy::Serialize)]` mechanism,
 you must enable the `"derive"` feature, and the target struct must contain:
@@ -139,15 +139,15 @@ by activating the `complex` feature.
 #[cfg(feature = "derive")] pub use nippy_derive::*;
 
 mod header;
-mod npy_data;
-mod out_file;
+mod read;
+mod write;
 mod type_str;
 mod serialize;
 
 pub use header::{DType, Field};
 #[allow(deprecated)]
-pub use npy_data::{NpyData, NpyReader, Order};
-pub use out_file::{to_file, OutFile, NpyWriter, Builder};
+pub use read::{NpyData, NpyReader, Order};
+pub use write::{to_file, OutFile, NpyWriter, Builder};
 pub use serialize::{Serialize, Deserialize, AutoSerialize};
 pub use serialize::{TypeRead, TypeWrite, TypeWriteDyn, DTypeError};
 pub use type_str::{TypeStr, ParseTypeStrError};

@@ -7,7 +7,7 @@ use byteorder::{WriteBytesExt, LittleEndian};
 
 use crate::serialize::{AutoSerialize, Serialize, TypeWrite};
 use crate::header::{self, DType, VersionProps, HeaderSizeType, HeaderEncoding};
-use crate::npy_data::Order;
+use crate::read::Order;
 
 // Long enough to accomodate a large integer followed by ",), }".
 // Used when no shape is provided.
