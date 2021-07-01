@@ -10,6 +10,9 @@ license = "MIT"
 description = "#[derive(...)]s for reading structured arrays in NPY files"
 repository = "https://github.com/ExpHP/nippy"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lib]
 proc-macro = true
 

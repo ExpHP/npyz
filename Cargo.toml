@@ -15,6 +15,9 @@ keywords = ["numpy", "npy", "ndarray"]
 categories = ["encoding"]
 readme = "README.md"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [workspace]
 members = [ "derive" ]
 
