@@ -1,8 +1,4 @@
-#[macro_use]
-extern crate npy_derive;
-extern crate npy;
-
-#[derive(Serialize, Deserialize, AutoSerialize, Debug, PartialEq, Clone)]
+#[derive(npy::Serialize, npy::Deserialize, npy::AutoSerialize, Debug, PartialEq, Clone)]
 struct Struct {
     a: i32,
     b: f32,

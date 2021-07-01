@@ -9,15 +9,10 @@ and [`Deserialize`](../npy/trait.Deserialize.html) respectively.
 
 */
 
-extern crate proc_macro;
-extern crate proc_macro2;
-extern crate syn;
-#[macro_use]
-extern crate quote;
-
+#[macro_use] extern crate quote;  // FIXME: remove after updating quote
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::Tokens;
+use quote::{quote, quote_spanned, Tokens};
 
 /// Macros 1.1-based custom derive function
 #[proc_macro_derive(Serialize)]

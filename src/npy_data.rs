@@ -1,13 +1,13 @@
 use std::io;
-use header::{Value, DType, read_header, convert_value_to_shape};
-use serialize::{Deserialize, TypeRead};
+
+use crate::header::{Value, DType, read_header, convert_value_to_shape};
+use crate::serialize::{Deserialize, TypeRead};
 
 /// Object for reading an `npy` file.
 ///
 /// This type is an iterator, allowing you to lazily read one element at a time (even if
 /// the file is too large to fit in memory).
 /// ```
-/// # extern crate npy;
 /// # fn main() -> std::io::Result<()> {
 /// use std::fs::File;
 /// use std::io;

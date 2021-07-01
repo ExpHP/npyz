@@ -4,9 +4,6 @@
 //   which the warning is generated.
 #![allow(mixed_script_confusables)]
 
-extern crate npy;
-extern crate byteorder;
-
 use std::io::{Read, Write, Cursor};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 use npy::{DType, Field, OutFile, Serialize, Deserialize, AutoSerialize};

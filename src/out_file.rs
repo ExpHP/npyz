@@ -5,9 +5,9 @@ use std::marker::PhantomData;
 
 use byteorder::{WriteBytesExt, LittleEndian};
 
-use serialize::{AutoSerialize, Serialize, TypeWrite};
-use header::{self, DType, VersionProps, HeaderSizeType, HeaderEncoding};
-use npy_data::Order;
+use crate::serialize::{AutoSerialize, Serialize, TypeWrite};
+use crate::header::{self, DType, VersionProps, HeaderSizeType, HeaderEncoding};
+use crate::npy_data::Order;
 
 // Long enough to accomodate a large integer followed by ",), }".
 // Used when no shape is provided.
@@ -159,11 +159,11 @@ impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
         assert_eq!((header_text.len() + version_props.bytes_before_text()) % 16, 0);
         match version_props.header_size_type {
             HeaderSizeType::U16 => {
-                assert!(header_text.len() <= ::std::u16::MAX as usize);
+                assert!(header_text.len() <= u16::MAX as usize);
                 fw.write_u16::<LittleEndian>(header_text.len() as u16)?;
             },
             HeaderSizeType::U32 => {
-                assert!(header_text.len() <= ::std::u32::MAX as usize);
+                assert!(header_text.len() <= u32::MAX as usize);
                 fw.write_u32::<LittleEndian>(header_text.len() as u32)?;
             },
         }
@@ -271,8 +271,8 @@ impl<Row: Serialize, W: Write> Drop for NpyWriter<Row, W> {
 /// the 65536 threshold, causing version 2 to be used and therefore use 2 additional bytes.
 /// Those additional bytes in turn could throw off the padding.
 fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u8>, (u8, u8), VersionProps) {
-    use self::HeaderSizeType::*;
-    use self::HeaderEncoding::*;
+    use HeaderSizeType::*;
+    use HeaderEncoding::*;
 
     // I'm almost 100% certain that, when regarding the initial length of dict_utf8,
     // there is a precise value at which the optimal version suddenly switches from 1 to 2.
@@ -313,7 +313,7 @@ fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u
 /// Serialize an iterator over a struct to a NPY file
 ///
 /// A single-statement alternative to saving row by row using the [`OutFile`](struct.OutFile.html).
-pub fn to_file<S, T, P>(filename: P, data: T) -> ::std::io::Result<()> where
+pub fn to_file<S, T, P>(filename: P, data: T) -> std::io::Result<()> where
         P: AsRef<Path>,
         S: AutoSerialize,
         T: IntoIterator<Item=S> {
@@ -325,7 +325,7 @@ pub fn to_file<S, T, P>(filename: P, data: T) -> ::std::io::Result<()> where
     of.close()
 }
 
-use self::maybe_seek::MaybeSeek;
+use maybe_seek::MaybeSeek;
 mod maybe_seek {
     use super::*;
 
@@ -424,7 +424,7 @@ pub(crate) fn to_writer_1d_with_seeking<W: io::Write + io::Seek, T: AutoSerializ
 mod tests {
     use super::*;
     use std::io::{self, Cursor};
-    use ::NpyReader;
+    use crate::NpyReader;
 
     fn bytestring_contains(haystack: &[u8], needle: &[u8]) -> bool {
         if needle.is_empty() {

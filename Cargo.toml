@@ -1,6 +1,7 @@
 [package]
 name = "npy"
 version = "0.4.0"
+edition = "2018"
 authors = ["Pavel Potocek <pavelpotocek@gmail.com>"]
 license = "MIT"
 description = "NumPy file format (de-)serialization"
@@ -33,9 +34,7 @@ default = []
 #     #[derive(npy::Serialize, npy::Deserialize, npy::AutoSerialize)]
 #     struct Struct { ... }
 #
-# This is a nicer alternative to `#[macro_use] extern crate npy_derive`, which
-# directly imports things like `#[derive(Serialize)]` that may conflict with
-# other crates (e.g. `serde`).
+# This way you don't need to grab these macros from `npy_derive`.
 derive = ["npy-derive"]
 
 # Enables deserialization of the types from num-complex.

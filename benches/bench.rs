@@ -1,6 +1,5 @@
 #![feature(test)]
 
-extern crate npy;
 extern crate test;
 
 use npy::{AutoSerialize, NpyWriter};

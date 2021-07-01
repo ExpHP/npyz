@@ -1,12 +1,14 @@
 
-use nom::IResult;
-use byteorder::{LE, ReadBytesExt};
 use std::collections::HashMap;
 use std::io;
-use type_str::TypeStr;
+
+use nom::IResult;
+use byteorder::{LittleEndian, ReadBytesExt};
+
+use crate::type_str::TypeStr;
 
 /// Representation of a Numpy type
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DType {
     /// A simple array with only a single field
     Plain {
@@ -28,7 +30,6 @@ pub enum DType {
         ///
         #[cfg_attr(any(not(doctest), feature="derive"), doc = r##"
 ```
-# extern crate npy;
 # #[allow(unused)]
 #[derive(npy::Serialize, npy::Deserialize, npy::AutoSerialize)]
 struct Row {
@@ -43,7 +44,7 @@ struct Row {
     Record(Vec<Field>)
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// A field of a record dtype
 pub struct Field {
     /// The name of the field
@@ -211,7 +212,7 @@ fn invalid_data(message: impl ToString) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.to_string())
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     String(String),
     Integer(i64),
@@ -258,8 +259,8 @@ fn read_pre_header(r: &mut dyn io::Read) -> io::Result<PreHeader> {
     let version_props = get_version_props(version)?;
 
     let header_size = match version_props.header_size_type {
-        HeaderSizeType::U32 => r.read_u32::<LE>()? as usize,
-        HeaderSizeType::U16 => r.read_u16::<LE>()? as usize,
+        HeaderSizeType::U32 => r.read_u32::<LittleEndian>()? as usize,
+        HeaderSizeType::U16 => r.read_u16::<LittleEndian>()? as usize,
     };
 
     Ok(PreHeader { version_props, header_size })
@@ -280,10 +281,10 @@ fn read_magic_and_version(r: &mut dyn io::Read) -> io::Result<(u8, u8)> {
     Ok((buf[6], buf[7]))
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HeaderSizeType { U16, U32 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HeaderEncoding {
     // Note: there is a suspicious phrase in the documentation:
     //

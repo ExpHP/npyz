@@ -1,6 +1,6 @@
-extern crate npy;
-use npy::Order;
 use std::io::Cursor;
+
+use npy::Order;
 
 fn c_order_vec() -> Vec<i64> { vec![1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,6,6,6,6] }
 fn fortran_order_vec() -> Vec<i64> { vec![1,4,2,5,3,6,1,4,2,5,3,6,1,4,2,5,3,6,1,4,2,5,3,6] }

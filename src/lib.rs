@@ -48,8 +48,6 @@ np.save('examples/plain.npy', a)
 Now, we can load it in Rust:
 
 ```rust
-extern crate npy;
-
 use npy::NpyReader;
 
 fn main() -> std::io::Result<()> {
@@ -101,11 +99,9 @@ and make sure the field names and types all match up:
 //    - It is only tested when the feature is present (`cargo test --features derive`)
 #![cfg_attr(any(not(doctest), feature="derive"), doc = r##"
 ```
-// make sure to add `features = ["derive"]` in Cargo.toml!
-extern crate npy;
-
 use npy::NpyReader;
 
+// make sure to add `features = ["derive"]` in Cargo.toml!
 #[derive(npy::Deserialize, Debug)]
 struct Struct {
     a: i32,
@@ -140,14 +136,7 @@ by activating the `complex` feature.
 */
 
 // Reexport the macros.
-#[cfg(feature = "derive")] extern crate npy_derive;
 #[cfg(feature = "derive")] pub use npy_derive::*;
-
-#[cfg(feature = "complex")] extern crate num_complex;
-
-extern crate byteorder;
-#[macro_use]
-extern crate nom;
 
 mod header;
 mod npy_data;

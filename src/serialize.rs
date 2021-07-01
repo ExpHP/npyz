@@ -1,12 +1,14 @@
-use header::DType;
-use type_str::{TypeStr, Endianness, TypeKind};
-use self::{TypeKind::*};
 use std::io;
 use std::fmt;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
+
 #[cfg(feature = "complex")]
 use num_complex::Complex;
+
+use crate::header::DType;
+use crate::type_str::{TypeStr, Endianness, TypeKind};
+use TypeKind::*;
 
 /// Trait that permits reading a type from an `.npy` file.
 ///

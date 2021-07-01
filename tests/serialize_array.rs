@@ -1,5 +1,3 @@
-extern crate npy;
-
 use npy::{Deserialize, Serialize, AutoSerialize, DType, TypeStr, Field};
 use npy::{TypeRead, TypeWrite};
 
