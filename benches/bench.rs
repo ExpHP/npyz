@@ -1,16 +1,13 @@
-#![feature(test)]
-
-extern crate test;
-
 use nippy::{AutoSerialize};
-use test::Bencher;
-use test::black_box as bb;
+use bencher::{Bencher, black_box as bb};
 use std::io::Cursor;
 
 const NITER: usize = 100_000;
 
 macro_rules! gen_benches {
-    ($T:ty, $new:expr) => {
+    // HACK even though we grouped things into modules we have to manually supply names for the
+    //      functions because the bencher crate doesn't show the full module path
+    ($read_to_vec_testname:ident, $write_testname:ident, $T:ty, $new:expr) => {
         #[inline(never)]
         fn write_array_via_push() -> Vec<u8> {
             let cap = 1000 + <$T>::default_dtype().num_bytes() * NITER;
@@ -26,20 +23,20 @@ macro_rules! gen_benches {
         }
 
         #[allow(deprecated)]
-        #[bench]
-        fn read_to_vec(b: &mut Bencher) {
+        fn $read_to_vec_testname(b: &mut Bencher) {
             let bytes = write_array_via_push();
             b.iter(|| {
                 bb(nippy::NpyData::<$T>::from_bytes(&bytes).unwrap().to_vec())
             });
         }
 
-        #[bench]
-        fn write(b: &mut Bencher) {
+        fn $write_testname(b: &mut Bencher) {
             b.iter(|| {
                 bb(write_array_via_push())
             });
         }
+
+        bencher::benchmark_group!(benches, $write_testname, $read_to_vec_testname);
     };
 }
 
@@ -54,7 +51,10 @@ mod simple {
         b: f32,
     }
 
-    gen_benches!(Simple, |i| Simple { a: i as i32, b: i as f32 });
+    gen_benches!(
+        simple_read_to_vec, simple_write,
+        Simple, |i| Simple { a: i as i32, b: i as f32 }
+    );
 }
 
 #[cfg(feature = "derive")]
@@ -67,7 +67,10 @@ mod one_field {
         a: i32,
     }
 
-    gen_benches!(OneField, |i| OneField { a: i as i32 });
+    gen_benches!(
+        one_field_read_to_vec, one_field_write,
+        OneField, |i| OneField { a: i as i32 }
+    );
 }
 
 #[cfg(feature = "derive")]
@@ -80,11 +83,22 @@ mod array {
         a: [f32; 8],
     }
 
-    gen_benches!(Array, |i| Array { a: [i as f32; 8] });
+    gen_benches!(
+        array_read_to_vec, array_write,
+        Array, |i| Array { a: [i as f32; 8] }
+    );
 }
 
 mod plain_f32 {
     use super::*;
 
-    gen_benches!(f32, |i| i as f32);
+    gen_benches!(
+        plain_f32_read_to_vec, plain_f32_write,
+        f32, |i| i as f32
+    );
 }
+
+#[cfg(feature = "derive")]
+bencher::benchmark_main!(plain_f32::benches, array::benches, simple::benches, one_field::benches);
+#[cfg(not(feature = "derive"))]
+bencher::benchmark_main!(plain_f32::benches);

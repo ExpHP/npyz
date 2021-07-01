@@ -39,6 +39,8 @@ default-features = false
 # breaking semver bumps very frequently.
 ndarray = { version = "0.15"}
 
+bencher = { version = "0.1" }
+
 [features]
 default = []
 
@@ -50,6 +52,10 @@ derive = ["nippy-derive"]
 
 # Enables deserialization of the types from num-complex.
 complex = ["num-complex"]
+
+[[bench]]
+name = "bench"
+harness = false
 
 [[example]]
 name = "plain"
