@@ -13,13 +13,11 @@ read and write `*.npy` files. Files are handled using iterators, so they don't n
 
 ## Usage
 
-To use **npyz**, two dependencies must be specified in `Cargo.toml`:
-
 ```toml
 npyz = "0.5"
 ```
 
-You may be interested in enabling some features:
+You also may be interested in enabling some features:
 
 ```toml
 npyz = {version = "0.5", features = ["derive", "complex"]}
