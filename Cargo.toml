@@ -7,7 +7,7 @@ authors = [
     "Pavel Potocek <pavelpotocek@gmail.com>",
 ]
 license = "MIT"
-description = "NumPy file format (de-)serialization. Fork of abandoned npy-rs."
+description = "NumPy file format (de-)serialization. Fork of outdated npy-rs."
 repository = "https://github.com/ExpHP/nippy"
 homepage = "https://github.com/ExpHP/nippy"
 documentation = "https://docs.rs/nippy/"

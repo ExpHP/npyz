@@ -33,7 +33,7 @@ nippy = "0.5"
 You may be interested in enabling some features:
 
 ```toml
-npy = {version = "0.5", features = ["derive", "complex"]}
+nippy = {version = "0.5", features = ["derive", "complex"]}
 ```
 
 Data can now be read from a `*.npy` file:
