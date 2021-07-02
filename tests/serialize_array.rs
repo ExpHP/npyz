@@ -1,7 +1,7 @@
-use nippy::{Deserialize, Serialize, AutoSerialize, DType, TypeStr, Field};
-use nippy::{TypeRead, TypeWrite};
+use npyz::{Deserialize, Serialize, AutoSerialize, DType, TypeStr, Field};
+use npyz::{TypeRead, TypeWrite};
 
-// These tests ideally would be in nippy::serialize::tests, but they require "derive"
+// These tests ideally would be in npyz::serialize::tests, but they require "derive"
 // because fixed-size array types can only exist as record fields.
 
 fn reader_output<T: Deserialize>(dtype: &DType, bytes: &[u8]) -> T {
@@ -23,13 +23,13 @@ fn writer_expect_err<T: Serialize + ?Sized>(dtype: &DType) {
     T::writer(dtype).err().expect("writer_expect_err failed!");
 }
 
-#[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)]
+#[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
 #[derive(Debug, PartialEq)]
 struct Array3 {
     field: [i32; 3],
 }
 
-#[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)]
+#[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
 #[derive(Debug, PartialEq)]
 struct Array23 {
     field: [[i32; 3]; 2],
@@ -46,7 +46,7 @@ const ARRAY_RECORD_DESCR_LE: &str = "[('field', [('lol', '<i4')])]";
 
 #[test]
 fn read_write() {
-    let dtype = <Array3 as nippy::AutoSerialize>::default_dtype();
+    let dtype = <Array3 as npyz::AutoSerialize>::default_dtype();
     let value = Array3 { field: [1, 3, 5] };
     let mut bytes = vec![];
     bytes.extend_from_slice(&i32::to_le_bytes(1));
@@ -141,7 +141,7 @@ fn default_dtype() {
 mod zero_len {
     use super::*;
 
-    #[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)]
+    #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
     #[derive(Debug, PartialEq)]
     struct CloseTheGap {
         left: i64,
@@ -152,7 +152,7 @@ mod zero_len {
 
     #[test]
     fn read_write() {
-        let dtype = <CloseTheGap as nippy::AutoSerialize>::default_dtype();
+        let dtype = <CloseTheGap as npyz::AutoSerialize>::default_dtype();
         let value = CloseTheGap { left: 12, middle: [[], []], right: 5 };
         let mut bytes = vec![];
         bytes.extend_from_slice(&i64::to_le_bytes(12));

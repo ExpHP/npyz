@@ -12,15 +12,15 @@ use crate::serialize::{Deserialize, TypeRead};
 /// use std::fs::File;
 /// use std::io;
 ///
-/// use nippy::NpyReader;
+/// use npyz::NpyReader;
 ///
 /// let file = io::BufReader::new(File::open("./tests/c-order.npy")?);
-/// let npy = nippy::NpyReader::new(file)?;
+/// let npy = npyz::NpyReader::new(file)?;
 ///
 /// // Helper methods for inspecting the layout of the data.
 /// assert_eq!(npy.shape(), &[2, 3, 4]);
 /// assert_eq!(npy.strides(), &[12, 4, 1]);
-/// assert_eq!(npy.order(), nippy::Order::C);
+/// assert_eq!(npy.order(), npyz::Order::C);
 ///
 /// // The reader is an iterator!
 /// let data: Vec<i64> = npy.collect::<Result<_, _>>()?;
@@ -33,9 +33,9 @@ use crate::serialize::{Deserialize, TypeRead};
 /// At construction, since `&[u8]` impls `Read`, there isn't much you have to change:
 /// ```text
 /// was:
-///     nippy::NpyData::<i64>::from_bytes(&bytes)
+///     npyz::NpyData::<i64>::from_bytes(&bytes)
 /// now:
-///     nippy::NpyReader::<i64, _>::new(&bytes[..])
+///     npyz::NpyReader::<i64, _>::new(&bytes[..])
 /// ```
 ///
 /// `.to_vec()` is now `.into_vec()`, consuming `self` to produce `Result<Vec<T>>`.

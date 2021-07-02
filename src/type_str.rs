@@ -7,7 +7,7 @@ use std::fmt;
 ///
 /// ```
 /// # fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-/// use nippy::TypeStr;
+/// use npyz::TypeStr;
 ///
 /// let ts = "|i1".parse::<TypeStr>()?;
 ///

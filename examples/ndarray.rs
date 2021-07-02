@@ -1,25 +1,25 @@
 mod read_example {
-    use nippy::NpyReader;
+    use npyz::NpyReader;
 
     // Example of parsing to an array with fixed NDIM.
-    fn to_array_3<T>(data: Vec<T>, shape: Vec<u64>, order: nippy::Order) -> ndarray::Array3<T> {
+    fn to_array_3<T>(data: Vec<T>, shape: Vec<u64>, order: npyz::Order) -> ndarray::Array3<T> {
         use ndarray::ShapeBuilder;
 
         let shape = match shape[..] {
             [i1, i2, i3] => [i1 as usize, i2 as usize, i3 as usize],
             _  => panic!("expected 3D array"),
         };
-        let true_shape = shape.set_f(order == nippy::Order::Fortran);
+        let true_shape = shape.set_f(order == npyz::Order::Fortran);
 
         ndarray::Array3::from_shape_vec(true_shape, data).unwrap_or_else(|e| panic!("shape error: {}", e))
     }
 
     // Example of parsing to an array with dynamic NDIM.
-    fn to_array_d<T>(data: Vec<T>, shape: Vec<u64>, order: nippy::Order) -> ndarray::ArrayD<T> {
+    fn to_array_d<T>(data: Vec<T>, shape: Vec<u64>, order: npyz::Order) -> ndarray::ArrayD<T> {
         use ndarray::ShapeBuilder;
 
         let shape = shape.into_iter().map(|x| x as usize).collect::<Vec<_>>();
-        let true_shape = shape.set_f(order == nippy::Order::Fortran);
+        let true_shape = shape.set_f(order == npyz::Order::Fortran);
 
         ndarray::ArrayD::from_shape_vec(true_shape, data).unwrap_or_else(|e| panic!("shape error: {}", e))
     }
@@ -39,7 +39,7 @@ mod read_example {
     #[test]
     fn read_c_order() {
         let bytes = std::fs::read("tests/c-order.npy").unwrap();
-        let reader = nippy::NpyReader::<i64, _>::new(&bytes[..]).unwrap();
+        let reader = npyz::NpyReader::<i64, _>::new(&bytes[..]).unwrap();
         let order = reader.order();
         let shape = reader.shape().to_vec();
         let data = reader.into_vec().unwrap();
@@ -63,7 +63,7 @@ mod read_example {
     #[test]
     fn read_f_order() {
         let bytes = std::fs::read("tests/f-order.npy").unwrap();
-        let reader = nippy::NpyReader::<i64, _>::new(&bytes[..]).unwrap();
+        let reader = npyz::NpyReader::<i64, _>::new(&bytes[..]).unwrap();
         let order = reader.order();
         let shape = reader.shape().to_vec();
         let data = reader.into_vec().unwrap();
@@ -93,14 +93,14 @@ mod write_example {
     // Example of writing an array with unknown shape.  The output is always C-order.
     fn write_array<T, S, D>(writer: impl io::Write, array: &ndarray::ArrayBase<S, D>) -> io::Result<()>
     where
-        T: Clone + nippy::AutoSerialize,
+        T: Clone + npyz::AutoSerialize,
         S: ndarray::Data<Elem=T>,
         D: ndarray::Dimension,
     {
         let shape = array.shape().iter().map(|&x| x as u64).collect::<Vec<_>>();
         let c_order_items = array.iter();
 
-        let mut writer = nippy::Builder::new().default_dtype().begin_nd(writer, &shape)?;
+        let mut writer = npyz::Builder::new().default_dtype().begin_nd(writer, &shape)?;
         for item in c_order_items {
             writer.push(item)?;
         }
@@ -130,8 +130,8 @@ mod write_example {
         let mut bytes = vec![];
         write_array(&mut bytes, &view)?;
 
-        let mut reader = nippy::NpyReader::<i32, _>::new(&bytes[..])?;
-        assert_eq!(reader.order(), nippy::Order::C);
+        let mut reader = npyz::NpyReader::<i32, _>::new(&bytes[..])?;
+        assert_eq!(reader.order(), npyz::Order::C);
         assert_eq!(reader.shape(), &[8, 7, 3]);
         // check that the items were properly converted into C order
         assert_eq!(reader.next().unwrap().unwrap(), 0);

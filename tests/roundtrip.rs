@@ -7,7 +7,7 @@
 use std::io::{self, Read, Write, Cursor};
 use std::fs;
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
-use nippy::{DType, Field, Serialize, Deserialize, AutoSerialize};
+use npyz::{DType, Field, Serialize, Deserialize, AutoSerialize};
 
 #[derive(Serialize, Deserialize, AutoSerialize)]
 #[derive(Debug, PartialEq, Clone)]
@@ -55,11 +55,11 @@ impl AutoSerialize for Vector5 {
 impl Serialize for Vector5 {
     type TypeWriter = Vector5Writer;
 
-    fn writer(dtype: &DType) -> Result<Self::TypeWriter, nippy::DTypeError> {
+    fn writer(dtype: &DType) -> Result<Self::TypeWriter, npyz::DTypeError> {
         if dtype == &Self::default_dtype() {
             Ok(Vector5Writer)
         } else {
-            Err(nippy::DTypeError::custom("Vector5 only supports '<i4' format!"))
+            Err(npyz::DTypeError::custom("Vector5 only supports '<i4' format!"))
         }
     }
 }
@@ -67,11 +67,11 @@ impl Serialize for Vector5 {
 impl Deserialize for Vector5 {
     type TypeReader = Vector5Reader;
 
-    fn reader(dtype: &DType) -> Result<Self::TypeReader, nippy::DTypeError> {
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, npyz::DTypeError> {
         if dtype == &Self::default_dtype() {
             Ok(Vector5Reader)
         } else {
-            Err(nippy::DTypeError::custom("Vector5 only supports '<i4' format!"))
+            Err(npyz::DTypeError::custom("Vector5 only supports '<i4' format!"))
         }
     }
 }
@@ -79,7 +79,7 @@ impl Deserialize for Vector5 {
 struct Vector5Writer;
 struct Vector5Reader;
 
-impl nippy::TypeWrite for Vector5Writer {
+impl npyz::TypeWrite for Vector5Writer {
     type Value = Vector5;
 
     #[inline]
@@ -91,7 +91,7 @@ impl nippy::TypeWrite for Vector5Writer {
     }
 }
 
-impl nippy::TypeRead for Vector5Reader {
+impl npyz::TypeRead for Vector5Reader {
     type Value = Vector5;
 
     #[inline]
@@ -131,13 +131,13 @@ fn roundtrip() {
         arrays.push(a);
     }
 
-    nippy::to_file_1d("tests/roundtrip.npy", arrays.clone()).unwrap();
+    npyz::to_file_1d("tests/roundtrip.npy", arrays.clone()).unwrap();
 
     let buf = fs::read("tests/roundtrip.npy").unwrap();
 
     assert_version(&buf, (1, 0));
 
-    let arrays2 = nippy::NpyReader::new(&buf[..]).unwrap().into_vec().unwrap();
+    let arrays2 = npyz::NpyReader::new(&buf[..]).unwrap().into_vec().unwrap();
     assert_eq!(arrays, arrays2);
 }
 
@@ -152,11 +152,11 @@ fn plain_field(name: &str, dtype: &str) -> Field {
 fn roundtrip_with_plain_dtype() {
     let array_written = vec![2., 3., 4., 5.];
 
-    nippy::to_file_1d("tests/roundtrip_plain.npy", array_written.clone()).unwrap();
+    npyz::to_file_1d("tests/roundtrip_plain.npy", array_written.clone()).unwrap();
 
     let buffer = fs::read("tests/roundtrip_plain.npy").unwrap();
 
-    let array_read = nippy::NpyReader::new(&buffer[..]).unwrap().into_vec().unwrap();
+    let array_read = npyz::NpyReader::new(&buffer[..]).unwrap().into_vec().unwrap();
     assert_eq!(array_written, array_read);
 }
 
@@ -164,7 +164,7 @@ fn roundtrip_with_plain_dtype() {
 fn roundtrip_byteorder() {
     let path = "tests/roundtrip_byteorder.npy";
 
-    #[derive(nippy::Serialize, nippy::Deserialize)]
+    #[derive(npyz::Serialize, npyz::Deserialize)]
     #[derive(Debug, PartialEq, Clone)]
     struct Row {
         be_u32: u32,
@@ -206,7 +206,7 @@ fn roundtrip_byteorder() {
     };
 
     let file = io::BufWriter::new(fs::File::create(path).unwrap());
-    let mut out_file = nippy::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
+    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
@@ -214,7 +214,7 @@ fn roundtrip_byteorder() {
     let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
-    let data = nippy::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
     assert_eq!(data.into_vec().unwrap(), vec![row]);
 }
@@ -239,7 +239,7 @@ fn roundtrip_datetime() {
     //     ('timedelta_be', '>m8[D]'),
     // ])
     // ```
-    #[derive(nippy::Serialize, nippy::Deserialize)]
+    #[derive(npyz::Serialize, npyz::Deserialize)]
     #[derive(Debug, PartialEq, Clone)]
     struct Row {
         datetime: u64,
@@ -268,14 +268,14 @@ fn roundtrip_datetime() {
     };
 
     let file = io::BufWriter::new(fs::File::create(path).unwrap());
-    let mut out_file = nippy::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
+    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
     let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
-    let data = nippy::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
     assert_eq!(data.into_vec().unwrap(), vec![row]);
 }
@@ -297,7 +297,7 @@ fn roundtrip_bytes() {
     //     ('raw', '|V12'),
     // ])
     // ```
-    #[derive(nippy::Serialize, nippy::Deserialize)]
+    #[derive(npyz::Serialize, npyz::Deserialize)]
     #[derive(Debug, PartialEq, Clone)]
     struct Row {
         bytestr: Vec<u8>,
@@ -327,14 +327,14 @@ fn roundtrip_bytes() {
     };
 
     let file = io::BufWriter::new(fs::File::create(path).unwrap());
-    let mut out_file = nippy::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
+    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
     let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
-    let data = nippy::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
     assert_eq!(data.into_vec().unwrap(), vec![row]);
 }
@@ -345,7 +345,7 @@ fn roundtrip_bytes() {
 fn roundtrip_bytes_byteorder() {
     let path = "tests/roundtrip_bytes_byteorder.npy";
 
-    #[derive(nippy::Serialize, nippy::Deserialize)]
+    #[derive(npyz::Serialize, npyz::Deserialize)]
     #[derive(Debug, PartialEq, Clone)]
     struct Row {
         s_le: Vec<u8>,
@@ -383,14 +383,14 @@ fn roundtrip_bytes_byteorder() {
     };
 
     let file = io::BufWriter::new(fs::File::create(path).unwrap());
-    let mut out_file = nippy::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
+    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
     let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
-    let data = nippy::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
     assert_eq!(data.into_vec().unwrap(), vec![row]);
 }
@@ -408,7 +408,7 @@ fn roundtrip_scalar() {
     let mut cursor = Cursor::new(vec![]);
     {
         let mut writer = {
-            nippy::Builder::new()
+            npyz::Builder::new()
                 .dtype(dtype.clone())
                 .begin_nd(&mut cursor, &[])
                 .unwrap()
@@ -420,7 +420,7 @@ fn roundtrip_scalar() {
     let buffer = cursor.into_inner();
     assert!(buffer.ends_with(&expected_data_bytes));
 
-    let data = nippy::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
     assert_eq!(data.into_vec().unwrap(), vec![row]);
 }
@@ -428,7 +428,7 @@ fn roundtrip_scalar() {
 // try a unicode field name, which forces version 3
 #[test]
 fn roundtrip_version3() {
-    #[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)]
+    #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
     #[derive(Debug, PartialEq, Clone)]
     struct Row {
         num: i32,
@@ -446,7 +446,7 @@ fn roundtrip_version3() {
     let mut cursor = Cursor::new(vec![]);
     {
         let mut writer = {
-            nippy::Builder::new()
+            npyz::Builder::new()
                 .dtype(dtype.clone())
                 .begin_nd(&mut cursor, &[1])
                 .unwrap()
@@ -460,7 +460,7 @@ fn roundtrip_version3() {
 
     assert_version(&buffer, (3, 0));
 
-    let data = nippy::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
     assert_eq!(data.into_vec().unwrap(), vec![row]);
 }

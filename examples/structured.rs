@@ -4,7 +4,7 @@
 // a = np.array([(1,2.5,4), (2,3.1,5)], dtype=[('a', 'i4'),('b', 'f4'),('c', 'i8')])
 // np.save('examples/structured.npy', a)
 
-#[derive(nippy::Deserialize, Debug, PartialEq)]
+#[derive(npyz::Deserialize, Debug, PartialEq)]
 struct Struct {
     a: i32,
     b: f32,
@@ -14,7 +14,7 @@ struct Struct {
 fn main() -> std::io::Result<()> {
     let bytes = std::fs::read("examples/structured.npy")?;
 
-    let reader = nippy::NpyReader::<Struct, _>::new(&bytes[..])?;
+    let reader = npyz::NpyReader::<Struct, _>::new(&bytes[..])?;
     let vec = reader.into_vec()?;
     assert_eq!(vec, vec![
         Struct { a: 1, b: 2.5, c: 4 },

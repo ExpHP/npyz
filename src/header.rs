@@ -31,7 +31,7 @@ pub enum DType {
         #[cfg_attr(any(not(doctest), feature="derive"), doc = r##"
 ```
 # #[allow(unused)]
-#[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)]
+#[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
 struct Row {
     abc: [[i32; 3]; 2],
 }

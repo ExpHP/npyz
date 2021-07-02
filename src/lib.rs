@@ -26,10 +26,10 @@ a = np.array([1, 3.5, -6, 2.3])
 np.save('examples/plain.npy', a)
 ```
 
-Now, we can load it in Rust:
+Now, we can load it in Rust using [`NpyReader`]:
 
 ```rust
-use nippy::NpyReader;
+use npyz::NpyReader;
 
 fn main() -> std::io::Result<()> {
     let bytes = std::fs::read("examples/plain.npy")?;
@@ -55,17 +55,17 @@ And we can see our data:
 
 ### Inspecting properties of the array
 
-`NpyReader` provides methods that let you inspect the array.
+[`NpyReader`] provides methods that let you inspect the array.
 
 ```rust
-use nippy::NpyReader;
+use npyz::NpyReader;
 
 fn main() -> std::io::Result<()> {
     let bytes = std::fs::read("tests/c-order.npy")?;
 
     let data: NpyReader<i64, _> = NpyReader::new(&bytes[..])?;
     assert_eq!(data.shape(), &[2, 3, 4]);
-    assert_eq!(data.order(), nippy::Order::C);
+    assert_eq!(data.order(), npyz::Order::C);
     assert_eq!(data.strides(), &[12, 4, 1]);
     Ok(())
 }
@@ -81,7 +81,7 @@ fn main() -> std::io::Result<()> {
     // use Vec<u8> to serialize in-memory.
     let mut out_buf = vec![];
     let mut writer = {
-        nippy::Builder::new()
+        npyz::Builder::new()
             .default_dtype()
             .begin_nd(&mut out_buf, &[2, 3])?
     };
@@ -99,31 +99,31 @@ fn main() -> std::io::Result<()> {
 ## Working with `ndarray`
 
 Using the [`ndarray`](https://docs.rs/ndarray) crate?  No problem!
-At the time, no conversion API is provided by `nippy`, but one can easily be written:
+At the time, no conversion API is provided by `npyz`, but one can easily be written:
 
 ```rust
-use nippy::NpyReader;
+use npyz::NpyReader;
 
 // Example of parsing to an array with fixed NDIM.
-fn to_array_3<T>(data: Vec<T>, shape: Vec<u64>, order: nippy::Order) -> ndarray::Array3<T> {
+fn to_array_3<T>(data: Vec<T>, shape: Vec<u64>, order: npyz::Order) -> ndarray::Array3<T> {
     use ndarray::ShapeBuilder;
 
     let shape = match shape[..] {
         [i1, i2, i3] => [i1 as usize, i2 as usize, i3 as usize],
         _  => panic!("expected 3D array"),
     };
-    let true_shape = shape.set_f(order == nippy::Order::Fortran);
+    let true_shape = shape.set_f(order == npyz::Order::Fortran);
 
     ndarray::Array3::from_shape_vec(true_shape, data)
         .unwrap_or_else(|e| panic!("shape error: {}", e))
 }
 
 // Example of parsing to an array with dynamic NDIM.
-fn to_array_d<T>(data: Vec<T>, shape: Vec<u64>, order: nippy::Order) -> ndarray::ArrayD<T> {
+fn to_array_d<T>(data: Vec<T>, shape: Vec<u64>, order: npyz::Order) -> ndarray::ArrayD<T> {
     use ndarray::ShapeBuilder;
 
     let shape = shape.into_iter().map(|x| x as usize).collect::<Vec<_>>();
-    let true_shape = shape.set_f(order == nippy::Order::Fortran);
+    let true_shape = shape.set_f(order == npyz::Order::Fortran);
 
     ndarray::ArrayD::from_shape_vec(true_shape, data)
         .unwrap_or_else(|e| panic!("shape error: {}", e))
@@ -152,14 +152,14 @@ use std::fs::File;
 // Example of writing an array with unknown shape.  The output is always C-order.
 fn write_array<T, S, D>(writer: impl io::Write, array: &ndarray::ArrayBase<S, D>) -> io::Result<()>
 where
-    T: Clone + nippy::AutoSerialize,
+    T: Clone + npyz::AutoSerialize,
     S: ndarray::Data<Elem=T>,
     D: ndarray::Dimension,
 {
     let shape = array.shape().iter().map(|&x| x as u64).collect::<Vec<_>>();
     let c_order_items = array.iter();
 
-    let mut writer = nippy::Builder::new().default_dtype().begin_nd(writer, &shape)?;
+    let mut writer = npyz::Builder::new().default_dtype().begin_nd(writer, &shape)?;
     for item in c_order_items {
         writer.push(item)?;
     }
@@ -181,7 +181,7 @@ fn main() -> io::Result<()> {
 
 ## Structured arrays
 
-`nippy` supports structured arrays!  Consider the following structured array created in Python:
+`npyz` supports structured arrays!  Consider the following structured array created in Python:
 
 ```python
 import numpy as np
@@ -207,10 +207,10 @@ and make sure the field names and types all match up:
 //    - It is only tested when the feature is present (`cargo test --features derive`)
 #![cfg_attr(any(not(doctest), feature="derive"), doc = r##"
 ```
-use nippy::NpyReader;
+use npyz::NpyReader;
 
 // make sure to add `features = ["derive"]` in Cargo.toml!
-#[derive(nippy::Deserialize, Debug)]
+#[derive(npyz::Deserialize, Debug)]
 struct Struct {
     a: i32,
     b: f32,
@@ -240,7 +240,7 @@ Array { a: 2, b: 3.1, c: 5 }
 */
 
 // Reexport the macros.
-#[cfg(feature = "derive")] pub use nippy_derive::*;
+#[cfg(feature = "derive")] pub use npyz_derive::*;
 
 mod header;
 mod read;

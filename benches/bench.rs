@@ -1,4 +1,4 @@
-use nippy::{AutoSerialize};
+use npyz::{AutoSerialize};
 use bencher::{Bencher, black_box as bb};
 use std::io::Cursor;
 
@@ -17,7 +17,7 @@ macro_rules! gen_benches {
             let cap = 1000 + <$T>::default_dtype().num_bytes() * NITER;
             let mut cursor = Cursor::new(Vec::with_capacity(cap));
             {
-                let mut writer = nippy::Builder::new().default_dtype().begin_1d(&mut cursor).unwrap();
+                let mut writer = npyz::Builder::new().default_dtype().begin_1d(&mut cursor).unwrap();
                 for i in 0usize..NITER {
                     writer.push(&$new(i)).unwrap();
                 }
@@ -30,7 +30,7 @@ macro_rules! gen_benches {
         fn $read_to_vec_testname(b: &mut Bencher) {
             let bytes = write_array_via_push();
             b.iter(|| {
-                bb(nippy::NpyData::<$T>::from_bytes(&bytes).unwrap().to_vec())
+                bb(npyz::NpyData::<$T>::from_bytes(&bytes).unwrap().to_vec())
             });
         }
 
@@ -48,7 +48,7 @@ macro_rules! gen_benches {
 mod simple {
     use super::*;
 
-    #[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)]
+    #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
     #[derive(Debug, PartialEq)]
     struct Simple {
         a: i32,
@@ -65,7 +65,7 @@ mod simple {
 mod one_field {
     use super::*;
 
-    #[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)]
+    #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
     #[derive(Debug, PartialEq)]
     struct OneField {
         a: i32,
@@ -81,7 +81,7 @@ mod one_field {
 mod array {
     use super::*;
 
-    #[derive(nippy::Serialize, nippy::Deserialize, nippy::AutoSerialize)]
+    #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
     #[derive(Debug, PartialEq)]
     struct Array {
         a: [f32; 8],

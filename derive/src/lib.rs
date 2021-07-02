@@ -1,11 +1,11 @@
 #![recursion_limit = "256"]
 
 /*!
-Derive `nippy`'s traits for structured arrays.
+Derive `npyz`'s traits for structured arrays.
 
-Using this crate, it is enough to `#[derive(nippy::Serialize, nippy::Deserialize)]` on a struct to be able to
-serialize and deserialize it. All of the fields must implement [`Serialize`](../nippy/trait.Serialize.html)
-and [`Deserialize`](../nippy/trait.Deserialize.html) respectively.
+Using this crate, it is enough to `#[derive(npyz::Serialize, npyz::Deserialize)]` on a struct to be able to
+serialize and deserialize it. All of the fields must implement [`Serialize`](../npyz/trait.Serialize.html)
+and [`Deserialize`](../npyz/trait.Deserialize.html) respectively.
 
 */
 
@@ -59,7 +59,7 @@ impl FieldData {
     fn extract(ast: &syn::DeriveInput) -> Self {
         let fields = match ast.data {
             syn::Data::Struct(ref data) => &data.fields,
-            _ => panic!("nippy derive macros can only be used with structs"),
+            _ => panic!("npyz derive macros can only be used with structs"),
         };
 
         let idents: Vec<syn::Ident> = fields.iter().map(|f| {
@@ -94,31 +94,31 @@ fn impl_npy_serialize(ast: &syn::DeriveInput) -> TokenStream {
         }
 
         struct FieldWriters #ty_generics #where_clause {
-            #( #idents: <#types as _nippy::Serialize>::TypeWriter ,)*
+            #( #idents: <#types as _npyz::Serialize>::TypeWriter ,)*
         }
 
         #field_dtypes_struct
 
-        impl #impl_generics _nippy::TypeWrite for GeneratedWriter #ty_generics #where_clause {
+        impl #impl_generics _npyz::TypeWrite for GeneratedWriter #ty_generics #where_clause {
             type Value = #name #ty_generics;
 
             #[allow(unused_mut)]
             fn write_one<W: io::Write>(&self, mut w: W, value: &Self::Value) -> io::Result<()> {
                 #({ // braces for pre-NLL
-                    let method = <<#types as _nippy::Serialize>::TypeWriter as _nippy::TypeWrite>::write_one;
+                    let method = <<#types as _npyz::Serialize>::TypeWriter as _npyz::TypeWrite>::write_one;
                     method(&self.writers.#idents, &mut w, &value.#idents_1)?;
                 })*
                 p::Ok(())
             }
         }
 
-        impl #impl_generics _nippy::Serialize for #name #ty_generics #where_clause {
+        impl #impl_generics _npyz::Serialize for #name #ty_generics #where_clause {
             type TypeWriter = GeneratedWriter #ty_generics;
 
-            fn writer(dtype: &_nippy::DType) -> p::Result<GeneratedWriter, _nippy::DTypeError> {
+            fn writer(dtype: &_npyz::DType) -> p::Result<GeneratedWriter, _npyz::DTypeError> {
                 let dtypes = FieldDTypes::extract(dtype)?;
                 let writers = FieldWriters {
-                    #( #idents: <#types as _nippy::Serialize>::writer(&dtypes.#idents_1)? ,)*
+                    #( #idents: <#types as _npyz::Serialize>::writer(&dtypes.#idents_1)? ,)*
                 };
 
                 p::Ok(GeneratedWriter { writers })
@@ -145,31 +145,31 @@ fn impl_npy_deserialize(ast: &syn::DeriveInput) -> TokenStream {
         }
 
         struct FieldReaders #ty_generics #where_clause {
-            #( #idents: <#types as _nippy::Deserialize>::TypeReader ,)*
+            #( #idents: <#types as _npyz::Deserialize>::TypeReader ,)*
         }
 
         #field_dtypes_struct
 
-        impl #impl_generics _nippy::TypeRead for GeneratedReader #ty_generics #where_clause {
+        impl #impl_generics _npyz::TypeRead for GeneratedReader #ty_generics #where_clause {
             type Value = #name #ty_generics;
 
             #[allow(unused_mut)]
             fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Self::Value> {
                 #(
-                    let func = <<#types as _nippy::Deserialize>::TypeReader as _nippy::TypeRead>::read_one;
+                    let func = <<#types as _npyz::Deserialize>::TypeReader as _npyz::TypeRead>::read_one;
                     let #idents = func(&self.readers.#idents_1, &mut reader)?;
                 )*
                 io::Result::Ok(#name { #( #idents ),* })
             }
         }
 
-        impl #impl_generics _nippy::Deserialize for #name #ty_generics #where_clause {
+        impl #impl_generics _npyz::Deserialize for #name #ty_generics #where_clause {
             type TypeReader = GeneratedReader #ty_generics;
 
-            fn reader(dtype: &_nippy::DType) -> p::Result<GeneratedReader, _nippy::DTypeError> {
+            fn reader(dtype: &_npyz::DType) -> p::Result<GeneratedReader, _npyz::DTypeError> {
                 let dtypes = FieldDTypes::extract(dtype)?;
                 let readers = FieldReaders {
-                    #( #idents: <#types as _nippy::Deserialize>::reader(&dtypes.#idents_1)? ,)*
+                    #( #idents: <#types as _npyz::Deserialize>::reader(&dtypes.#idents_1)? ,)*
                 };
 
                 p::Ok(GeneratedReader { readers })
@@ -185,12 +185,12 @@ fn impl_npy_auto_serialize(ast: &syn::DeriveInput) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
     wrap_in_const("AutoSerialize", &name, quote! {
-        impl #impl_generics _nippy::AutoSerialize for #name #ty_generics #where_clause {
-            fn default_dtype() -> _nippy::DType {
-                _nippy::DType::Record(::std::vec![#(
-                    _nippy::Field {
+        impl #impl_generics _npyz::AutoSerialize for #name #ty_generics #where_clause {
+            fn default_dtype() -> _npyz::DType {
+                _npyz::DType::Record(::std::vec![#(
+                    _npyz::Field {
                         name: p::ToString::to_string(#idents_str),
-                        dtype: <#types as _nippy::AutoSerialize>::default_dtype()
+                        dtype: <#types as _npyz::AutoSerialize>::default_dtype()
                     }
                 ),*])
             }
@@ -205,14 +205,14 @@ fn gen_field_dtypes_struct(
     assert_eq!(idents.len(), idents_str.len());
     quote!{
         struct FieldDTypes {
-            #( #idents : _nippy::DType ,)*
+            #( #idents : _npyz::DType ,)*
         }
 
         impl FieldDTypes {
-            fn extract(dtype: &_nippy::DType) -> p::Result<Self, _nippy::DTypeError> {
+            fn extract(dtype: &_npyz::DType) -> p::Result<Self, _npyz::DTypeError> {
                 let fields = match dtype {
-                    _nippy::DType::Record(fields) => fields,
-                    _nippy::DType::Plain { ty, .. } => return p::Err(_nippy::DTypeError::expected_record(ty)),
+                    _npyz::DType::Record(fields) => fields,
+                    _npyz::DType::Plain { ty, .. } => return p::Err(_npyz::DTypeError::expected_record(ty)),
                 };
 
                 let correct_names: &[&str] = &[ #(#idents_str),* ];
@@ -222,7 +222,7 @@ fn gen_field_dtypes_struct(
                     p::Iterator::cloned(correct_names.iter()),
                 ) {
                     let actual_names = p::Iterator::map(fields.iter(), |f| &f.name[..]);
-                    return p::Err(_nippy::DTypeError::wrong_fields(actual_names, correct_names));
+                    return p::Err(_npyz::DTypeError::wrong_fields(actual_names, correct_names));
                 }
 
                 #[allow(unused_mut)]
@@ -255,7 +255,7 @@ fn wrap_in_const(
             #[allow(unknown_lints)]
             #[cfg_attr(feature = "cargo-clippy", allow(useless_attribute))]
             #[allow(rust_2018_idioms)]
-            extern crate nippy as _nippy;
+            extern crate npyz as _npyz;
 
             // if our generated code directly imports any traits, then the #[no_implicit_prelude]
             // test won't catch accidental use of method syntax on trait methods (which can fail
