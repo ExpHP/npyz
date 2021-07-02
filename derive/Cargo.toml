@@ -1,6 +1,6 @@
 [package]
 name = "nippy-derive"
-version = "0.5.0-pre"
+version = "0.5.0"
 edition = "2018"
 authors = [
     "Michael Lamparski <diagonaldevice@gmail.com>",
