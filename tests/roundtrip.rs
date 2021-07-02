@@ -131,7 +131,7 @@ fn roundtrip() {
         arrays.push(a);
     }
 
-    nippy::to_file("tests/roundtrip.npy", arrays.clone()).unwrap();
+    nippy::to_file_1d("tests/roundtrip.npy", arrays.clone()).unwrap();
 
     let buf = fs::read("tests/roundtrip.npy").unwrap();
 
@@ -152,7 +152,7 @@ fn plain_field(name: &str, dtype: &str) -> Field {
 fn roundtrip_with_plain_dtype() {
     let array_written = vec![2., 3., 4., 5.];
 
-    nippy::to_file("tests/roundtrip_plain.npy", array_written.clone()).unwrap();
+    nippy::to_file_1d("tests/roundtrip_plain.npy", array_written.clone()).unwrap();
 
     let buffer = fs::read("tests/roundtrip_plain.npy").unwrap();
 

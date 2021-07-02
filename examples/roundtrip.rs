@@ -11,7 +11,7 @@ fn main() -> std::io::Result<()> {
         structs.push(Struct { a: i, b: (i as f32 * pi / 180.0).sin() });
     }
 
-    nippy::to_file("examples/roundtrip.npy", structs)?;
+    nippy::to_file_1d("examples/roundtrip.npy", structs)?;
 
     let bytes = std::fs::read("examples/roundtrip.npy")?;
 
