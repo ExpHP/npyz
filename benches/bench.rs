@@ -2,7 +2,11 @@ use nippy::{AutoSerialize};
 use bencher::{Bencher, black_box as bb};
 use std::io::Cursor;
 
+// FIXME: after switching to 'bencher', cargo test now runs the benches and that's slow
+#[cfg(not(test))]
 const NITER: usize = 100_000;
+#[cfg(test)]
+const NITER: usize = 2;
 
 macro_rules! gen_benches {
     // HACK even though we grouped things into modules we have to manually supply names for the
