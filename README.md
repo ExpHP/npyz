@@ -1,24 +1,13 @@
 # nippy
 
-[![crates.io version](https://img.shields.io/crates/v/nippy.svg)](https://crates.io/crates/nippy) [![Documentation](https://docs.rs/nippy/badge.svg)](https://docs.rs/nippy/) [![Build Status](https://github.com/ExpHP/nippy/actions/workflows/ci.yml/badge.svg](https://github.com/ExpHP/nippy/actions)
+[![crates.io version](https://img.shields.io/crates/v/nippy.svg)](https://crates.io/crates/nippy) [![Documentation](https://docs.rs/nippy/badge.svg)](https://docs.rs/nippy/) [![Build Status](https://github.com/ExpHP/nippy/actions/workflows/ci.yml/badge.svg)](https://github.com/ExpHP/nippy/actions)
 
-
->  **Note: 2021/07/01.** The time is now.  Once again I've needed this for my own projects, and now I've been working hard to prepare it for release.  Hopefully, I will have succeeded and removed this message long before you ever have the chance to read it.
->
-> So.  If you *are* reading this message, and 2021/07/01 was a while ago, then.... well, that sucks.  If you desparately need one of the above features, you can use this as a git dependency for now, and please drop me a message reminding me to come back and finish what I started.
->
-> ```toml
-> [dependencies.nippy]
-> git = "https://github.com/ExpHP/nippy"
-> rev = "bd608d41f"  # replace with the latest commit
-> ```
-
-Numpy format (*.npy) serialization and deserialization.
+Numpy format (`*.npy`) serialization and deserialization.
 
 [**NPY**](https://docs.scipy.org/doc/numpy-dev/neps/npy-format.html) is a simple binary data format.
 It stores the type, shape and endianness information in a header,
 which is followed by a flat binary data field. This crate offers a simple, mostly type-safe way to
-read and write *.npy files. Files are handled using iterators, so they don't need to fit in memory.
+read and write `*.npy` files. Files are handled using iterators, so they don't need to fit in memory.
 
 `nippy` is a fork and successor of the seemingly-dead [`npy`](https://github.com/potocpav/npy-rs).
 
