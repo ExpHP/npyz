@@ -14,12 +14,14 @@ read and write `*.npy` files. Files are handled using iterators, so they don't n
 ## Usage
 
 ```toml
+[dependencies]
 npyz = "0.5"
 ```
 
 You also may be interested in enabling some features:
 
 ```toml
+[dependencies]
 npyz = {version = "0.5", features = ["derive", "complex"]}
 ```
 
