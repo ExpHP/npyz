@@ -83,17 +83,21 @@ fn main() -> std::io::Result<()> {
 
 ## Writing
 
-The primary interface for writing npy files is [`Builder`].
+The primary interface for writing npy files is the [`WriterBuilder`] trait.
 
 ```rust
+use npyz::WriterBuilder;
+
 fn main() -> std::io::Result<()> {
     // Any io::Write is supported.  For this example we'll
     // use Vec<u8> to serialize in-memory.
     let mut out_buf = vec![];
     let mut writer = {
-        npyz::Builder::new()
+        npyz::WriteOptions::new()
             .default_dtype()
-            .begin_nd(&mut out_buf, &[2, 3])?
+            .shape(&[2, 3])
+            .writer(&mut out_buf)
+            .begin_nd()?
     };
 
     writer.push(&100)?;
@@ -107,7 +111,6 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 ```
-
 
 ## Working with `ndarray`
 
@@ -154,9 +157,11 @@ pub fn main() -> std::io::Result<()> {
 Likewise, here is a function that can be used to write an ndarray:
 
 ```rust
-use ndarray::Array;
 use std::io;
 use std::fs::File;
+
+use ndarray::Array;
+use npyz::WriterBuilder;
 
 // Example of writing an array with unknown shape.  The output is always C-order.
 fn write_array<T, S, D>(writer: impl io::Write, array: &ndarray::ArrayBase<S, D>) -> io::Result<()>
@@ -168,12 +173,12 @@ where
     let shape = array.shape().iter().map(|&x| x as u64).collect::<Vec<_>>();
     let c_order_items = array.iter();
 
-    let mut writer = npyz::Builder::new().default_dtype().begin_nd(writer, &shape)?;
+    let mut writer = npyz::WriteOptions::new().default_dtype().shape(&shape).writer(writer).begin_nd()?;
     writer.extend(c_order_items)?;
     writer.finish()
 }
 
-fn main() -> io::Result<()> {
+pub fn main() -> io::Result<()> {
     let array = Array::from_shape_fn((6, 7, 8), |(i, j, k)| 100*i as i32 + 10*j as i32 + k as i32);
     // even weirdly-ordered axes and non-contiguous arrays are fine
     let view = array.view(); // shape (6, 7, 8), C-order
@@ -274,7 +279,7 @@ pub use header::{DType, Field};
 #[allow(deprecated)]
 pub use read::{NpyData, NpyFile, NpyReader, Order};
 #[allow(deprecated)]
-pub use write::{to_file, to_file_1d, OutFile, NpyWriter, Builder};
+pub use write::{to_file, to_file_1d, OutFile, NpyWriter, write_options, WriteOptions, WriterBuilder};
 pub use serialize::{Serialize, Deserialize, AutoSerialize};
 pub use serialize::{TypeRead, TypeWrite, TypeWriteDyn, TypeReadDyn, DTypeError};
 pub use type_str::{TypeStr, ParseTypeStrError};

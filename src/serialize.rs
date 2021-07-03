@@ -72,7 +72,7 @@ pub trait Serialize {
 
 /// Subtrait of [`Serialize`] for types which have a reasonable default [`DType`].
 ///
-/// This opens up some simpler APIs for serialization. (e.g. [`crate::to_file`], [`crate::Builder::default_dtype`])
+/// This opens up some simpler APIs for serialization. (e.g. [`crate::to_file`], [`crate::WriterBuilder::default_dtype`])
 ///
 /// _This trait is derivable when enabling the **`"derive"`** feature._ This makes it easier
 /// to work with structured arrays.

@@ -6,7 +6,7 @@
 
 use std::io::{self, Read, Write, Cursor};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
-use npyz::{DType, Field, Serialize, Deserialize, AutoSerialize};
+use npyz::{DType, Field, Serialize, Deserialize, AutoSerialize, WriterBuilder};
 
 #[derive(Serialize, Deserialize, AutoSerialize)]
 #[derive(Debug, PartialEq, Clone)]
@@ -131,7 +131,7 @@ fn roundtrip() {
     }
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::Builder::new().default_dtype().begin_1d(&mut writer).unwrap();
+    let mut out_file = npyz::WriteOptions::new().default_dtype().writer(&mut writer).begin_1d().unwrap();
     out_file.extend(arrays.iter()).unwrap();
     out_file.finish().unwrap();
 
@@ -155,7 +155,7 @@ fn roundtrip_with_plain_dtype() {
     let array_written = vec![2., 3., 4., 5.];
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::Builder::new().default_dtype().begin_1d(&mut writer).unwrap();
+    let mut out_file = npyz::WriteOptions::new().default_dtype().writer(&mut writer).begin_1d().unwrap();
     out_file.extend(array_written.iter()).unwrap();
     out_file.finish().unwrap();
 
@@ -209,7 +209,7 @@ fn roundtrip_byteorder() {
     };
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(&mut writer).unwrap();
+    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
@@ -269,7 +269,7 @@ fn roundtrip_datetime() {
     };
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(&mut writer).unwrap();
+    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
@@ -326,7 +326,7 @@ fn roundtrip_bytes() {
     };
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(&mut writer).unwrap();
+    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
@@ -380,7 +380,7 @@ fn roundtrip_bytes_byteorder() {
     };
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(&mut writer).unwrap();
+    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
@@ -429,7 +429,7 @@ fn nested_array_of_struct() {
     };
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(&mut writer).unwrap();
+    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
@@ -453,10 +453,11 @@ fn roundtrip_scalar() {
 
     let mut cursor = Cursor::new(vec![]);
     let mut writer = {
-        npyz::Builder::new()
+        npyz::WriteOptions::new()
             .dtype(dtype.clone())
-            .begin_nd(&mut cursor, &[])
-            .unwrap()
+            .shape(&[])
+            .writer(&mut cursor)
+            .begin_nd().unwrap()
     };
     writer.push(&row).unwrap();
     writer.finish().unwrap();
@@ -489,10 +490,11 @@ fn roundtrip_version3() {
 
     let mut cursor = Cursor::new(vec![]);
     let mut writer = {
-        npyz::Builder::new()
+        npyz::WriteOptions::new()
             .dtype(dtype.clone())
-            .begin_nd(&mut cursor, &[1])
-            .unwrap()
+            .writer(&mut cursor)
+            .shape(&[1])
+            .begin_nd().unwrap()
     };
     writer.push(&row).unwrap();
     writer.finish().unwrap();

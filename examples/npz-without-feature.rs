@@ -3,7 +3,7 @@ use std::io;
 
 // Shows how to read and write NPZ archives without enabling the "npz" feature.
 
-use npyz::{NpyFile, Builder, npz};
+use npyz::{NpyFile, WriterBuilder, npz};
 
 use zip::result::ZipResult;
 
@@ -21,12 +21,12 @@ fn write_a_file() -> ZipResult<()> {
 
     // Notice that we cannot use `begin_1d` because the Zip writer doesn't implement Seek.
     zip.start_file(npz::file_name_from_array_name("foo"), Default::default())?;
-    let mut writer = Builder::new().default_dtype().begin_nd(&mut zip, &[6])?;
+    let mut writer = npyz::WriteOptions::new().default_dtype().shape(&[6]).writer(&mut zip).begin_nd()?;
     writer.extend(vec![1, 4, 7, 2, 3, 4])?;
     writer.finish()?;
 
     zip.start_file(npz::file_name_from_array_name("blah"), Default::default())?;
-    let mut writer = Builder::new().default_dtype().begin_nd(&mut zip, &[2, 3])?;
+    let mut writer = npyz::WriteOptions::new().default_dtype().shape(&[2, 3]).writer(&mut zip).begin_nd()?;
     writer.extend(vec![1.0, 4.0, 7.0, 2.0, 3.0, 4.0])?;
     writer.finish()?;
 

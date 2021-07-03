@@ -1,6 +1,7 @@
 use npyz::{AutoSerialize};
 use bencher::{Bencher, black_box as bb};
 use std::io::Cursor;
+use npyz::WriterBuilder;
 
 const NITER: usize = 100_000;
 
@@ -13,7 +14,7 @@ macro_rules! gen_benches {
             let cap = 1000 + <$T>::default_dtype().num_bytes() * NITER;
             let mut cursor = Cursor::new(Vec::with_capacity(cap));
             {
-                let mut writer = npyz::Builder::new().default_dtype().begin_1d(&mut cursor).unwrap();
+                let mut writer = npyz::WriteOptions::new().default_dtype().writer(&mut cursor).begin_1d().unwrap();
                 for i in 0usize..NITER {
                     writer.push(&$new(i)).unwrap();
                 }

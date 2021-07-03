@@ -1,4 +1,5 @@
 use std::io;
+use npyz::WriterBuilder;
 use npyz::npz::{NpzArchive, NpzWriter};
 
 #[test]
@@ -35,16 +36,19 @@ fn basic_write() {
     let mut buf = io::Cursor::new(vec![]);
     let mut npz = NpzWriter::new(&mut buf);
 
-    let writer = npz.start_array("ints", Default::default()).unwrap();
-    let mut writer = npyz::Builder::new().default_dtype().begin_nd(writer, &[4]).unwrap();
-    writer.extend(vec![1_i64, 2, 3, 4]).unwrap();
-    writer.finish().unwrap();
+    npz.array("ints", Default::default()).unwrap()
+        .default_dtype()
+        .shape(&[4])
+        .begin_nd().unwrap()
+        .extend(vec![1_i64, 2, 3, 4]).unwrap();
 
-    let writer = npz.start_array("floats", Default::default()).unwrap();
-    let mut writer = npyz::Builder::new().default_dtype().begin_nd(writer, &[2, 1]).unwrap();
-    writer.extend(vec![1.0, 2.0]).unwrap();
-    drop(writer); // test forgotten call to finish
-    drop(npz);
+    npz.array("floats", Default::default()).unwrap()
+        .default_dtype()
+        .shape(&[2, 1])
+        .begin_nd().unwrap()
+        .extend(vec![1.0, 2.0]).unwrap();
+
+    drop(npz); // release borrow
 
     // Check that the file can be read back
     let bytes = buf.into_inner();

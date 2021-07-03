@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use npyz::Order;
+use npyz::{Order, WriterBuilder};
 
 fn c_order_vec() -> Vec<i64> { vec![1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,6,6,6,6] }
 fn fortran_order_vec() -> Vec<i64> { vec![1,4,2,5,3,6,1,4,2,5,3,6,1,4,2,5,3,6,1,4,2,5,3,6] }
@@ -32,10 +32,11 @@ fn write_c_order() {
     let mut buf: Cursor<Vec<u8>> = Cursor::new(vec![]);
     {
         let mut npy = {
-            npyz::Builder::<i64>::new()
+            npyz::WriteOptions::<i64>::new()
                 .default_dtype()
-                .begin_nd(&mut buf, &[2, 3, 4])
-                .unwrap()
+                .shape(&[2, 3, 4])
+                .writer(&mut buf)
+                .begin_nd().unwrap()
         };
         npy.extend(c_order_vec()).unwrap();
         npy.finish().unwrap();
@@ -52,11 +53,12 @@ fn write_fortran_order() {
     let mut buf: Cursor<Vec<u8>> = Cursor::new(vec![]);
     {
         let mut npy = {
-            npyz::Builder::<i64>::new()
+            npyz::WriteOptions::<i64>::new()
                 .default_dtype()
                 .order(Order::Fortran)
-                .begin_nd(&mut buf, &[2, 3, 4])
-                .unwrap()
+                .shape(&[2, 3, 4])
+                .writer(&mut buf)
+                .begin_nd().unwrap()
         };
         npy.extend(fortran_order_vec()).unwrap();
         npy.finish().unwrap();

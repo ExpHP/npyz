@@ -84,9 +84,11 @@ mod read_example {
 }
 
 mod write_example {
-    use ndarray::Array;
     use std::io;
     use std::fs::File;
+
+    use ndarray::Array;
+    use npyz::WriterBuilder;
 
     // Example of writing an array with unknown shape.  The output is always C-order.
     fn write_array<T, S, D>(writer: impl io::Write, array: &ndarray::ArrayBase<S, D>) -> io::Result<()>
@@ -98,7 +100,7 @@ mod write_example {
         let shape = array.shape().iter().map(|&x| x as u64).collect::<Vec<_>>();
         let c_order_items = array.iter();
 
-        let mut writer = npyz::Builder::new().default_dtype().begin_nd(writer, &shape)?;
+        let mut writer = npyz::WriteOptions::new().default_dtype().shape(&shape).writer(writer).begin_nd()?;
         writer.extend(c_order_items)?;
         writer.finish()
     }

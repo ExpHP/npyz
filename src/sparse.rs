@@ -8,8 +8,8 @@ use zip::read::ZipFile;
 
 use crate::serialize::{Deserialize, AutoSerialize};
 use crate::read::{Order, NpyFile};
+use crate::write::{WriterBuilder};
 use crate::npz::{NpzArchive, NpzWriter};
-use crate::write::Builder;
 use crate::header::DType;
 
 // =============================================================================
@@ -416,17 +416,19 @@ fn zip_file_options() -> zip::write::FileOptions {
 }
 
 fn write_format<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, format: &str) -> io::Result<()> {
-    Builder::new()
+    npz.array("format", zip_file_options())?
         .dtype(DType::Plain("|S3".parse().unwrap()))
-        .begin_nd(npz.start_array("format", zip_file_options())?, &[])?
+        .shape(&[])
+        .begin_nd()?
         .push(format.as_bytes())
 }
 
 fn write_shape<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, shape: &[u64]) -> io::Result<()> {
     assert_eq!(shape.len(), 2);
-    Builder::new()
+    npz.array("shape", zip_file_options())?
         .default_dtype()
-        .begin_nd(npz.start_array("shape", zip_file_options())?, &[2])?
+        .shape(&[2])
+        .begin_nd()?
         .extend(shape.iter().map(|&x| x as i64))
 }
 
@@ -434,22 +436,25 @@ fn write_shape<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, shape: &[u64]) -
 fn write_indices<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, name: &str, data: impl ExactSizeIterator<Item=i64> + Clone) -> io::Result<()> {
     if data.clone().max().unwrap_or(0) <= i32::MAX as i64 {
         // small indices
-        Builder::new()
+        npz.array(name, zip_file_options())?
             .default_dtype()
-            .begin_nd(npz.start_array(name, zip_file_options())?, &[data.len() as u64])?
+            .shape(&[data.len() as u64])
+            .begin_nd()?
             .extend(data.map(|x| x as i32))
     } else {
         // long indices
-        Builder::new()
+        npz.array(name, zip_file_options())?
             .default_dtype()
-            .begin_nd(npz.start_array(name, zip_file_options())?, &[data.len() as u64])?
+            .shape(&[data.len() as u64])
+            .begin_nd()?
             .extend(data)
     }
 }
 
 fn write_data<W: io::Write + io::Seek, T: AutoSerialize>(npz: &mut NpzWriter<W>, data: &[T], shape: &[u64]) -> io::Result<()> {
-    Builder::new()
+    npz.array("data", zip_file_options())?
         .default_dtype()
-        .begin_nd(npz.start_array("data", zip_file_options())?, shape)?
+        .shape(shape)
+        .begin_nd()?
         .extend(data)
 }

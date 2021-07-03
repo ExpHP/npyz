@@ -13,72 +13,309 @@ use crate::read::Order;
 // Used when no shape is provided.
 const FILLER_FOR_UNKNOWN_SIZE: &'static [u8] = &[b'*'; 19];
 
-/// Builder for an output `.NPY` file.
-pub struct Builder<Row: ?Sized> {
+struct DataFromBuilder<T: ?Sized> {
     order: Order,
-    dtype: Option<DType>,
-    _marker: PhantomData<fn(&Row)>, // contravariant
+    dtype: DType,
+    shape: Option<Vec<u64>>,
+    _marker: PhantomData<fn(&T)>, // contravariant
 }
 
-impl<Row: ?Sized> Builder<Row> {
-    /// Construct a builder with default configuration.
+pub use write_options::{WriteOptions, WriterBuilder};
+pub mod write_options {
+    //! Types and traits related to the implementation of [`WriteOptions`].
+    //!
+    //! There are numerous types and traits involved in the implementation of [`WriteOptions`].
+    //! Most of them are not that important; their purpose is to implement a form of typestate.
+    //! E.g. you are forbidden from calling [`WriterBuilder::begin_nd`] until you have called
+    //! [`WriterBuilder::shape`], [`WriterBuilder::dtype`], and [`WriterBuilder::writer`].
+    //!
+    //! The most important things from this module ([`WriteOptions`] and [`WriterBuilder`]) are exported
+    //! from the root of the crate, so you typically do not need to look in here.
+    use super::*;
+
+    /// Represents an almost-empty configuration for an [`NpyWriter`].
     ///
-    /// Data order will be initially set to C order.
-    ///
-    /// No dtype will be configured; the [`Builder::dtype`] method **must** be called.
-    pub fn new() -> Self {
-        Builder {
+    /// Construction of an [`NpyWriter`] always begins here, with a call to [`WriteOptions::new`].
+    /// Then the methods of the [`WriterBuilder`] trait must be used to supply options.
+    /// See that trait for more details.
+    #[derive(Debug)]
+    pub struct WriteOptions<T: ?Sized> {
+        order: Order,
+        _marker: PhantomData<fn(&T)>, // contravariant
+    }
+
+    impl<T: ?Sized> WriteOptions<T> {
+        /// Construct an almost empty Writer configuration.
+        pub fn new() -> Self { WriteOptions {
             order: Order::C,
-            dtype: None,
             _marker: PhantomData,
+        }}
+    }
+
+    impl<T: ?Sized> Default for WriteOptions<T> {
+        fn default() -> Self { Self::new() }
+    }
+
+    impl<T: ?Sized> Clone for WriteOptions<T> {
+        fn clone(&self) -> Self { WriteOptions { order: self.order.clone(), _marker: self._marker }}
+    }
+
+    /// Trait that provides methods on [`WriteOptions`].
+    ///
+    /// To obtain an initial instance of this trait, call [`WriteOptions::new`].
+    ///
+    /// The majority of methods return a type that also implements [`WriterBuilder`]; they are meant
+    /// to be chained together to construct a full config.
+    pub trait WriterBuilder<T: Serialize + ?Sized>: Sized {
+        /// Calls [`Self::dtype`] with the default dtype for the type to be serialized.
+        ///
+        /// **Calling this method or [`Self::dtype`] is required.**
+        fn default_dtype(self) -> WithDType<Self> where T: AutoSerialize { self.dtype(T::default_dtype()) }
+
+        /// Use the specified dtype.
+        ///
+        /// **Calling `dtype` (or [`Self::default_dtype`]) is required.**
+        fn dtype(self, dtype: DType) -> WithDType<Self> { WithDType { inner: self, dtype } }
+
+        /// Set the shape for an n-d array.
+        ///
+        /// This is required for any array of dimension `!= 1`.
+        fn shape(self, shape: &[u64]) -> WithShape<Self> { WithShape { inner: self, shape: shape.to_vec() } }
+
+        /// Set the ouput [`Write`] object.
+        ///
+        /// **Calling this method is required.**  In some cases (e.g. the builder obtained from an [`NpzWriter`]),
+        /// it will already have been called for you.
+        fn writer<W>(self, writer: W) -> WithWriter<W, Self>
+        where
+            Self: MissingWriter,
+        { WithWriter { inner: self, writer } }
+
+        /// Set the data order for arrays with more than one dimension.
+        ///
+        /// If this is not called, `Order::C` is assumed.
+        fn order(self, order: Order) -> Self;
+
+        // getters for properties not encoded in typestate
+        #[doc(hidden)] fn __get_order(&self) -> Order;
+
+        /// Begin writing an array of the previously supplied [`shape`][Self::shape].
+        fn begin_nd(self) -> io::Result<NpyWriter<T, <Self as HasWriter>::Writer>>
+        where
+            Self: HasDType + HasWriter + HasShape,
+            <Self as HasWriter>::Writer: Write,
+        {
+            NpyWriter::_begin(DataFromBuilder {
+                dtype: self.__get_dtype(),
+                order: self.__get_order(),
+                shape: Some(self.__get_shape()),
+                _marker: PhantomData,
+            }, MaybeSeek::Isnt(self.__into_writer()))
+        }
+
+        /// Begin writing a 1d array, of length to be inferred from the number of elements written.
+        ///
+        /// Notice that, in contrast to [`Self::begin_nd`], this method requires [`Seek`].  If you have
+        /// a `Vec<u8>`, you can wrap it in an [`io::Cursor`] to satisfy this requirement.
+        ///
+        /// **Note:** At present, any [`shape`][Self::shape] you *did* happen to provide will be ignored and not
+        /// validated against the number of elements written.  This may change in the future.
+        fn begin_1d(self) -> io::Result<NpyWriter<T, <Self as HasWriter>::Writer>>
+        where
+            Self: HasDType + HasWriter,
+            <Self as HasWriter>::Writer: Write + Seek,
+        {
+            NpyWriter::_begin(DataFromBuilder {
+                dtype: self.__get_dtype(),
+                order: self.__get_order(),
+                shape: None,
+                _marker: PhantomData,
+            }, MaybeSeek::new_seek(self.__into_writer()))
         }
     }
 
-    /// Set the data order for arrays with more than one dimension.
-    ///
-    /// If this is not called, `Order::C` is assumed.
-    pub fn order(mut self, order: Order) -> Self {
-        self.order = order;
-        self
+    /// Return type of [`WriterBuilder::writer`].  It represents a config with a known output stream.
+    #[derive(Debug, Clone)]
+    pub struct WithWriter<W, Builder> {
+        pub(super) writer: W,
+        pub(super) inner: Builder,
     }
 
-    /// Use the specified dtype.
-    ///
-    /// **Calling `dtype` (or [`Self::default_dtype`]) is required.**
-    /// (Otherwise, the build methods will panic at runtime.)
-    pub fn dtype(mut self, dtype: DType) -> Self {
-        self.dtype = Some(dtype);
-        self
+    /// Return type of [`WriterBuilder::dtype`].  It represents a config with a known dtype.
+    #[derive(Debug, Clone)]
+    pub struct WithDType<Builder> {
+        pub(super) dtype: DType,
+        pub(super) inner: Builder,
     }
 
-    /// Calls [`Builder::dtype`] with the default dtype for the type to be serialized.
+    /// Return type of [`WriterBuilder::shape`].  It represents a config with a known array shape.
+    #[derive(Debug, Clone)]
+    pub struct WithShape<Builder> {
+        pub(super) shape: Vec<u64>,
+        pub(super) inner: Builder,
+    }
+
+    /// Indicates that a Writer options type includes a DType.
     ///
-    /// **Calling this method or [`Builder::dtype`] is required.**
-    /// (Otherwise, the build methods will panic at runtime.)
-    pub fn default_dtype(self) -> Self
-    where Row: AutoSerialize,
-    {
-        self.dtype(Row::default_dtype())
+    /// If you are receiving the following compiler error:
+    ///
+    /// > ```text
+    /// > the trait bound `npyz::WriteOptions<_>: npyz::write_options::HasDType` is not satisfied
+    /// > ```
+    ///
+    /// Then it is most likely because you are missing a call to [`WriterBuilder::dtype`]
+    /// or [`WriterBuilder::default_dtype`].
+    pub trait HasDType {
+        #[doc(hidden)] fn __get_dtype(&self) -> DType;
+    }
+
+    /// Indicates that a Writer options type includes a shape.
+    ///
+    /// If you are receiving the following compiler error:
+    ///
+    /// > ```text
+    /// > the trait bound `npyz::WriteOptions<i64>: npyz::write_options::HasShape` is not satisfied
+    /// > ```
+    ///
+    /// Then it is most likely because you are missing a call to [`WriterBuilder::shape`].
+    pub trait HasShape {
+        #[doc(hidden)] fn __get_shape(&self) -> Vec<u64>;
+    }
+
+    /// Indicates that a Writer options type includes an output stream.
+    ///
+    /// If you are receiving the following compiler error:
+    ///
+    /// > ```text
+    /// > the trait bound `npyz::WriteOptions<i64>: npyz::write_options::HasWriter` is not satisfied
+    /// > ```
+    ///
+    /// Then it is most likely because you are missing a call to [`WriterBuilder::writer`].
+    pub trait HasWriter {
+        /// The type of the output stream.
+        type Writer;
+        #[doc(hidden)]
+        fn __into_writer(self) -> Self::Writer;
+    }
+
+    // NOTE: This mainly exists to prevent the accidental usage of `.writer()` when working with NPZ files.
+    //       (somebody could absent-mindedly copy a piece of Builder code that writes to `Cursor<Vec<u8>>`,
+    //        and this wouldn't generate an "unused" warning due to the `&mut cursor`)
+    //
+    /// Indicates that a Writer options type does not yet have an output stream.
+    ///
+    /// If you are receiving the following compiler error:
+    ///
+    /// > ```text
+    /// > the trait bound `npyz::write_options::HasWriter<...>: npyz::write_options::MissingWriter` is not satisfied
+    /// > ```
+    ///
+    /// Then it is most likely because you are calling [`WriterBuilder::writer`] on a builder
+    /// that already has a writer.  For instance, [`NpzWriter::array`] comes with a writer,
+    /// so you do not need to add one.
+    pub trait MissingWriter {}
+
+    impl<T: Serialize + ?Sized> WriterBuilder<T> for WriteOptions<T> {
+        fn order(mut self, order: Order) -> Self { self.order = order; self }
+        fn __get_order(&self) -> Order { self.order }
+    }
+
+    impl<W, T: Serialize + ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithWriter<W, B> {
+        fn order(mut self, order: Order) -> Self { self.inner = self.inner.order(order); self }
+        fn __get_order(&self) -> Order { self.inner.__get_order() }
+    }
+
+    impl<T: Serialize + ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithDType<B> {
+        fn order(mut self, order: Order) -> Self { self.inner = self.inner.order(order); self }
+        fn __get_order(&self) -> Order { self.inner.__get_order() }
+    }
+
+    impl<T: Serialize + ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithShape<B> {
+        fn order(mut self, order: Order) -> Self { self.inner = self.inner.order(order); self }
+        fn __get_order(&self) -> Order { self.inner.__get_order() }
+    }
+
+    // Now the silly part where we have to write O(n^2) trait impls
+    // Base cases
+    impl<B> HasDType for WithDType<B> {
+        fn __get_dtype(&self) -> DType { self.dtype.clone() }
+    }
+    impl<B> HasShape for WithShape<B> {
+        fn __get_shape(&self) -> Vec<u64> { self.shape.to_vec() }
+    }
+    impl<W, B> HasWriter for WithWriter<W, B> {
+        type Writer = W;
+        fn __into_writer(self) -> Self::Writer { self.writer }
+    }
+    impl<T: ?Sized> MissingWriter for WriteOptions<T> {}
+
+    // Recursive cases
+    macro_rules! forward_typestate_impls {
+        ( $(
+            ( $inner:tt $impl_generics:tt $Self:tt ): ( $($Trait:ident)* )
+        )* ) => {
+            $($( forward_typestate_impls!(@single $inner $impl_generics $Self [$Trait]); )*)*
+        };
+
+        (@single [$inner:ident] [$($impl_generics:tt)*] [$Self:ty] [HasDType]) => {
+            impl<$($impl_generics)*> HasDType for $Self where $inner: HasDType {
+                fn __get_dtype(&self) -> DType { self.inner.__get_dtype() }
+            }
+        };
+        (@single [$inner:ident] [$($impl_generics:tt)*] [$Self:ty] [HasShape]) => {
+            impl<$($impl_generics)*> HasShape for $Self where $inner: HasShape {
+                fn __get_shape(&self) -> Vec<u64> { self.inner.__get_shape() }
+            }
+        };
+        (@single [$inner:ident] [$($impl_generics:tt)*] [$Self:ty] [HasWriter]) => {
+            impl<$($impl_generics)*> HasWriter for $Self where $inner: HasWriter {
+                type Writer = $inner::Writer;
+                fn __into_writer(self) -> Self::Writer { self.inner.__into_writer() }
+            }
+        };
+        (@single [$inner:ident] [$($impl_generics:tt)*] [$Self:ty] [MissingWriter]) => {
+            impl<$($impl_generics)*> MissingWriter for $Self where $inner: MissingWriter { }
+        };
+    }
+
+    forward_typestate_impls!{
+        ([B] [B] [WithShape<B>]): (/*HasShape*/ HasDType HasWriter MissingWriter)
+        ([B] [B] [WithDType<B>]): (HasShape /*HasDType*/ HasWriter MissingWriter)
+        ([B] [W, B] [WithWriter<W, B>]): (HasShape HasDType /*HasWriter MissingWriter*/)
     }
 }
 
-impl<Row: Serialize + ?Sized> Builder<Row> {
-    /// Begin writing an array of known shape.
-    pub fn begin_nd<W: Write>(&self, w: W, shape: &[u64]) -> io::Result<NpyWriter<Row, W>> {
-        NpyWriter::_begin(self, MaybeSeek::Isnt(w), Some(shape))
-    }
-
-    /// Begin writing a 1d array, of length to be inferred from the number of elements written.
-    ///
-    /// Notice that, in contrast to [`Self::begin_nd`], this method requires [`Seek`].  If you have
-    /// a `Vec<u8>`, you can wrap it in an [`io::Cursor`] to satisfy this requirement.
-    pub fn begin_1d<W: Write + Seek>(&self, w: W) -> io::Result<NpyWriter<Row, W>> {
-        NpyWriter::_begin(self, MaybeSeek::new_seek(w), None)
-    }
-}
-
-/// Serialize into a file one item at a time. To serialize an iterator, use the
-/// [`to_file`](fn.to_file.html) function.
+/// Interface for writing an NPY file to a data stream.
+///
+/// To construct an instance of this, you must go through the [`WriterBuilder`] trait:
+///
+/// <!-- example so nobody has an excuse for not seeing the link to WriterBuilder -->
+/// ```rust
+/// use npyz::WriterBuilder;
+///
+/// fn main() -> std::io::Result<()> {
+///     // Any io::Write is supported.  For this example we'll
+///     // use Vec<u8> to serialize in-memory.
+///     let mut out_buf = vec![];
+///     let mut writer = {
+///         npyz::WriteOptions::new()
+///             .default_dtype()
+///             .shape(&[2, 3])
+///             .writer(&mut out_buf)
+///             .begin_nd()?
+///     };
+///
+///     writer.push(&100)?;
+///     writer.push(&101)?;
+///     writer.push(&102)?;
+///     // can write elements from iterators too
+///     writer.extend(vec![200, 201, 202])?;
+///     writer.finish()?;
+///
+///     eprintln!("{:02x?}", out_buf);
+///     Ok(())
+/// }
+/// ```
 pub struct NpyWriter<Row: Serialize + ?Sized, W: Write> {
     start_pos: Option<u64>,
     shape_info: ShapeInfo,
@@ -105,9 +342,10 @@ impl<Row: AutoSerialize> OutFile<Row> {
     /// Create a file, using the default format for the given type.
     #[deprecated(since = "0.5.0", note = "Doesn't carry its weight.  Use to_file_1d instead, or replicate the original behavior with Builder::new().default_dtype().begin_1d(std::io::BufWriter::new(std::fs::File::create(path)?))")]
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        Builder::new()
+        WriteOptions::new()
             .default_dtype()
-            .begin_1d(BufWriter::new(File::create(path)?))
+            .writer(BufWriter::new(File::create(path)?))
+            .begin_1d()
     }
 }
 
@@ -123,10 +361,9 @@ impl<Row: Serialize> OutFile<Row> {
     }
 }
 
-impl<Row: Serialize + ?Sized, W: Write> NpyWriter<Row, W> {
-    fn _begin(builder: &Builder<Row>, mut fw: MaybeSeek<W>, shape: Option<&[u64]>) -> io::Result<Self> {
-        let &Builder { ref dtype, order, _marker } = builder;
-        let dtype = dtype.as_ref().expect("Builder::dtype was never called!");
+impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
+    fn _begin(builder: DataFromBuilder<Row>, mut fw: MaybeSeek<W>) -> io::Result<Self> {
+        let DataFromBuilder { dtype, order, shape, _marker } = builder;
 
         let start_pos = match fw {
             MaybeSeek::Is(ref mut fw) => Some(fw.seek(SeekFrom::Current(0))?),
@@ -136,7 +373,8 @@ impl<Row: Serialize + ?Sized, W: Write> NpyWriter<Row, W> {
         if let DType::Array(..) = dtype {
             panic!("the outermost dtype cannot be an array (got: {:?})", dtype);
         }
-        let (dict_text, shape_info) = create_dict(dtype, order, shape);
+
+        let (dict_text, shape_info) = create_dict(&dtype, order, shape.as_deref());
         let (header_text, version, version_props) = determine_required_version_and_pad_header(dict_text);
 
         fw.write_all(&[0x93u8])?;
@@ -156,7 +394,7 @@ impl<Row: Serialize + ?Sized, W: Write> NpyWriter<Row, W> {
         }
         fw.write_all(&header_text)?;
 
-        let writer = match Row::writer(dtype) {
+        let writer = match Row::writer(&dtype) {
             Ok(writer) => writer,
             Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e.to_string())),
         };
@@ -304,7 +542,7 @@ fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u
 #[deprecated(since = "0.5.0", note = "renamed to to_file_1d")]
 /// Serialize an iterator over a struct to a NPY file.
 ///
-/// This only saves a 1D array.  To save an ND array, **you must use the [`Builder`] API.**
+/// This only saves a 1D array.  To save an ND array, **you must use the [`WriterBuilder`] API.**
 pub fn to_file<S, T, P>(filename: P, data: T) -> std::io::Result<()>
 where
     P: AsRef<Path>,
@@ -316,7 +554,7 @@ where
 
 /// Serialize an iterator over a struct to a NPY file.
 ///
-/// This only saves a 1D array.  To save an ND array, **you must use the [`Builder`] API.**
+/// This only saves a 1D array.  To save an ND array, **you must use the [`WriterBuilder`] API.**
 pub fn to_file_1d<S, T, P>(filename: P, data: T) -> std::io::Result<()>
 where
     P: AsRef<Path>,
@@ -424,7 +662,7 @@ pub(crate) fn to_writer_1d<W: io::Write + io::Seek, T: AutoSerialize>(writer: W,
 /// Quick API for writing an n-d array to an io::Write.
 #[cfg(test)]
 pub(crate) fn to_writer_nd<W: io::Write, T: AutoSerialize>(writer: W, data: &[T], shape: &[u64]) -> io::Result<()> {
-    let mut writer = Builder::new().default_dtype().begin_nd(writer, shape)?;
+    let mut writer = WriteOptions::new().default_dtype().writer(writer).shape(shape).begin_nd()?;
     writer.extend(data)?;
     writer.finish()
 }
@@ -435,7 +673,7 @@ pub(crate) fn to_writer_nd<W: io::Write, T: AutoSerialize>(writer: W, data: &[T]
 /// so that changing 'to_writer_1d' to be Seek-less won't affect these tests)
 #[cfg(test)]
 pub(crate) fn to_writer_1d_with_seeking<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T]) -> io::Result<()> {
-    let mut writer = Builder::new().default_dtype().begin_1d(writer)?;
+    let mut writer = WriteOptions::new().default_dtype().writer(writer).begin_1d()?;
     writer.extend(data)?;
     writer.finish()
 }
@@ -492,7 +730,7 @@ mod tests {
     fn implicit_finish() -> io::Result<()> {
         let mut cursor = Cursor::new(vec![]);
 
-        let mut writer = Builder::new().default_dtype().begin_1d(&mut cursor)?;
+        let mut writer = WriteOptions::new().default_dtype().writer(&mut cursor).begin_1d()?;
         writer.extend(vec![1.0, 3.0, 5.0, 7.0])?;
         // don't call finish
         drop(writer);
@@ -507,12 +745,10 @@ mod tests {
 
     #[test]
     fn write_nd_simple() -> io::Result<()> {
-        let mut cursor = Cursor::new(vec![]);
+        let mut buffer = vec![];
+        to_writer_nd(&mut buffer, &[00, 01, 02, 10, 11, 12], &[2, 3])?;
 
-        to_writer_nd(&mut cursor, &[00, 01, 02, 10, 11, 12], &[2, 3])?;
-
-        let raw_buffer = cursor.into_inner();
-        let reader = NpyFile::new(&raw_buffer[..])?;
+        let reader = NpyFile::new(&buffer[..])?;
         assert_eq!(reader.shape(), &[2, 3][..]);
         assert_eq!(reader.into_vec::<i32>()?, vec![00, 01, 02, 10, 11, 12]);
 
@@ -522,9 +758,11 @@ mod tests {
     #[test]
     fn write_nd_wrong_len() -> io::Result<()> {
         let try_writing = |elems: &[i32]| -> io::Result<()> {
-            let mut cursor = Cursor::new(vec![]);
-            let mut writer = Builder::new().default_dtype().begin_nd(&mut cursor, &[2, 3])?;
-            writer.extend(elems)?;
+            let mut buf = vec![];
+            let mut writer = WriteOptions::new().default_dtype().writer(&mut buf).shape(&[2, 3]).begin_nd()?;
+            for &x in elems {
+                writer.push(&x)?;
+            }
             writer.finish()?;
             Ok(())
         };

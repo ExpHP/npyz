@@ -8,6 +8,8 @@ use std::fs::File;
 use zip::result::ZipError;
 
 use crate::read::NpyFile;
+use crate::serialize::Serialize;
+use crate::write::{WriterBuilder, write_options};
 
 /// Interface for reading an NPZ file.
 ///
@@ -81,11 +83,11 @@ impl<W: io::Write + io::Seek> NpzWriter<W> {
 
     /// Begin an entry in the NPZ for the corresponding array.
     ///
-    /// This returns an implementation of [`io::Write`].
-    /// To write the array, supply that writer to [`crate::Builder::begin_nd`].
-    pub fn start_array(&mut self, name: &str, options: zip::write::FileOptions) -> io::Result<&mut zip::ZipWriter<W>> {
+    /// The returned object implements the [`WriterBuilder`] trait.  You must import this trait
+    /// and use its methods to continue configuring the object and begin writing.
+    pub fn array<T: Serialize + ?Sized>(&mut self, name: &str, options: zip::write::FileOptions) -> io::Result<NpzWriterBuilder<'_, T, W>> {
         self.zip.start_file(crate::npz::file_name_from_array_name(name), options)?;
-        Ok(&mut self.zip)
+        Ok(write_options::WriteOptions::new().writer(&mut self.zip))
     }
 
     /// Exposes the underlying [`zip::ZipWriter`].
@@ -93,3 +95,9 @@ impl<W: io::Write + io::Seek> NpzWriter<W> {
         &mut self.zip
     }
 }
+
+/// Type returned by [`NpzWriter::start_array`], which implements the [`WriterBuilder`] trait.
+///
+/// Please use the methods of [`WriterBuilder`] to configure this object and begin writing.
+/// (Note that the writer does not impl `io::Seek`, and therefore you cannot use [`WriterBuilder::begin_1d`]).
+pub type NpzWriterBuilder<'w, T, W> = write_options::WithWriter<&'w mut zip::ZipWriter<W>, write_options::WriteOptions<T>>;
