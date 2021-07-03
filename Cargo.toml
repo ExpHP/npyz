@@ -24,6 +24,7 @@ members = [ "derive" ]
 [dependencies]
 byteorder = "1"
 nom = "3"
+zip = { version = "0.5", optional = true }
 
 # NOTE: public dependency, so make sure the doc link to Complex in README.md is kept in sync
 num-complex = { version = "0.4", optional = true }
@@ -37,21 +38,16 @@ default-features = false
 [dev-dependencies]
 # For examples ONLY.  We don't want to provide a public interface because ndarray undergoes
 # breaking semver bumps very frequently.
-ndarray = { version = "0.15"}
-
+ndarray = { version = "0.15" }
 bencher = { version = "0.1" }
 
 [features]
 default = []
 
-# Provide #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)].
-#
-# These are for working with structured arrays (see https://numpy.org/doc/stable/user/basics.rec.html),
-# and are not otherwise necessary.
+# Features are documented in lib.rs
 derive = ["npyz-derive"]
-
-# Enables deserialization of the types from num-complex.
 complex = ["num-complex"]
+npz = ["zip"]
 
 [[bench]]
 name = "bench"
