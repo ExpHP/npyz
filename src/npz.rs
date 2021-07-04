@@ -48,7 +48,7 @@ pub fn array_name_from_file_name(path_in_zip: &str) -> Option<&str> {
 ///
 /// _This function does not require any cargo features._
 pub fn file_name_from_array_name(name: &str) -> String {
-    return format!("{}.npy", name);
+    format!("{}.npy", name)
 }
 
 /// Get the filename in a zip that would be used for an array supplied as a positional
@@ -56,6 +56,6 @@ pub fn file_name_from_array_name(name: &str) -> String {
 ///
 /// _This function does not require any cargo features._
 pub fn file_name_from_index(index: i32) -> String {
-    return format!("arr_{}.npy", index);
+    format!("arr_{}.npy", index)
 }
 
