@@ -5,7 +5,6 @@
 #![allow(mixed_script_confusables)]
 
 use std::io::{self, Read, Write, Cursor};
-use std::fs;
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 use npyz::{DType, Field, Serialize, Deserialize, AutoSerialize};
 
@@ -131,9 +130,12 @@ fn roundtrip() {
         arrays.push(a);
     }
 
-    npyz::to_file_1d("tests/roundtrip.npy", arrays.clone()).unwrap();
+    let mut writer = io::Cursor::new(vec![]);
+    let mut out_file = npyz::Builder::new().default_dtype().begin_1d(&mut writer).unwrap();
+    out_file.extend(arrays.iter()).unwrap();
+    out_file.finish().unwrap();
 
-    let buf = fs::read("tests/roundtrip.npy").unwrap();
+    let buf = writer.into_inner();
 
     assert_version(&buf, (1, 0));
 
@@ -152,9 +154,12 @@ fn plain_field(name: &str, dtype: &str) -> Field {
 fn roundtrip_with_plain_dtype() {
     let array_written = vec![2., 3., 4., 5.];
 
-    npyz::to_file_1d("tests/roundtrip_plain.npy", array_written.clone()).unwrap();
+    let mut writer = io::Cursor::new(vec![]);
+    let mut out_file = npyz::Builder::new().default_dtype().begin_1d(&mut writer).unwrap();
+    out_file.extend(array_written.iter()).unwrap();
+    out_file.finish().unwrap();
 
-    let buffer = fs::read("tests/roundtrip_plain.npy").unwrap();
+    let buffer = writer.into_inner();
 
     let array_read = npyz::NpyFile::new(&buffer[..]).unwrap().into_vec().unwrap();
     assert_eq!(array_written, array_read);
@@ -162,8 +167,6 @@ fn roundtrip_with_plain_dtype() {
 
 #[test]
 fn roundtrip_byteorder() {
-    let path = "tests/roundtrip_byteorder.npy";
-
     #[derive(npyz::Serialize, npyz::Deserialize)]
     #[derive(Debug, PartialEq, Clone)]
     struct Row {
@@ -205,13 +208,13 @@ fn roundtrip_byteorder() {
         buf
     };
 
-    let file = io::BufWriter::new(fs::File::create(path).unwrap());
-    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
+    let mut writer = io::Cursor::new(vec![]);
+    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(&mut writer).unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
     // Make sure it actually wrote in the correct byteorders.
-    let buffer = fs::read(path).unwrap();
+    let buffer = writer.into_inner();
     assert!(buffer.ends_with(&expected_data_bytes));
 
     let data = npyz::NpyFile::new(&buffer[..]).unwrap();
@@ -221,8 +224,6 @@ fn roundtrip_byteorder() {
 
 #[test]
 fn roundtrip_datetime() {
-    let path = "tests/roundtrip_datetime.npy";
-
     // Similar to:
     //
     // ```
@@ -267,12 +268,12 @@ fn roundtrip_datetime() {
         buf
     };
 
-    let file = io::BufWriter::new(fs::File::create(path).unwrap());
-    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
+    let mut writer = io::Cursor::new(vec![]);
+    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(&mut writer).unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
-    let buffer = fs::read(path).unwrap();
+    let buffer = writer.into_inner();
     assert!(buffer.ends_with(&expected_data_bytes));
 
     let data = npyz::NpyFile::new(&buffer[..]).unwrap();
@@ -282,8 +283,6 @@ fn roundtrip_datetime() {
 
 #[test]
 fn roundtrip_bytes() {
-    let path = "tests/roundtrip_bytes.npy";
-
     // Similar to:
     //
     // ```
@@ -326,12 +325,12 @@ fn roundtrip_bytes() {
         buf
     };
 
-    let file = io::BufWriter::new(fs::File::create(path).unwrap());
-    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
+    let mut writer = io::Cursor::new(vec![]);
+    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(&mut writer).unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
-    let buffer = fs::read(path).unwrap();
+    let buffer = writer.into_inner();
     assert!(buffer.ends_with(&expected_data_bytes));
 
     let data = npyz::NpyFile::new(&buffer[..]).unwrap();
@@ -343,8 +342,6 @@ fn roundtrip_bytes() {
 // (i.e. don't accidentally reverse the bytestrings)
 #[test]
 fn roundtrip_bytes_byteorder() {
-    let path = "tests/roundtrip_bytes_byteorder.npy";
-
     #[derive(npyz::Serialize, npyz::Deserialize)]
     #[derive(Debug, PartialEq, Clone)]
     struct Row {
@@ -382,12 +379,12 @@ fn roundtrip_bytes_byteorder() {
         buf
     };
 
-    let file = io::BufWriter::new(fs::File::create(path).unwrap());
-    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(file).unwrap();
+    let mut writer = io::Cursor::new(vec![]);
+    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(&mut writer).unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
-    let buffer = fs::read(path).unwrap();
+    let buffer = writer.into_inner();
     assert!(buffer.ends_with(&expected_data_bytes));
 
     let data = npyz::NpyFile::new(&buffer[..]).unwrap();

@@ -1,7 +1,2 @@
 target
 Cargo.lock
-
-# FIXME: These shouldn't exist (they're output files
-#  from back before we had an io::Write API)
-tests/*.npy
-
