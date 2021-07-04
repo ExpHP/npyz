@@ -259,6 +259,8 @@ mod serialize;
 mod npz_feature;
 
 pub mod npz;
+#[cfg(feature = "npz")]
+pub mod sparse;
 
 // Expose public dependencies
 #[cfg(feature = "num-complex")]

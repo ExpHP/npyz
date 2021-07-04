@@ -80,3 +80,7 @@ required-features = ["derive"]
 [[test]]
 name = "npz"
 required-features = ["npz"]
+
+[[test]]
+name = "sparse"
+required-features = ["npz"]

@@ -1,3 +1,6 @@
+use npyz::npz::NpzArchive;
+use npyz::sparse;
+
 #[test]
 fn read_uncompressed() {
     test_basic_npz("test-data/uncompressed.npz");
@@ -12,7 +15,7 @@ fn read_compressed() {
 //   np.savez('test-data/uncompressed.npz', ints=np.array([1,2,3,4]), floats=np.array([[1.0], [2.0]]))
 //   np.savez_compressed('test-data/compressed.npz', ints=np.array([1,2,3,4]), floats=np.array([[1.0], [2.0]]))
 fn test_basic_npz(path: &str) {
-    let mut npz = npyz::npz::NpzArchive::open(path).unwrap();
+    let mut npz = NpzArchive::open(path).unwrap();
 
     let mut names = npz.array_names().collect::<Vec<_>>();
     names.sort();
