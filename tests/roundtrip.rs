@@ -406,16 +406,14 @@ fn roundtrip_scalar() {
     let expected_data_bytes = b"\x01\x00\x00\x00".to_vec();
 
     let mut cursor = Cursor::new(vec![]);
-    {
-        let mut writer = {
-            npyz::Builder::new()
-                .dtype(dtype.clone())
-                .begin_nd(&mut cursor, &[])
-                .unwrap()
-        };
-        writer.push(&row).unwrap();
-        writer.finish().unwrap();
-    }
+    let mut writer = {
+        npyz::Builder::new()
+            .dtype(dtype.clone())
+            .begin_nd(&mut cursor, &[])
+            .unwrap()
+    };
+    writer.push(&row).unwrap();
+    writer.finish().unwrap();
 
     let buffer = cursor.into_inner();
     assert!(buffer.ends_with(&expected_data_bytes));
@@ -444,16 +442,14 @@ fn roundtrip_version3() {
     let expected_data_bytes = b"\x01\x00\x00\x00\x02\x00\x00\x00".to_vec();
 
     let mut cursor = Cursor::new(vec![]);
-    {
-        let mut writer = {
-            npyz::Builder::new()
-                .dtype(dtype.clone())
-                .begin_nd(&mut cursor, &[1])
-                .unwrap()
-        };
-        writer.push(&row).unwrap();
-        writer.finish().unwrap();
-    }
+    let mut writer = {
+        npyz::Builder::new()
+            .dtype(dtype.clone())
+            .begin_nd(&mut cursor, &[1])
+            .unwrap()
+    };
+    writer.push(&row).unwrap();
+    writer.finish().unwrap();
 
     let buffer = cursor.into_inner();
     assert!(buffer.ends_with(&expected_data_bytes));

@@ -37,9 +37,7 @@ fn write_c_order() {
                 .begin_nd(&mut buf, &[2, 3, 4])
                 .unwrap()
         };
-        for x in c_order_vec() {
-            npy.push(&x).unwrap();
-        }
+        npy.extend(c_order_vec()).unwrap();
         npy.finish().unwrap();
     }
     let buf = buf.into_inner();
@@ -60,9 +58,7 @@ fn write_fortran_order() {
                 .begin_nd(&mut buf, &[2, 3, 4])
                 .unwrap()
         };
-        for x in fortran_order_vec() {
-            npy.push(&x).unwrap();
-        }
+        npy.extend(fortran_order_vec()).unwrap();
         npy.finish().unwrap();
     }
     let buf = buf.into_inner();

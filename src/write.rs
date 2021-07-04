@@ -177,6 +177,11 @@ impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
         self.writer.write_one(&mut self.fw, row)
     }
 
+    /// Write an iterator to the file
+    pub fn extend(&mut self, rows: impl IntoIterator<Item=Row>) -> io::Result<()> {
+        rows.into_iter().try_for_each(|row| self.push(&row))
+    }
+
     fn finish_(&mut self) -> io::Result<()> {
         match self.shape_info {
             ShapeInfo::Known { expected_num_items } => {
@@ -413,9 +418,7 @@ pub(crate) fn to_writer_1d<W: io::Write + io::Seek, T: AutoSerialize>(writer: W,
 #[cfg(test)]
 pub(crate) fn to_writer_nd<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T], shape: &[u64]) -> io::Result<()> {
     let mut writer = Builder::new().default_dtype().begin_nd(writer, shape)?;
-    for x in data {
-        writer.push(&x)?;
-    }
+    writer.extend(data)?;
     writer.finish()
 }
 
@@ -426,9 +429,7 @@ pub(crate) fn to_writer_nd<W: io::Write + io::Seek, T: AutoSerialize>(writer: W,
 #[cfg(test)]
 pub(crate) fn to_writer_1d_with_seeking<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T]) -> io::Result<()> {
     let mut writer = Builder::new().default_dtype().begin_1d(writer)?;
-    for x in data {
-        writer.push(&x)?;
-    }
+    writer.extend(data)?;
     writer.finish()
 }
 
@@ -485,9 +486,7 @@ mod tests {
         let mut cursor = Cursor::new(vec![]);
 
         let mut writer = Builder::new().default_dtype().begin_1d(&mut cursor)?;
-        for x in vec![1.0, 3.0, 5.0, 7.0] {
-            writer.push(&x)?;
-        }
+        writer.extend(vec![1.0, 3.0, 5.0, 7.0])?;
         // don't call finish
         drop(writer);
 
@@ -518,9 +517,7 @@ mod tests {
         let try_writing = |elems: &[i32]| -> io::Result<()> {
             let mut cursor = Cursor::new(vec![]);
             let mut writer = Builder::new().default_dtype().begin_nd(&mut cursor, &[2, 3])?;
-            for &x in elems {
-                writer.push(&x)?;
-            }
+            writer.extend(elems)?;
             writer.finish()?;
             Ok(())
         };

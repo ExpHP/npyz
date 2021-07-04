@@ -22,16 +22,12 @@ fn write_a_file() -> ZipResult<()> {
     // Notice that we cannot use `begin_1d` because the Zip writer doesn't implement Seek.
     zip.start_file(npz::file_name_from_array_name("foo"), Default::default())?;
     let mut writer = Builder::new().default_dtype().begin_nd(&mut zip, &[6])?;
-    for x in vec![1, 4, 7, 2, 3, 4] {
-        writer.push(&x)?;
-    }
+    writer.extend(vec![1, 4, 7, 2, 3, 4])?;
     writer.finish()?;
 
     zip.start_file(npz::file_name_from_array_name("blah"), Default::default())?;
     let mut writer = Builder::new().default_dtype().begin_nd(&mut zip, &[2, 3])?;
-    for x in vec![1.0, 4.0, 7.0, 2.0, 3.0, 4.0] {
-        writer.push(&x)?;
-    }
+    writer.extend(vec![1.0, 4.0, 7.0, 2.0, 3.0, 4.0])?;
     writer.finish()?;
 
     zip.finish()?;

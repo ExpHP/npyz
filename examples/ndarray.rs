@@ -101,9 +101,7 @@ mod write_example {
         let c_order_items = array.iter();
 
         let mut writer = npyz::Builder::new().default_dtype().begin_nd(writer, &shape)?;
-        for item in c_order_items {
-            writer.push(item)?;
-        }
+        writer.extend(c_order_items)?;
         writer.finish()
     }
 

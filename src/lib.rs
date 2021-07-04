@@ -96,8 +96,11 @@ fn main() -> std::io::Result<()> {
             .begin_nd(&mut out_buf, &[2, 3])?
     };
 
-    writer.push(&100)?; writer.push(&101)?; writer.push(&102)?;
-    writer.push(&200)?; writer.push(&201)?; writer.push(&202)?;
+    writer.push(&100)?;
+    writer.push(&101)?;
+    writer.push(&102)?;
+    // you can also write multiple items at once
+    writer.extend(vec![200, 201, 202])?;
     writer.finish()?;
 
     eprintln!("{:02x?}", out_buf);
@@ -170,9 +173,7 @@ where
     let c_order_items = array.iter();
 
     let mut writer = npyz::Builder::new().default_dtype().begin_nd(writer, &shape)?;
-    for item in c_order_items {
-        writer.push(item)?;
-    }
+    writer.extend(c_order_items)?;
     writer.finish()
 }
 
