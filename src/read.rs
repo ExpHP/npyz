@@ -14,7 +14,7 @@ use crate::serialize::{Deserialize, TypeRead};
 ///
 /// use npyz::NpyReader;
 ///
-/// let file = io::BufReader::new(File::open("./tests/c-order.npy")?);
+/// let file = io::BufReader::new(File::open("./test-data/c-order.npy")?);
 /// let npy = npyz::NpyReader::new(file)?;
 ///
 /// // Helper methods for inspecting the layout of the data.

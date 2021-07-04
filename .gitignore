@@ -1,7 +1,7 @@
 target
 Cargo.lock
+
+# FIXME: These shouldn't exist (they're output files
+#  from back before we had an io::Write API)
 tests/*.npy
-benches/*.npy
-!tests/f-order.npy
-!tests/c-order.npy
-examples/ndarray-out.npy
+

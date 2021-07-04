@@ -25,7 +25,7 @@ mod read_example {
     }
 
     pub fn main() -> std::io::Result<()> {
-        let bytes = std::fs::read("tests/c-order.npy")?;
+        let bytes = std::fs::read("test-data/c-order.npy")?;
         let reader: NpyReader<i64, _> = NpyReader::new(&bytes[..])?;
         let shape = reader.shape().to_vec();
         let order = reader.order();
@@ -38,7 +38,7 @@ mod read_example {
 
     #[test]
     fn read_c_order() {
-        let bytes = std::fs::read("tests/c-order.npy").unwrap();
+        let bytes = std::fs::read("test-data/c-order.npy").unwrap();
         let reader = npyz::NpyReader::<i64, _>::new(&bytes[..]).unwrap();
         let order = reader.order();
         let shape = reader.shape().to_vec();
@@ -62,7 +62,7 @@ mod read_example {
 
     #[test]
     fn read_f_order() {
-        let bytes = std::fs::read("tests/f-order.npy").unwrap();
+        let bytes = std::fs::read("test-data/f-order.npy").unwrap();
         let reader = npyz::NpyReader::<i64, _>::new(&bytes[..]).unwrap();
         let order = reader.order();
         let shape = reader.shape().to_vec();
@@ -115,7 +115,7 @@ mod write_example {
         let view = view.slice(ndarray::s![.., .., ..;2]); // shape (8, 7, 3), non-contiguous
         assert_eq!(view.shape(), &[8, 7, 3]);
 
-        let mut file = io::BufWriter::new(File::create("examples/ndarray-out.npy")?);
+        let mut file = io::BufWriter::new(File::create("examples/output/ndarray.npy")?);
         write_array(&mut file, &view)
     }
 

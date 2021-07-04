@@ -21,8 +21,10 @@ No features are enabled by default.  Here is the list of existing features:
   that your code and `npyz` are using the same version.
 * **`"derive"`** enables derives of traits for working with structured arrays.
   This will add a build-time dependency on common proc macro utilities (`syn`, `quote`).
-* **`"npz"`** enables APIs for working with NPZ files.
-  This will add a dependency on the `zip` crate.
+* **`"npz"`** enables adapters for working with NPZ files, adding a public dependency
+  on the `zip` crate.  This requires opt-in because `zip` has a fair number of transitive
+  dependencies.  (note that some npz-related helper functions are available even without the
+  feature)
 
 ## Reading
 
@@ -31,7 +33,7 @@ Let's create a simple *.npy file in Python:
 ```python
 import numpy as np
 a = np.array([1, 3.5, -6, 2.3])
-np.save('examples/plain.npy', a)
+np.save('test-data/plain.npy', a)
 ```
 
 Now, we can load it in Rust using [`NpyReader`]:
@@ -40,7 +42,7 @@ Now, we can load it in Rust using [`NpyReader`]:
 use npyz::NpyReader;
 
 fn main() -> std::io::Result<()> {
-    let bytes = std::fs::read("examples/plain.npy")?;
+    let bytes = std::fs::read("test-data/plain.npy")?;
 
     // Note: In addition to byte slices, this accepts any io::Read
     let data: NpyReader<f64, _> = NpyReader::new(&bytes[..])?;
@@ -69,7 +71,7 @@ And we can see our data:
 use npyz::NpyReader;
 
 fn main() -> std::io::Result<()> {
-    let bytes = std::fs::read("tests/c-order.npy")?;
+    let bytes = std::fs::read("test-data/c-order.npy")?;
 
     let data: NpyReader<i64, _> = NpyReader::new(&bytes[..])?;
     assert_eq!(data.shape(), &[2, 3, 4]);
@@ -138,7 +140,7 @@ fn to_array_d<T>(data: Vec<T>, shape: Vec<u64>, order: npyz::Order) -> ndarray::
 }
 
 fn main() -> std::io::Result<()> {
-    let bytes = std::fs::read("tests/c-order.npy")?;
+    let bytes = std::fs::read("test-data/c-order.npy")?;
     let reader: NpyReader<i64, _> = NpyReader::new(&bytes[..])?;
     let shape = reader.shape().to_vec();
     let order = reader.order();
@@ -182,7 +184,7 @@ fn main() -> io::Result<()> {
     let view = view.slice(ndarray::s![.., .., ..;2]); // shape (8, 7, 3), non-contiguous
     assert_eq!(view.shape(), &[8, 7, 3]);
 
-    let mut file = io::BufWriter::new(File::create("examples/ndarray-out.npy")?);
+    let mut file = io::BufWriter::new(File::create("examples/output/ndarray.npy")?);
     write_array(&mut file, &view)
 }
 ```
@@ -194,7 +196,7 @@ fn main() -> io::Result<()> {
 ```python
 import numpy as np
 a = np.array([(1,2.5,4), (2,3.1,5)], dtype=[('a', 'i4'),('b', 'f4'),('c', 'i8')])
-np.save('examples/simple.npy', a)
+np.save('test-data/simple.npy', a)
 ```
 
 To load this in Rust, we need to create a corresponding struct.
@@ -226,7 +228,7 @@ struct Struct {
 }
 
 fn main() -> std::io::Result<()> {
-    let bytes = std::fs::read("examples/structured.npy")?;
+    let bytes = std::fs::read("test-data/structured.npy")?;
 
     let data: NpyReader<Struct, _> = NpyReader::new(&bytes[..])?;
     for row in data {
@@ -245,6 +247,10 @@ Array { a: 1, b: 2.5, c: 4 }
 Array { a: 2, b: 3.1, c: 5 }
 ```
 
+## `.npz` files
+
+See the documentation of the [`npz` module][`npz`].
+
 */
 
 // Reexport the macros.
@@ -255,6 +261,10 @@ mod read;
 mod write;
 mod type_str;
 mod serialize;
+#[cfg(feature = "npz")]
+mod npz_feature;
+
+pub mod npz;
 
 // Expose public dependencies
 #[cfg(feature = "num-complex")]

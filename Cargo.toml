@@ -67,6 +67,10 @@ required-features = ["derive"]
 name = "roundtrip"
 required-features = ["derive"]
 
+[[example]]
+name = "npz-without-feature"
+required-features = ["zip"]  # only required because an optional dependency can't also be a dev dependency
+
 [[test]]
 name = "derive_hygiene"
 required-features = ["derive"]
@@ -81,3 +85,7 @@ required-features = ["derive"]
 
 [[test]]
 name = "nd"
+
+[[test]]
+name = "npz"
+required-features = ["npz"]

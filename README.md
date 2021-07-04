@@ -31,7 +31,7 @@ Data can now be read from a `*.npy` file:
 use npyz::NpyReader;
 
 fn main() -> std::io::Result<()> {
-    let bytes = std::fs::read("examples/plain.npy")?;
+    let bytes = std::fs::read("test-data/plain.npy")?;
 
     // Note: In addition to byte slices, this accepts any io::Read
     let data: NpyReader<f64, _> = NpyReader::new(&bytes[..])?;

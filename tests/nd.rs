@@ -7,7 +7,7 @@ fn fortran_order_vec() -> Vec<i64> { vec![1,4,2,5,3,6,1,4,2,5,3,6,1,4,2,5,3,6,1,
 
 #[test]
 fn read_c_order() {
-    let bytes = std::fs::read("tests/c-order.npy").unwrap();
+    let bytes = std::fs::read("test-data/c-order.npy").unwrap();
     let arr = npyz::NpyReader::<i64, _>::new(&bytes[..]).unwrap();
     assert_eq!(arr.shape(), &[2, 3, 4][..]);
     assert_eq!(arr.order(), Order::C);
@@ -18,7 +18,7 @@ fn read_c_order() {
 
 #[test]
 fn read_fortran_order() {
-    let bytes = std::fs::read("tests/f-order.npy").unwrap();
+    let bytes = std::fs::read("test-data/f-order.npy").unwrap();
     let arr = npyz::NpyReader::<i64, _>::new(&bytes[..]).unwrap();
     assert_eq!(arr.shape(), &[2, 3, 4][..]);
     assert_eq!(arr.order(), Order::Fortran);
