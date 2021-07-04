@@ -212,7 +212,7 @@ fn gen_field_dtypes_struct(
             fn extract(dtype: &_npyz::DType) -> p::Result<Self, _npyz::DTypeError> {
                 let fields = match dtype {
                     _npyz::DType::Record(fields) => fields,
-                    _npyz::DType::Plain { ty, .. } => return p::Err(_npyz::DTypeError::expected_record(ty)),
+                    ty => return p::Err(_npyz::DTypeError::expected_record(ty)),
                 };
 
                 let correct_names: &[&str] = &[ #(#idents_str),* ];

@@ -47,7 +47,7 @@ struct Vector5(Vec<i32>);
 impl AutoSerialize for Vector5 {
     #[inline]
     fn default_dtype() -> DType {
-        DType::Plain { ty: "<i4".parse().unwrap(), shape: vec![5] }
+        DType::Array(5, Box::new(DType::Plain("<i4".parse().unwrap())))
     }
 }
 
@@ -390,6 +390,55 @@ fn roundtrip_bytes_byteorder() {
     let data = npyz::NpyFile::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
     assert_eq!(data.into_vec::<Row>().unwrap(), vec![row]);
+}
+
+#[test]
+fn nested_array_of_struct() {
+    #[derive(npyz::Deserialize, npyz::Serialize, npyz::AutoSerialize)]
+    #[derive(Debug, PartialEq, Clone, Copy, Default)]
+    struct Outer {
+        foo: [Inner; 3],
+    }
+
+    #[derive(npyz::Deserialize, npyz::Serialize, npyz::AutoSerialize)]
+    #[derive(Debug, PartialEq, Clone, Copy, Default)]
+    struct Inner {
+        bar: f64,
+    }
+
+    let dtype = DType::Record(vec![
+        Field { name: "foo".into(), dtype: DType::Array(3, Box::new(DType::Record(vec![
+            plain_field("bar", "<f8"),
+        ])))},
+    ]);
+
+    let row = Outer {
+        foo: [
+            Inner { bar: 1.0 },
+            Inner { bar: 2.0 },
+            Inner { bar: 3.0 },
+        ],
+    };
+
+    let expected_data_bytes = {
+        let mut buf = vec![];
+        for x in vec![1.0, 2.0, 3.0] {
+            buf.extend_from_slice(&f64::to_bits(x).to_le_bytes());
+        }
+        buf
+    };
+
+    let mut writer = io::Cursor::new(vec![]);
+    let mut out_file = npyz::Builder::new().dtype(dtype.clone()).begin_1d(&mut writer).unwrap();
+    out_file.push(&row).unwrap();
+    out_file.finish().unwrap();
+
+    let buffer = writer.into_inner();
+    assert!(buffer.ends_with(&expected_data_bytes));
+
+    let data = npyz::NpyFile::new(&buffer[..]).unwrap();
+    assert_eq!(data.dtype(), dtype);
+    assert_eq!(data.into_vec::<Outer>().unwrap(), vec![row]);
 }
 
 // Try ndim == 0

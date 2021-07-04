@@ -234,7 +234,7 @@ impl<R: io::Read> NpyFile<R> {
         let shape = convert_value_to_shape(expect_key("shape")?)?;
 
         let descr: &Value = expect_key("descr")?;
-        let dtype = DType::from_descr(descr.clone())?;
+        let dtype = DType::from_descr(descr)?;
 
         let n_records = shape.iter().product();
         let item_size = dtype.num_bytes();

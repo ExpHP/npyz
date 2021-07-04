@@ -133,8 +133,8 @@ impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
             MaybeSeek::Isnt(_) => None,
         };
 
-        if let DType::Plain { ref shape, .. } = dtype {
-            assert!(shape.len() == 0, "plain non-scalar dtypes not supported");
+        if let DType::Array(..) = dtype {
+            panic!("the outermost dtype cannot be an array (got: {:?})", dtype);
         }
         let (dict_text, shape_info) = create_dict(dtype, order, shape);
         let (header_text, version, version_props) = determine_required_version_and_pad_header(dict_text);

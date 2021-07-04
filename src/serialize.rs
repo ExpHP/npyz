@@ -174,7 +174,7 @@ enum ErrorKind {
         actual: u64,
     },
     ExpectedRecord {
-        type_str: TypeStr,
+        dtype: String,
     },
     WrongFields {
         expected: Vec<String>,
@@ -213,9 +213,8 @@ impl DTypeError {
 
     // used by derives
     #[doc(hidden)]
-    pub fn expected_record(type_str: &TypeStr) -> Self {
-        let type_str = type_str.clone();
-        DTypeError(ErrorKind::ExpectedRecord { type_str })
+    pub fn expected_record(dtype: &DType) -> Self {
+        DTypeError(ErrorKind::ExpectedRecord { dtype: dtype.descr() })
     }
 
     // used by derives
@@ -240,8 +239,8 @@ impl fmt::Display for DTypeError {
             ErrorKind::ExpectedScalar { dtype, rust_type } => {
                 write!(f, "type {} requires a scalar (string) dtype, not {}", rust_type, dtype)
             },
-            ErrorKind::ExpectedRecord { type_str } => {
-                write!(f, "expected a record type; got a scalar type '{}'", type_str)
+            ErrorKind::ExpectedRecord { dtype } => {
+                write!(f, "expected a record type; got {}", dtype)
             },
             ErrorKind::ExpectedArray { got } => {
                 write!(f, "rust array types require an array dtype (got {})", got)
@@ -744,19 +743,12 @@ impl_auto_serialize!{[T: ?Sized] std::sync::Arc<T> as T where T: AutoSerialize}
 impl_auto_serialize!{[T: ?Sized] std::borrow::Cow<'_, T> as T where T: AutoSerialize + std::borrow::ToOwned}
 
 impl DType {
-    /// Expect an array dtype, get the length of the array and the inner dtype.
-    fn array_inner_dtype(&self, expected_len: u64) -> Result<Self, DTypeError> {
+    /// Expect an array dtype, get the inner dtype.
+    fn array_inner_dtype(&self, expected_len: u64) -> Result<&Self, DTypeError> {
         match *self {
             DType::Record { .. } => Err(DTypeError(ErrorKind::ExpectedArray { got: "a record" })),
-            DType::Plain { ref ty, ref shape } => {
-                let ty = ty.clone();
-                let mut shape = shape.to_vec();
-
-                let len = match shape.is_empty() {
-                    true => return Err(DTypeError(ErrorKind::ExpectedArray { got: "a scalar" })),
-                    false => shape.remove(0),
-                };
-
+            DType::Plain { .. } => Err(DTypeError(ErrorKind::ExpectedArray { got: "a scalar" })),
+            DType::Array(len, ref ty) => {
                 if len != expected_len {
                     return Err(DTypeError(ErrorKind::WrongArrayLen {
                         actual: len,
@@ -764,7 +756,7 @@ impl DType {
                     }));
                 }
 
-                Ok(DType::Plain { ty, shape })
+                Ok(ty)
             },
         }
     }
@@ -811,15 +803,7 @@ mod arrays {
     impl<T: AutoSerialize + Default + Copy, const N: usize> AutoSerialize for [T; N] {
         #[inline]
         fn default_dtype() -> DType {
-            use DType::*;
-
-            match T::default_dtype() {
-                Plain { ty, mut shape } => DType::Plain {
-                    ty,
-                    shape: { shape.insert(0, N as u64); shape },
-                },
-                Record(_) => unimplemented!("arrays of nested records")
-            }
+            DType::Array(N as u64, Box::new(T::default_dtype()))
         }
     }
 
@@ -829,7 +813,7 @@ mod arrays {
         #[inline]
         fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
             let inner_dtype = dtype.array_inner_dtype(N as u64)?;
-            let inner = <T>::reader(&inner_dtype)?;
+            let inner = <T>::reader(inner_dtype)?;
             Ok(ArrayReader { inner })
         }
     }
@@ -839,7 +823,7 @@ mod arrays {
 
         #[inline]
         fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
-            let inner = <T>::writer(&dtype.array_inner_dtype(N as u64)?)?;
+            let inner = <T>::writer(dtype.array_inner_dtype(N as u64)?)?;
             Ok(ArrayWriter { inner })
         }
     }

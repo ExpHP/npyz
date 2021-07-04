@@ -10,25 +10,20 @@ use crate::type_str::TypeStr;
 /// Representation of a Numpy type
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DType {
-    /// A simple array with only a single field
-    Plain {
-        /// Numpy type string. First character is `'>'` for big endian, `'<'` for little endian,
-        /// or can be `'|'` if it doesn't matter.
-        ///
-        /// Examples: `>i4`, `<u8`, `>f8`, `|S7`. The number usually corresponds to the number of
-        /// bytes (with the single exception of unicode strings `|U3`).
-        ty: TypeStr,
+    /// Numpy type string. First character is `'>'` for big endian, `'<'` for little endian,
+    /// or can be `'|'` if it doesn't matter.
+    ///
+    /// Examples: `>i4`, `<u8`, `>f8`, `|S7`. The number usually corresponds to the number of
+    /// bytes (with the single exception of unicode strings `|U3`).
+    Plain(TypeStr),
 
-        /// Shape of a type.
-        ///
-        /// This will *almost always* be an empty `vec![]`, indicating a scalar type.
-        ///
-        /// This only time it is possible to have a non-scalar type is in structured arrays, where
-        /// the members of the struct are allowed to be arrays themselves.  E.g. in the `DType` for
-        /// `dtype=[('abc', 'i4', [2, 3])]`, the [`Field`] for `abc` will have a `shape` of `vec![2, 3]`.
-        /// In rust, such an array could be read using the following element type:
-        ///
-        #[cfg_attr(any(not(doctest), feature="derive"), doc = r##"
+    /// Fixed-size inner array type.
+    ///
+    /// This is only possible inside structured arrays, where fields can themselves be arrays.
+    /// E.g. in the `DType` for `dtype=[('abc', 'i4', [2, 3])]`, the `DType` for `abc`
+    /// will be `Array(2, Array(3, Plain("<i4")))`. In rust, such an array could be read using
+    /// the following element type:
+    #[cfg_attr(any(not(doctest), feature="derive"), doc = r##"
 ```
 # #[allow(unused)]
 #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
@@ -37,55 +32,55 @@ struct Row {
 }
 ```
 "##)]
-        shape: Vec<u64>
-    },
+    Array(u64, Box<DType>),
 
     /// A structure record array
-    Record(Vec<Field>)
+    Record(Vec<Field>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A field of a record dtype
+/// A field of a structured array dtype
 pub struct Field {
     /// The name of the field
     pub name: String,
 
     /// The dtype of the field
-    pub dtype: DType
+    pub dtype: DType,
 }
 
 impl DType {
     /// Numpy format description of record dtype.
+    ///
+    /// Calling `descr` on an [`Array`] type will not produce a valid python expression
+    /// (the string will only be suitable for error messages).
     pub fn descr(&self) -> String {
         use DType::*;
-        match *self {
-            Record(ref fields) =>
+        match self {
+            Plain(ty) => format!("'{}'", ty),
+            Record(fields) => {
                 fields.iter()
-                    .map(|&Field { ref name, ref dtype }|
-                        match *dtype {
-                            Plain { ref ty, ref shape } =>
-                                if shape.len() == 0 {
-                                    format!("('{}', '{}'), ", name, ty)
-                                } else {
-                                    let shape_str = shape.iter().fold(String::new(), |o, n| o + &format!("{},", n));
-                                    format!("('{}', '{}', ({})), ", name, ty, shape_str)
-                                },
-                            ref record@Record(_) => {
-                                format!("('{}', {}), ", name, record.descr())
-                            },
-                        }
-                    )
-                    .fold("[".to_string(), |o, n| o + &n) + "]",
-            Plain { ref ty, .. } => format!("'{}'", ty),
+                    .map(|Field { name, dtype }| match dtype {
+                        ty@Plain(_) |
+                        ty@Record(_) => format!("('{}', {}), ", name, ty.descr()),
+
+                        array@Array(..) => {
+                            let (shape, elem_ty) = extract_full_array_shape(array);
+                            let shape_str = shape.iter().fold(String::new(), |o, n| o + &format!("{},", n));
+                            format!("('{}', {}, ({})), ", name, elem_ty.descr(), shape_str)
+                        },
+                    }).fold("[".to_string(), |o, n| o + &n) + "]"
+            },
+
+            Array(n, inner) => format!("<< array {} of {} >>", n, inner.descr()),
         }
     }
 
     // Create from description AST
-    pub(crate) fn from_descr(descr: Value) -> io::Result<Self> {
+    pub(crate) fn from_descr(descr: &Value) -> io::Result<Self> {
         use DType::*;
         match descr {
-            Value::String(ref string) => Ok(Self::new_scalar(convert_string_to_type_str(string)?)),
-            Value::List(ref list) => Ok(Record(convert_list_to_record_fields(list)?)),
+            Value::String(string) => Ok(Self::new_scalar(convert_string_to_type_str(string)?)),
+            Value::List(list) => Ok(Record(convert_list_to_record_fields(list)?)),
             _ => Err(invalid_data("must be string or list")),
         }
     }
@@ -94,18 +89,18 @@ impl DType {
     #[doc(hidden)]
     pub fn parse(source: &str) -> io::Result<Self> {
         let descr = parse_header_text_to_io_result(source.as_bytes())?;
-        Self::from_descr(descr)
+        Self::from_descr(&descr)
     }
 
     /// Construct a scalar `DType`. (one which is not a nested array or record type)
     pub fn new_scalar(ty: TypeStr) -> Self {
-        DType::Plain { ty, shape: vec![] }
+        DType::Plain(ty)
     }
 
     /// Return a `TypeStr` only if the `DType` is a primitive scalar. (no arrays or record types)
     pub(crate) fn as_scalar(&self) -> Option<&TypeStr> {
         match self {
-            DType::Plain { ty, shape } if shape.is_empty() => Some(ty),
+            DType::Plain(ty) => Some(ty),
             _ => None,
         }
     }
@@ -113,9 +108,8 @@ impl DType {
     /// Get the number of bytes that each item of this type occupies.
     pub fn num_bytes(&self) -> usize {
         match self {
-            DType::Plain { ty, shape } => {
-                ty.num_bytes() * shape.iter().product::<u64>() as usize
-            },
+            DType::Plain(ty) => ty.num_bytes(),
+            DType::Array(n, inner) => inner.num_bytes() * *n as usize,
             DType::Record(fields) => {
                 fields.iter().map(|field| field.dtype.num_bytes()).sum()
             },
@@ -133,31 +127,24 @@ fn convert_list_to_record_fields(values: &[Value]) -> io::Result<Vec<Field>> {
 }
 
 fn convert_tuple_to_record_field(tuple: &[Value]) -> io::Result<Field> {
-    use self::Value::{String, List};
-
     match tuple.len() {
-        2 | 3 => match (&tuple[0], &tuple[1], tuple.get(2)) {
-            (&String(ref name), &String(ref dtype), ref shape) =>
-                Ok(Field { name: name.clone(), dtype: DType::Plain {
-                    ty: convert_string_to_type_str(dtype)?,
-                    shape: if let &Some(ref s) = shape {
-                        convert_value_to_field_shape(s)?
-                    } else {
-                        vec![]
-                    }
-                } }),
-            (&String(ref name), &List(ref list), None) =>
-                Ok(Field {
-                    name: name.clone(),
-                    dtype: DType::Record(convert_list_to_record_fields(list)?)
-                }),
-            (&String(_), &List(_), Some(_)) =>
-                Err(invalid_data("nested arrays of Record types are not supported.")),
-            _ =>
-                Err(invalid_data("list entry must contain a string for id and a valid dtype")),
-        },
-        _ => Err(invalid_data("list entry must contain 2 or 3 items")),
+        2 | 3 => {}
+        _ => return Err(invalid_data("list entry must contain 2 or 3 items")),
     }
+    let name = match &tuple[0] {
+        Value::String(name) => name.clone(),
+        _ => return Err(invalid_data("list entry must contain a string for id")),
+    };
+
+    let mut dtype = DType::from_descr(&tuple[1])?;
+    if let Some(s) = tuple.get(2) {
+        let mut shape = convert_value_to_field_shape(s)?;
+        while let Some(dim) = shape.pop() {
+            dtype = DType::Array(dim, Box::new(dtype));
+        }
+    };
+
+    Ok(Field { name, dtype })
 }
 
 // FIXME: Remove; no reason to forbid size 0
@@ -179,6 +166,15 @@ fn convert_value_to_positive_integer(number: &Value) -> io::Result<u64> {
     } else {
         Err(invalid_data("must be a number"))
     }
+}
+
+fn extract_full_array_shape(mut dtype: &DType) -> (Vec<u64>, &DType) {
+    let mut shape = vec![];
+    while let &DType::Array(dim, ref inner) = dtype {
+        shape.push(dim);
+        dtype = inner;
+    }
+    (shape, dtype)
 }
 
 pub(crate) fn convert_value_to_shape(field: &Value) -> io::Result<Vec<u64>> {
@@ -416,11 +412,11 @@ mod tests {
         let dtype = DType::Record(vec![
             Field {
                 name: "float".to_string(),
-                dtype: DType::Plain { ty: ">f4".parse()?, shape: vec![] }
+                dtype: DType::Plain(">f4".parse()?),
             },
             Field {
                 name: "byte".to_string(),
-                dtype: DType::Plain { ty: "<u1".parse()?, shape: vec![] }
+                dtype: DType::Plain("<u1".parse()?),
             }
         ]);
         let expected = "[('float', '>f4'), ('byte', '<u1'), ]";
@@ -430,7 +426,7 @@ mod tests {
 
     #[test]
     fn description_of_unstructured_primitive_array() -> TestResult {
-        let dtype = DType::Plain { ty: ">f8".parse()?, shape: vec![] };
+        let dtype = DType::Plain(">f8".parse()?);
         assert_eq!(dtype.descr(), "'>f8'");
         Ok(())
     }
@@ -443,7 +439,7 @@ mod tests {
                 dtype: DType::Record(vec![
                     Field {
                         name: "child".to_string(),
-                        dtype: DType::Plain { ty: "<i4".parse()?, shape: vec![] }
+                        dtype: DType::Plain("<i4".parse()?),
                     },
                 ]),
             }
@@ -456,8 +452,8 @@ mod tests {
     fn converts_simple_description_to_record_dtype() -> TestResult {
         let dtype = ">f8";
         assert_eq!(
-            DType::from_descr(Value::String(dtype.to_string())).unwrap(),
-            DType::Plain { ty: dtype.parse()?, shape: vec![] }
+            DType::from_descr(&Value::String(dtype.to_string())).unwrap(),
+            DType::Plain(dtype.parse()?),
         );
         Ok(())
     }
@@ -466,8 +462,8 @@ mod tests {
     fn converts_non_endian_description_to_record_dtype() -> TestResult {
         let dtype = "|u1";
         assert_eq!(
-            DType::from_descr(Value::String(dtype.to_string())).unwrap(),
-            DType::Plain { ty: dtype.parse()?, shape: vec![] }
+            DType::from_descr(&Value::String(dtype.to_string())).unwrap(),
+            DType::Plain(dtype.parse()?),
         );
         Ok(())
     }
@@ -478,14 +474,14 @@ mod tests {
         let expected_dtype = DType::Record(vec![
             Field {
                 name: "a".to_string(),
-                dtype: DType::Plain { ty: "<u2".parse()?, shape: vec![] }
+                dtype: DType::Plain("<u2".parse()?),
             },
             Field {
                 name: "b".to_string(),
-                dtype: DType::Plain { ty: "<f4".parse()?, shape: vec![] }
+                dtype: DType::Plain("<f4".parse()?),
             }
         ]);
-        assert_eq!(DType::from_descr(descr).unwrap(), expected_dtype);
+        assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
         Ok(())
     }
 
@@ -495,10 +491,10 @@ mod tests {
         let expected_dtype = DType::Record(vec![
             Field {
                 name: "a".to_string(),
-                dtype: DType::Plain { ty: ">f8".parse()?, shape: vec![1] }
+                dtype: DType::Array(1, Box::new(DType::Plain(">f8".parse()?))),
             }
         ]);
-        assert_eq!(DType::from_descr(descr).unwrap(), expected_dtype);
+        assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
         Ok(())
     }
 
@@ -511,50 +507,61 @@ mod tests {
                 dtype: DType::Record(vec![
                     Field {
                         name: "child".to_string(),
-                        dtype: DType::Plain { ty: "<i4".parse()?, shape: vec![] }
+                        dtype: DType::Plain("<i4".parse()?),
                     },
                 ]),
             }
         ]);
-        assert_eq!(DType::from_descr(descr).unwrap(), expected_dtype);
+        assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
         Ok(())
     }
 
-
     #[test]
-    fn errors_on_nested_record_field_array() {
+    fn nested_record_field_array() -> TestResult {
         let descr = parse("[('parent', [('child', '<i4')], (2,))]");
-        assert!(DType::from_descr(descr).is_err());
+        let expected_dtype = DType::Record(vec![
+            Field {
+                name: "parent".to_string(),
+                dtype: DType::Array(2, Box::new(DType::Record(vec![
+                    Field {
+                        name: "child".to_string(),
+                        dtype: DType::Plain("<i4".parse()?),
+                    },
+                ]))),
+            }
+        ]);
+        assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
+        Ok(())
     }
 
     #[test]
     fn errors_on_value_variants_that_cannot_be_converted() {
         let no_dtype = Value::Bool(false);
-        assert!(DType::from_descr(no_dtype).is_err());
+        assert!(DType::from_descr(&no_dtype).is_err());
     }
 
     #[test]
     fn errors_when_record_list_does_not_contain_lists() {
         let faulty_list = parse("['a', 123]");
-        assert!(DType::from_descr(faulty_list).is_err());
+        assert!(DType::from_descr(&faulty_list).is_err());
     }
 
     #[test]
     fn errors_when_record_list_entry_contains_too_few_items() {
         let faulty_list = parse("[('a')]");
-        assert!(DType::from_descr(faulty_list).is_err());
+        assert!(DType::from_descr(&faulty_list).is_err());
     }
 
     #[test]
     fn errors_when_record_list_entry_contains_too_many_items() {
         let faulty_list = parse("[('a', 1, 2, 3)]");
-        assert!(DType::from_descr(faulty_list).is_err());
+        assert!(DType::from_descr(&faulty_list).is_err());
     }
 
     #[test]
     fn errors_when_record_list_entry_contains_non_strings_for_id_or_dtype() {
         let faulty_list = parse("[(1, 2)]");
-        assert!(DType::from_descr(faulty_list).is_err());
+        assert!(DType::from_descr(&faulty_list).is_err());
     }
 
     #[test]

@@ -120,20 +120,14 @@ fn default_dtype() {
     assert_eq!(Array3::default_dtype(), DType::Record(vec![
         Field {
             name: "field".to_string(),
-            dtype: DType::Plain {
-                ty: int_ty.clone(),
-                shape: vec![3],
-            },
+            dtype: DType::Array(3, Box::new(DType::Plain(int_ty.clone()))),
         },
     ]));
 
     assert_eq!(Array23::default_dtype(), DType::Record(vec![
         Field {
             name: "field".to_string(),
-            dtype: DType::Plain {
-                ty: int_ty.clone(),
-                shape: vec![2, 3],
-            },
+            dtype: DType::Array(2, Box::new(DType::Array(3, Box::new(DType::Plain(int_ty.clone()))))),
         },
     ]));
 }
