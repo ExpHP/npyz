@@ -25,10 +25,18 @@ jobs:
         name: Test
         with:
           command: test
-          args: --workspace --all-features --all-targets
+          # NOTE: Not --all-targets because we don't want to do benches
+          # (when using the 'bencher' crate, 'cargo test --benches' will run the complete benchmark
+          #  using the 'dev' profile! :scream-cat:)
+          args: --workspace --all-features --lib --bins --examples --tests
       # --all-targets doesn't do doctests
       - uses: actions-rs/cargo@v1
         name: Doctest
         with:
           command: test
           args: --workspace --all-features --doc
+      - uses: actions-rs/cargo@v1
+        name: Bench
+        with:
+          command: bench
+          args: --workspace --all-features
