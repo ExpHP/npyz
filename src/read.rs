@@ -1,58 +1,87 @@
 use std::io;
 
 use crate::header::{Value, DType, read_header, convert_value_to_shape};
-use crate::serialize::{Deserialize, TypeRead};
+use crate::serialize::{Deserialize, TypeRead, DTypeError};
 
 /// Object for reading an `npy` file.
 ///
-/// This type is an iterator, allowing you to lazily read one element at a time (even if
-/// the file is too large to fit in memory).
+/// This type represents a partially read `npy` file, where the header has been parsed
+/// and we are ready to begin parsing data.
 /// ```
 /// # fn main() -> std::io::Result<()> {
 /// use std::fs::File;
 /// use std::io;
 ///
-/// use npyz::NpyReader;
-///
 /// let file = io::BufReader::new(File::open("./test-data/c-order.npy")?);
-/// let npy = npyz::NpyReader::new(file)?;
+/// let npy = npyz::NpyFile::new(file)?;
 ///
 /// // Helper methods for inspecting the layout of the data.
 /// assert_eq!(npy.shape(), &[2, 3, 4]);
 /// assert_eq!(npy.strides(), &[12, 4, 1]);
 /// assert_eq!(npy.order(), npyz::Order::C);
 ///
-/// // The reader is an iterator!
-/// let data: Vec<i64> = npy.collect::<Result<_, _>>()?;
+/// // Get the data!
+/// let data: Vec<i64> = npy.into_vec()?;
 /// assert_eq!(data.len(), 24);
+/// # Ok(()) }
+/// ```
+///
+/// # Working with large files
+///
+/// For large files, it may be undesirable to read all of the data into a Vec.
+/// The [`NpyFile::data`] method allows you to iterate over the data instead.
+///
+/// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use std::fs::File;
+/// # use std::io;
+/// #
+/// # let file = io::BufReader::new(File::open("./test-data/c-order.npy")?);
+/// let npy = npyz::NpyFile::new(file)?;
+///
+/// let mut sum = 0;
+/// for x in npy.data::<i64>()? {
+///     sum += x?;  // items are Result
+/// }
+/// println!("{}", sum);
 /// # Ok(()) }
 /// ```
 ///
 /// # Migrating from `NpyData`
 ///
-/// At construction, since `&[u8]` impls `Read`, there isn't much you have to change:
+/// At construction, since `&[u8]` impls `Read`, you can still use them as input.
+///
 /// ```text
 /// was:
-///     npyz::NpyData::<i64>::from_bytes(&bytes)
+///     npyz::NpyData::<i64>::from_bytes(&bytes).to_vec()
 /// now:
-///     npyz::NpyReader::<i64, _>::new(&bytes[..])
+///     npyz::NpyFile::new(&bytes[..]).into_vec::<i64>()
 /// ```
 ///
-/// `.to_vec()` is now `.into_vec()`, consuming `self` to produce `Result<Vec<T>>`.
-/// Possible errors to anticipate are `UnexpectedEof`, or, for some types, `InvalidData`.
+/// If you were using the iterator API of `NpyData`, this is now on [`NpyReader`], which
+/// requires us to call [`NpyFile::Data]:
 ///
 /// ```text
 /// was:
-///     arr.to_vec()
+///     let iter = npyz::NpyData::<i64>::new(&bytes)?;
 /// now:
-///     reader.into_vec().unwrap_or(|e| panic!("{}", e))
+///     let iter = npyz::NpyFile::new(&bytes[..]).data::<i64>.map_err(invalid_data)?;
+/// ```
+///
+/// where the following function has been used to paper over the fact that [`NpyFile::data`]
+/// has a different Error type:
+/// ```rust
+/// # #[allow(unused)]
+/// fn invalid_data<S: ToString>(err: S) -> std::io::Error {
+///     std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string())
+/// }
 /// ```
 ///
 /// [`NpyData::is_empty`] is gone due to possible ambiguity between [`NpyReader::len`] and [`NpyReader::total_len`].
 /// Use the one that is appropriate for what you are doing.
 ///
-/// If you were using [`NpyData::get`]... well, honestly, you should first consider
-/// just iterating over the reader instead.  But if you were using [`NpyData::get`]
+/// If you were using [`NpyData::get`]... well, honestly, you should first consider whether
+/// you could just iterate over the reader instead.  But if you were using [`NpyData::get`]
 /// because you *genuinely need* random access, then there is [`NpyReader::read_at`].
 ///
 /// ```text
@@ -63,13 +92,27 @@ use crate::serialize::{Deserialize, TypeRead};
 ///     // note:  0 <= i < reader.total_len()
 ///     reader.read_at(i)?
 /// ```
-pub struct NpyReader<T: Deserialize, R: io::Read> {
+pub struct NpyFile<R: io::Read> {
+    header: NpyHeader,
+    reader: R,
+}
+
+struct NpyHeader {
     dtype: DType,
     shape: Vec<u64>,
     strides: Vec<u64>,
     order: Order,
     n_records: u64,
     item_size: usize,
+}
+
+/// Iterator returned by [`NpyFile::data`] which reads elements of type T from the
+/// data portion of an NPY file.
+///
+/// This type is an iterator of `Result<T>`, with some additional methods for random access
+/// when the underlying reader is seekable.
+pub struct NpyReader<T: Deserialize, R: io::Read> {
+    header: NpyHeader,
     type_reader: <T as Deserialize>::TypeReader,
     // stateful parts, put together like this to remind you to always update them in sync
     reader_and_current_index: (R, u64),
@@ -78,7 +121,7 @@ pub struct NpyReader<T: Deserialize, R: io::Read> {
 /// Legacy type for reading `npy` files.
 ///
 /// > This type provides the same API for reading from `npy-rs 0.4.0`, to help with migration.
-/// > It will later be removed in favor of `NpyReader`.
+/// > It will later be removed in favor of [`NpyFile`].
 ///
 /// The data is internally stored
 /// as a byte array, and deserialized only on-demand to minimize unnecessary allocations.
@@ -87,11 +130,6 @@ pub struct NpyReader<T: Deserialize, R: io::Read> {
 pub struct NpyData<'a, T: Deserialize> {
     inner: NpyReader<T, &'a [u8]>,
 }
-
-// /// This should no longer need to exist once specialization exists.
-// pub struct NpyRandomAccessReader<R: io::Read, T: Deserialize> {
-//     inner: NpyReader<R, T>,
-// }
 
 /// Order of axes in a file.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -108,36 +146,21 @@ impl Order {
     }
 }
 
-impl<R: io::Read, T: Deserialize> NpyReader<T, R> {
+impl<R: io::Read> NpyFile<R> {
     /// Read the header of an `npy` file and construct an `NpyReader` for reading the data.
     pub fn new(mut reader: R) -> io::Result<Self> {
-        let (dtype, shape, order) = Self::read_and_interpret_header(&mut reader)?;
-        let type_reader = match T::reader(&dtype) {
-            Ok(r) => r,
-            Err(e) => return Err(invalid_data(e)),
-        };
-        let n_records = shape.iter().product();
-        let item_size = dtype.num_bytes();
-        let strides = strides(order, &shape);
-        Ok(NpyReader {
-            dtype, shape, strides, n_records, type_reader, order, item_size,
-            reader_and_current_index: (reader, 0),
-        })
-    }
-
-    #[inline(always)]
-    fn reader(&self) -> &R {
-        &self.reader_and_current_index.0
+        let header = Self::read_and_interpret_header(&mut reader)?;
+        Ok(NpyFile { header, reader })
     }
 
     /// Get the dtype as written in the file.
     pub fn dtype(&self) -> DType {
-        self.dtype.clone()
+        self.header.dtype.clone()
     }
 
     /// Get the shape as written in the file.
     pub fn shape(&self) -> &[u64] {
-        &self.shape
+        &self.header.shape
     }
 
     /// Get strides for each of the dimensions.
@@ -146,33 +169,52 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> {
     /// It is a function of both [`NpyReader::order`] and [`NpyReader::shape`],
     /// provided for your convenience.
     pub fn strides(&self) -> &[u64] {
-        &self.strides
+        &self.header.strides
     }
 
     /// Get whether the data is in C order or fortran order.
     pub fn order(&self) -> Order {
-        self.order
+        self.header.order
     }
 
-    /// Returns the total number of records, including those that have already been read.
-    /// (This is the product of [`NpyReader::shape`])
-    pub fn total_len(&self) -> u64 {
-        self.n_records
-    }
-
-    /// Get the remaining number of records that lie after the read cursor.
+    /// Get the total number of elements in the file. (This is the product of [`NpyFile::shape`])
     pub fn len(&self) -> u64 {
-        self.n_records - self.reader_and_current_index.1
+        self.header.n_records
     }
 
-    /// Read all remaining, unread records into a `Vec`.
+    /// Read all elements into a flat `Vec`, in the order they are stored as.
     ///
-    /// This is just a convenient shorthand for `self.collect::<io::Result<Vec<_>>>()`.
-    pub fn into_vec(self) -> io::Result<Vec<T>> {
-        self.collect()
+    /// This is a convenience wrapper around [`Self::data`] and [`Iterator::collect`].
+    pub fn into_vec<T: Deserialize>(self) -> io::Result<Vec<T>> {
+        match self.data() {
+            Ok(r) => r.collect(),
+            Err(e) => Err(invalid_data(e)),
+        }
     }
 
-    fn read_and_interpret_header(mut r: impl io::Read) -> io::Result<(DType, Vec<u64>, Order)> {
+    /// Produce an [`NpyReader`] to begin reading elements, if `T` can be deserialized from the file's dtype.
+    ///
+    /// The returned type implements [`Iterator`]`<Item=io::Result<T>>`, and provides additional methods
+    /// for random access when `R: Seek`.  See [`NpyReader`] for more details.
+    pub fn data<T: Deserialize>(self) -> Result<NpyReader<T, R>, DTypeError> {
+        let NpyFile { reader, header } = self;
+        let type_reader = T::reader(&header.dtype)?;
+        Ok(NpyReader { type_reader, header, reader_and_current_index: (reader, 0) })
+    }
+
+    /// Produce an [`NpyReader`] to begin reading elements, if `T` can be deserialized from the file's dtype.
+    ///
+    /// This fallible form of the function returns `self` on error, so that you can try again with a different `T`.
+    pub fn try_data<T: Deserialize>(self) -> Result<NpyReader<T, R>, Self> {
+        let type_reader = match T::reader(&self.header.dtype) {
+            Ok(r) => r,
+            Err(_) => return Err(self),
+        };
+        let NpyFile { reader, header } = self;
+        Ok(NpyReader { type_reader, header, reader_and_current_index: (reader, 0) })
+    }
+
+    fn read_and_interpret_header(mut r: impl io::Read) -> io::Result<NpyHeader> {
         let header = read_header(&mut r)?;
 
         let dict = match header {
@@ -193,7 +235,29 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> {
 
         let descr: &Value = expect_key("descr")?;
         let dtype = DType::from_descr(descr.clone())?;
-        Ok((dtype, shape, order))
+
+        let n_records = shape.iter().product();
+        let item_size = dtype.num_bytes();
+        let strides = strides(order, &shape);
+        Ok(NpyHeader { dtype, shape, strides, order, n_records, item_size })
+    }
+}
+
+impl<T: Deserialize, R: io::Read> NpyReader<T, R> {
+    #[inline(always)]
+    fn reader(&self) -> &R {
+        &self.reader_and_current_index.0
+    }
+
+    /// Returns the total number of records, including those that have already been read.
+    /// (This is the product of [`NpyReader::shape`])
+    pub fn total_len(&self) -> u64 {
+        self.header.n_records
+    }
+
+    /// Get the remaining number of records that lie after the read cursor.
+    pub fn len(&self) -> u64 {
+        self.header.n_records - self.reader_and_current_index.1
     }
 }
 
@@ -215,7 +279,7 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
         let (reader, current_index) = &mut self.reader_and_current_index;
         let delta = index as i64 - *current_index as i64;
         if delta != 0 {
-            reader.seek(io::SeekFrom::Current(delta * self.item_size as i64))?;
+            reader.seek(io::SeekFrom::Current(delta * self.header.item_size as i64))?;
             *current_index = index;
         }
         Ok(())
@@ -239,9 +303,9 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
 impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Deserialize a NPY file represented as bytes
     pub fn from_bytes(bytes: &'a [u8]) -> io::Result<NpyData<'a, T>> {
-        let inner = NpyReader::new(bytes)?;
+        let inner = NpyFile::new(bytes)?.data().map_err(invalid_data)?;
 
-        assert_eq!(inner.item_size as u64 * inner.n_records, inner.reader().len() as u64);
+        assert_eq!(inner.header.item_size as u64 * inner.header.n_records, inner.reader().len() as u64);
         Ok(NpyData { inner })
     }
 
@@ -282,7 +346,7 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Panics if the bytes stored for the element are invalid for the dtype,
     /// or if the index is out of bounds.
     pub fn get_unchecked(&self, i: usize) -> T {
-        let item_bytes = &self.get_data_slice()[i * self.inner.item_size..];
+        let item_bytes = &self.get_data_slice()[i * self.inner.header.item_size..];
         self.inner.type_reader.read_one(item_bytes).unwrap()
     }
 
@@ -321,7 +385,7 @@ impl<R, T> Iterator for NpyReader<T, R> where T: Deserialize, R: io::Read {
 
     fn next(&mut self) -> Option<Self::Item> {
         let (reader, current_index) = &mut self.reader_and_current_index;
-        if *current_index < self.n_records {
+        if *current_index < self.header.n_records {
             *current_index += 1;
             return Some(self.type_reader.read_one(reader));
         }
@@ -398,7 +462,7 @@ mod tests {
     #[test]
     fn test_methods_after_partial_iteration() {
         let bytes = to_bytes_1d(&[100, 101, 102, 103, 104, 105, 106]).unwrap();
-        let mut reader = NpyReader::new(&bytes[..]).unwrap();
+        let mut reader = NpyFile::new(&bytes[..]).unwrap().data().unwrap();
 
         assert_eq!(reader.total_len(), 7);
         assert_eq!(reader.len(), 7);
@@ -408,14 +472,12 @@ mod tests {
 
         assert_eq!(reader.total_len(), 7);
         assert_eq!(reader.len(), 5);
-
-        assert_eq!(reader.into_vec().unwrap(), vec![102, 103, 104, 105, 106]);
     }
 
     #[test]
     fn test_next_after_finished_iteration() {
         let bytes = to_bytes_1d(&[100, 101, 102, 103, 104, 105, 106]).unwrap();
-        let mut reader = NpyReader::<i32, _>::new(&bytes[..]).unwrap();
+        let mut reader = NpyFile::new(&bytes[..]).unwrap().data::<i32>().unwrap();
 
         assert_eq!(reader.total_len(), 7);
         assert_eq!(reader.len(), 7);
@@ -432,7 +494,7 @@ mod tests {
     #[test]
     fn test_methods_after_seek() {
         let bytes = to_bytes_1d(&[100, 101, 102, 103, 104, 105, 106]).unwrap();
-        let mut reader = NpyReader::new(io::Cursor::new(&bytes[..])).unwrap();
+        let mut reader = NpyFile::new(io::Cursor::new(&bytes[..])).unwrap().data().unwrap();
 
         assert_eq!(reader.total_len(), 7);
         assert_eq!(reader.len(), 7);
@@ -452,13 +514,13 @@ mod tests {
 
     fn check_seek_panic_boundary(items: &[i32], index: u64) {
         let bytes = to_bytes_1d(items).unwrap();
-        let mut reader = NpyReader::<i32, _>::new(io::Cursor::new(&bytes[..])).unwrap();
+        let mut reader = NpyFile::new(io::Cursor::new(&bytes[..])).unwrap().data::<i32>().unwrap();
         let _ = reader.seek_to(index);
     }
 
     fn check_read_panic_boundary(items: &[i32], index: u64) {
         let bytes = to_bytes_1d(items).unwrap();
-        let mut reader = NpyReader::<i32, _>::new(io::Cursor::new(&bytes[..])).unwrap();
+        let mut reader = NpyFile::new(io::Cursor::new(&bytes[..])).unwrap().data::<i32>().unwrap();
         let _ = reader.read_at(index);
     }
 

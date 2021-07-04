@@ -137,7 +137,7 @@ fn roundtrip() {
 
     assert_version(&buf, (1, 0));
 
-    let arrays2 = npyz::NpyReader::new(&buf[..]).unwrap().into_vec().unwrap();
+    let arrays2 = npyz::NpyFile::new(&buf[..]).unwrap().into_vec().unwrap();
     assert_eq!(arrays, arrays2);
 }
 
@@ -156,7 +156,7 @@ fn roundtrip_with_plain_dtype() {
 
     let buffer = fs::read("tests/roundtrip_plain.npy").unwrap();
 
-    let array_read = npyz::NpyReader::new(&buffer[..]).unwrap().into_vec().unwrap();
+    let array_read = npyz::NpyFile::new(&buffer[..]).unwrap().into_vec().unwrap();
     assert_eq!(array_written, array_read);
 }
 
@@ -214,9 +214,9 @@ fn roundtrip_byteorder() {
     let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
-    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyFile::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
-    assert_eq!(data.into_vec().unwrap(), vec![row]);
+    assert_eq!(data.into_vec::<Row>().unwrap(), vec![row]);
 }
 
 #[test]
@@ -275,9 +275,9 @@ fn roundtrip_datetime() {
     let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
-    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyFile::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
-    assert_eq!(data.into_vec().unwrap(), vec![row]);
+    assert_eq!(data.into_vec::<Row>().unwrap(), vec![row]);
 }
 
 #[test]
@@ -334,9 +334,9 @@ fn roundtrip_bytes() {
     let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
-    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyFile::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
-    assert_eq!(data.into_vec().unwrap(), vec![row]);
+    assert_eq!(data.into_vec::<Row>().unwrap(), vec![row]);
 }
 
 // check that all byte orders are identical for bytestrings
@@ -390,9 +390,9 @@ fn roundtrip_bytes_byteorder() {
     let buffer = fs::read(path).unwrap();
     assert!(buffer.ends_with(&expected_data_bytes));
 
-    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyFile::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
-    assert_eq!(data.into_vec().unwrap(), vec![row]);
+    assert_eq!(data.into_vec::<Row>().unwrap(), vec![row]);
 }
 
 // Try ndim == 0
@@ -418,9 +418,9 @@ fn roundtrip_scalar() {
     let buffer = cursor.into_inner();
     assert!(buffer.ends_with(&expected_data_bytes));
 
-    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyFile::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
-    assert_eq!(data.into_vec().unwrap(), vec![row]);
+    assert_eq!(data.into_vec::<Row>().unwrap(), vec![row]);
 }
 
 // try a unicode field name, which forces version 3
@@ -456,9 +456,9 @@ fn roundtrip_version3() {
 
     assert_version(&buffer, (3, 0));
 
-    let data = npyz::NpyReader::<Row, _>::new(&buffer[..]).unwrap();
+    let data = npyz::NpyFile::new(&buffer[..]).unwrap();
     assert_eq!(data.dtype(), dtype);
-    assert_eq!(data.into_vec().unwrap(), vec![row]);
+    assert_eq!(data.into_vec::<Row>().unwrap(), vec![row]);
 }
 
 #[track_caller]

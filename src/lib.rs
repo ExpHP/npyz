@@ -36,17 +36,15 @@ a = np.array([1, 3.5, -6, 2.3])
 np.save('test-data/plain.npy', a)
 ```
 
-Now, we can load it in Rust using [`NpyReader`]:
+Now, we can load it in Rust using [`NpyFile`]:
 
 ```rust
-use npyz::NpyReader;
-
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bytes = std::fs::read("test-data/plain.npy")?;
 
     // Note: In addition to byte slices, this accepts any io::Read
-    let data: NpyReader<f64, _> = NpyReader::new(&bytes[..])?;
-    for number in data {
+    let npy = npyz::NpyFile::new(&bytes[..])?;
+    for number in npy.data::<f64>()? {
         let number = number?;
         eprintln!("{}", number);
     }
@@ -65,18 +63,19 @@ And we can see our data:
 
 ### Inspecting properties of the array
 
-[`NpyReader`] provides methods that let you inspect the array.
+[`NpyFile`] provides methods that let you inspect the array.
 
 ```rust
-use npyz::NpyReader;
-
 fn main() -> std::io::Result<()> {
     let bytes = std::fs::read("test-data/c-order.npy")?;
 
-    let data: NpyReader<i64, _> = NpyReader::new(&bytes[..])?;
+    let data = npyz::NpyFile::new(&bytes[..])?;
     assert_eq!(data.shape(), &[2, 3, 4]);
     assert_eq!(data.order(), npyz::Order::C);
     assert_eq!(data.strides(), &[12, 4, 1]);
+
+    // convenience method for reading to vec
+    println!("{:?}", data.into_vec::<f64>());
     Ok(())
 }
 ```
@@ -115,8 +114,6 @@ Using the [`ndarray`](https://docs.rs/ndarray) crate?  No problem!
 At the time, no conversion API is provided by `npyz`, but one can easily be written:
 
 ```rust
-use npyz::NpyReader;
-
 // Example of parsing to an array with fixed NDIM.
 fn to_array_3<T>(data: Vec<T>, shape: Vec<u64>, order: npyz::Order) -> ndarray::Array3<T> {
     use ndarray::ShapeBuilder;
@@ -127,8 +124,7 @@ fn to_array_3<T>(data: Vec<T>, shape: Vec<u64>, order: npyz::Order) -> ndarray::
     };
     let true_shape = shape.set_f(order == npyz::Order::Fortran);
 
-    ndarray::Array3::from_shape_vec(true_shape, data)
-        .unwrap_or_else(|e| panic!("shape error: {}", e))
+    ndarray::Array3::from_shape_vec(true_shape, data).unwrap_or_else(|e| panic!("shape error: {}", e))
 }
 
 // Example of parsing to an array with dynamic NDIM.
@@ -138,16 +134,15 @@ fn to_array_d<T>(data: Vec<T>, shape: Vec<u64>, order: npyz::Order) -> ndarray::
     let shape = shape.into_iter().map(|x| x as usize).collect::<Vec<_>>();
     let true_shape = shape.set_f(order == npyz::Order::Fortran);
 
-    ndarray::ArrayD::from_shape_vec(true_shape, data)
-        .unwrap_or_else(|e| panic!("shape error: {}", e))
+    ndarray::ArrayD::from_shape_vec(true_shape, data).unwrap_or_else(|e| panic!("shape error: {}", e))
 }
 
-fn main() -> std::io::Result<()> {
+pub fn main() -> std::io::Result<()> {
     let bytes = std::fs::read("test-data/c-order.npy")?;
-    let reader: NpyReader<i64, _> = NpyReader::new(&bytes[..])?;
+    let reader = npyz::NpyFile::new(&bytes[..])?;
     let shape = reader.shape().to_vec();
     let order = reader.order();
-    let data = reader.into_vec()?;
+    let data = reader.into_vec::<i64>()?;
 
     println!("{:?}", to_array_3(data.clone(), shape.clone(), order));
     println!("{:?}", to_array_d(data.clone(), shape.clone(), order));
@@ -218,8 +213,6 @@ and make sure the field names and types all match up:
 //    - It is only tested when the feature is present (`cargo test --features derive`)
 #![cfg_attr(any(not(doctest), feature="derive"), doc = r##"
 ```
-use npyz::NpyReader;
-
 // make sure to add `features = ["derive"]` in Cargo.toml!
 #[derive(npyz::Deserialize, Debug)]
 struct Struct {
@@ -228,11 +221,11 @@ struct Struct {
     c: i64,
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bytes = std::fs::read("test-data/structured.npy")?;
 
-    let data: NpyReader<Struct, _> = NpyReader::new(&bytes[..])?;
-    for row in data {
+    let npy = npyz::NpyFile::new(&bytes[..])?;
+    for row in npy.data::<Struct>()? {
         let row = row?;
         eprintln!("{:?}", row);
     }
@@ -275,7 +268,7 @@ pub use zip;
 
 pub use header::{DType, Field};
 #[allow(deprecated)]
-pub use read::{NpyData, NpyReader, Order};
+pub use read::{NpyData, NpyFile, NpyReader, Order};
 #[allow(deprecated)]
 pub use write::{to_file, to_file_1d, OutFile, NpyWriter, Builder};
 pub use serialize::{Serialize, Deserialize, AutoSerialize};

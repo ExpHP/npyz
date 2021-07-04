@@ -7,9 +7,7 @@ use std::fs::File;
 
 use zip::result::ZipError;
 
-use crate::read::NpyReader;
-use crate::serialize::Deserialize;
-
+use crate::read::NpyFile;
 
 /// Interface for reading an NPZ file.
 ///
@@ -39,9 +37,9 @@ impl<R: io::Read + io::Seek> NpzArchive<R> {
     /// Read the array with the given name.
     ///
     /// If it is not present, `Ok(None)` is returned.
-    pub fn by_name<'a, T: Deserialize>(&'a mut self, name: &str) -> io::Result<Option<NpyReader<T, zip::read::ZipFile<'a>>>> {
+    pub fn by_name<'a>(&'a mut self, name: &str) -> io::Result<Option<NpyFile<zip::read::ZipFile<'a>>>> {
         match self.zip.by_name(&crate::npz::file_name_from_array_name(name)) {
-            Ok(file) => Ok(Some(NpyReader::new(file)?)),
+            Ok(file) => Ok(Some(NpyFile::new(file)?)),
             Err(ZipError::FileNotFound) => Ok(None),
             Err(ZipError::Io(e)) => Err(e),
             Err(ZipError::InvalidArchive(s)) => Err(invalid_data(s)),

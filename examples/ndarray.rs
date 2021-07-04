@@ -1,6 +1,4 @@
 mod read_example {
-    use npyz::NpyReader;
-
     // Example of parsing to an array with fixed NDIM.
     fn to_array_3<T>(data: Vec<T>, shape: Vec<u64>, order: npyz::Order) -> ndarray::Array3<T> {
         use ndarray::ShapeBuilder;
@@ -26,10 +24,10 @@ mod read_example {
 
     pub fn main() -> std::io::Result<()> {
         let bytes = std::fs::read("test-data/c-order.npy")?;
-        let reader: NpyReader<i64, _> = NpyReader::new(&bytes[..])?;
+        let reader = npyz::NpyFile::new(&bytes[..])?;
         let shape = reader.shape().to_vec();
         let order = reader.order();
-        let data = reader.into_vec()?;
+        let data = reader.into_vec::<i64>()?;
 
         println!("{:?}", to_array_3(data.clone(), shape.clone(), order));
         println!("{:?}", to_array_d(data.clone(), shape.clone(), order));
@@ -39,10 +37,10 @@ mod read_example {
     #[test]
     fn read_c_order() {
         let bytes = std::fs::read("test-data/c-order.npy").unwrap();
-        let reader = npyz::NpyReader::<i64, _>::new(&bytes[..]).unwrap();
+        let reader = npyz::NpyFile::new(&bytes[..]).unwrap();
         let order = reader.order();
         let shape = reader.shape().to_vec();
-        let data = reader.into_vec().unwrap();
+        let data = reader.into_vec::<i64>().unwrap();
 
         let arr3 = to_array_3(data.clone(), shape.clone(), order);
         let arrd = to_array_d(data.clone(), shape.clone(), order);
@@ -63,10 +61,10 @@ mod read_example {
     #[test]
     fn read_f_order() {
         let bytes = std::fs::read("test-data/f-order.npy").unwrap();
-        let reader = npyz::NpyReader::<i64, _>::new(&bytes[..]).unwrap();
+        let reader = npyz::NpyFile::new(&bytes[..]).unwrap();
         let order = reader.order();
         let shape = reader.shape().to_vec();
-        let data = reader.into_vec().unwrap();
+        let data = reader.into_vec::<i64>().unwrap();
 
         let arr3 = to_array_3(data.clone(), shape.clone(), order);
         let arrd = to_array_d(data.clone(), shape.clone(), order);
@@ -128,10 +126,11 @@ mod write_example {
         let mut bytes = vec![];
         write_array(&mut bytes, &view)?;
 
-        let mut reader = npyz::NpyReader::<i32, _>::new(&bytes[..])?;
-        assert_eq!(reader.order(), npyz::Order::C);
-        assert_eq!(reader.shape(), &[8, 7, 3]);
+        let npy = npyz::NpyFile::new(&bytes[..])?;
+        assert_eq!(npy.order(), npyz::Order::C);
+        assert_eq!(npy.shape(), &[8, 7, 3]);
         // check that the items were properly converted into C order
+        let mut reader = npy.data::<i32>().unwrap();
         assert_eq!(reader.next().unwrap().unwrap(), 0);
         assert_eq!(reader.next().unwrap().unwrap(), 200);
         assert_eq!(reader.next().unwrap().unwrap(), 400);

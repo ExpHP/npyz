@@ -15,7 +15,7 @@ fn main() -> std::io::Result<()> {
 
     let bytes = std::fs::read("examples/output/roundtrip.npy")?;
 
-    for (i, arr) in npyz::NpyReader::new(&bytes[..]).unwrap().into_iter().enumerate() {
+    for (i, arr) in npyz::NpyFile::new(&bytes[..]).unwrap().data().unwrap().enumerate() {
         assert_eq!(Struct { a: i as i32, b: (i as f32 * pi / 180.0).sin() }, arr?);
     }
     Ok(())

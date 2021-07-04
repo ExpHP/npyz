@@ -437,7 +437,7 @@ pub(crate) fn to_writer_1d_with_seeking<W: io::Write + io::Seek, T: AutoSerializ
 mod tests {
     use super::*;
     use std::io::{self, Cursor};
-    use crate::NpyReader;
+    use crate::NpyFile;
 
     fn bytestring_contains(haystack: &[u8], needle: &[u8]) -> bool {
         if needle.is_empty() {
@@ -450,8 +450,8 @@ mod tests {
     fn write_1d_simple() -> io::Result<()> {
         let raw_buffer = to_bytes_1d(&[1.0, 3.0, 5.0])?;
 
-        let reader = NpyReader::<f64, _>::new(&raw_buffer[..])?;
-        assert_eq!(reader.into_vec()?, vec![1.0, 3.0, 5.0]);
+        let reader = NpyFile::new(&raw_buffer[..])?;
+        assert_eq!(reader.into_vec::<f64>()?, vec![1.0, 3.0, 5.0]);
 
         Ok(())
     }
@@ -475,8 +475,8 @@ mod tests {
 
         // check the bytes written by `OutFile`
         let written_bytes = &raw_buffer[prefix.len()..raw_buffer.len() - suffix.len()];
-        let reader = NpyReader::<f64, _>::new(&written_bytes[..])?;
-        assert_eq!(reader.into_vec()?, vec![1.0, 3.0, 5.0]);
+        let reader = NpyFile::new(&written_bytes[..])?;
+        assert_eq!(reader.into_vec::<f64>()?, vec![1.0, 3.0, 5.0]);
 
         Ok(())
     }
@@ -505,9 +505,9 @@ mod tests {
         to_writer_nd(&mut cursor, &[00, 01, 02, 10, 11, 12], &[2, 3])?;
 
         let raw_buffer = cursor.into_inner();
-        let reader = NpyReader::<i32, _>::new(&raw_buffer[..])?;
+        let reader = NpyFile::new(&raw_buffer[..])?;
         assert_eq!(reader.shape(), &[2, 3][..]);
-        assert_eq!(reader.into_vec()?, vec![00, 01, 02, 10, 11, 12]);
+        assert_eq!(reader.into_vec::<i32>()?, vec![00, 01, 02, 10, 11, 12]);
 
         Ok(())
     }
