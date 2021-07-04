@@ -416,7 +416,7 @@ pub(crate) fn to_writer_1d<W: io::Write + io::Seek, T: AutoSerialize>(writer: W,
 
 /// Quick API for writing an n-d array to an io::Write.
 #[cfg(test)]
-pub(crate) fn to_writer_nd<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T], shape: &[u64]) -> io::Result<()> {
+pub(crate) fn to_writer_nd<W: io::Write, T: AutoSerialize>(writer: W, data: &[T], shape: &[u64]) -> io::Result<()> {
     let mut writer = Builder::new().default_dtype().begin_nd(writer, shape)?;
     writer.extend(data)?;
     writer.finish()
