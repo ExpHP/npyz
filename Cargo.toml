@@ -54,12 +54,6 @@ name = "bench"
 harness = false
 
 [[example]]
-name = "plain"
-
-[[example]]
-name = "ndarray"
-
-[[example]]
 name = "structured"
 required-features = ["derive"]
 
@@ -82,9 +76,6 @@ required-features = ["derive"]
 [[test]]
 name = "serialize_array"
 required-features = ["derive"]
-
-[[test]]
-name = "nd"
 
 [[test]]
 name = "npz"
