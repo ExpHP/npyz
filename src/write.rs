@@ -336,6 +336,18 @@ use maybe_seek::MaybeSeek;
 mod maybe_seek {
     use super::*;
 
+    // A writer that implements Seek even if W doesn't (by potentially panicking).
+    //
+    // The peculiar design of this is explained in greater detail here:
+    // https://github.com/ExpHP/npyz/issues/42#issuecomment-873263846
+    pub(crate) enum MaybeSeek<W> {
+        // a trait object is needed to smuggle in access to Seek methods without every method needing a Seek bound
+        Is(Box<dyn WriteSeek<W>>),
+        Isnt(W),
+    }
+
+    // Note: W = Self.  It is used to allow W to stand in for the "lifetime" of W
+    //       when casting W to a trait object.
     pub(crate) trait WriteSeek<W>: Write + Seek + sealed::Sealed<W> {}
 
     mod sealed {
@@ -346,11 +358,6 @@ mod maybe_seek {
     }
 
     impl<W: Write + Seek> WriteSeek<W> for W {}
-
-    pub(crate) enum MaybeSeek<W> {
-        Is(Box<dyn WriteSeek<W>>),
-        Isnt(W),
-    }
 
     impl<W: Write> Write for MaybeSeek<W> {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
