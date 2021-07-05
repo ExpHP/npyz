@@ -21,10 +21,11 @@ No features are enabled by default.  Here is the list of existing features:
   that your code and `npyz` are using the same version.
 * **`"derive"`** enables derives of traits for working with structured arrays.
   This will add a build-time dependency on common proc macro utilities (`syn`, `quote`).
-* **`"npz"`** enables adapters for working with NPZ files, adding a public dependency
-  on the `zip` crate.  This requires opt-in because `zip` has a fair number of transitive
-  dependencies.  (note that some npz-related helper functions are available even without the
-  feature)
+* **`"npz"`** enables adapters for working with NPZ files
+  (including scipy sparse matrices),
+  adding a public dependency on the `zip` crate.
+  This requires opt-in because `zip` has a fair number of transitive dependencies.
+  (note that some npz-related helper functions are available even without the feature)
 
 ## Reading
 
@@ -243,7 +244,8 @@ Array { a: 2, b: 3.1, c: 5 }
 
 ## `.npz` files
 
-See the documentation of the [`npz` module][`npz`].
+* To work with `.npz` files in general, see the [`npz` module][`npz`].
+* To work with `scipy.sparse` matrices see the [`sparse` module][`sparse`].
 
 */
 

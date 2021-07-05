@@ -1,5 +1,4 @@
 use npyz::npz::NpzArchive;
-use npyz::sparse;
 
 #[test]
 fn read_uncompressed() {
