@@ -56,3 +56,40 @@ impl<R: io::Read + io::Seek> NpzArchive<R> {
 fn invalid_data<S: ToString>(s: S) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, s.to_string())
 }
+
+/// Interface for writing an NPZ file.
+///
+/// This is only a simple wrapper around [`zip::ZipWriter`] which transforms array names to filenames.
+///
+/// *This is only available with the **`"npz"`** feature.*
+pub struct NpzWriter<W: io::Write + io::Seek> {
+    zip: zip::ZipWriter<W>,
+}
+
+impl NpzWriter<io::BufWriter<File>> {
+    /// Create a new, empty `npz` archive on the filesystem. (will clobber an existing file)
+    pub fn create(path: impl AsRef<Path>) -> io::Result<Self> {
+        Ok(Self::new(io::BufWriter::new(File::open(path)?)))
+    }
+}
+
+impl<W: io::Write + io::Seek> NpzWriter<W> {
+    /// Begin writing an NPZ file to an arbitrary writer.
+    pub fn new(writer: W) -> Self {
+        NpzWriter { zip: zip::ZipWriter::new(writer) }
+    }
+
+    /// Begin an entry in the NPZ for the corresponding array.
+    ///
+    /// This returns an implementation of [`io::Write`].
+    /// To write the array, supply that writer to [`crate::Builder::begin_nd`].
+    pub fn start_array(&mut self, name: &str, options: zip::write::FileOptions) -> io::Result<&mut zip::ZipWriter<W>> {
+        self.zip.start_file(crate::npz::file_name_from_array_name(name), options)?;
+        Ok(&mut self.zip)
+    }
+
+    /// Exposes the underlying [`zip::ZipWriter`].
+    pub fn zip_writer(&mut self) -> &mut zip::ZipWriter<W> {
+        &mut self.zip
+    }
+}
