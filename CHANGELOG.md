@@ -1,0 +1,34 @@
+# Changelog
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+### Added
+- This CHANGELOG.
+- Tools for NPZ files and scipy sparse matrices, and the associated **`"npz"`** feature.
+- Nested structs inside array fields of a structured array now work.
+- [`NpyWriter`] now allows `T: ?Sized`.
+
+### Changed
+- In order to fix nested structs inside array fields, the layout of `DType` had to be changed
+  by removing `shape` from `DType::Plain` and adding a new `DType::Array` variant.
+- `NpyReader` was split into two types:  You now start by creating an `NpyFile` (which is NOT
+  parameterized over `T`), which can then be turned into an `NpyReader`.  The purpose of the
+  split is to permit code to make multiple attempts to deserialize into different rust types.
+  (e.g. indices in sparse NPZ files may be either `i32` or `i64`)
+
+## [0.5.0] - 2021-07-01
+### Added
+- Initial release of the fork.  The version started at 0.5.0 to indicate that this
+  version is a breaking change from 0.4.0 of the original `npy`.
+- Adds multidimensional arrays.  *Hallelujah.*
+- Adds byteslice and complex types.
+- Adds big endian support.
+- Adds `NpyReader` for reading from an `io::Read`
+- Adds `Builder` and `NpyWriter` for writing to an `io::Write`
+
+[Unreleased]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ExpHP/npyz/compare/0.5.0...0.6.0
+[0.5.0]: https://github.com/ExpHP/npyz/compare/upstream-0.4.0...0.5.0
