@@ -6,23 +6,28 @@ use std::io;
 
 use zip::read::ZipFile;
 
-use crate::serialize::{Deserialize};
+use crate::serialize::{Deserialize, AutoSerialize};
 use crate::read::{Order, NpyFile};
-use crate::npz::NpzArchive;
+use crate::npz::{NpzArchive, NpzWriter};
+use crate::write::Builder;
+use crate::header::DType;
+
+// =============================================================================
+// Types
 
 /// Raw representation of a scipy sparse matrix, in any format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sparse<T> {
     /// The matrix is in COOrdinate format.
-    #[allow(missing_docs)] Coo(Coo<T>),
+    Coo(Coo<T>),
     /// The matrix is in Compressed Sparse Row format.
-    #[allow(missing_docs)] Csr(Csr<T>),
+    Csr(Csr<T>),
     /// The matrix is in Compressed Sparse Column format.
-    #[allow(missing_docs)] Csc(Csc<T>),
+    Csc(Csc<T>),
     /// The matrix is in DIAgonal format.
-    #[allow(missing_docs)] Dia(Dia<T>),
+    Dia(Dia<T>),
     /// The matrix is in Block Sparse Row format.
-    #[allow(missing_docs)] Bsr(Bsr<T>),
+    Bsr(Bsr<T>),
 }
 
 /// Raw representation of a [`scipy.sparse.coo_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.coo_matrix.html).
@@ -122,6 +127,9 @@ pub struct Bsr<T> {
     /// weaker and somewhat arbitrary).
     pub indptr: Vec<usize>,
 }
+
+// =============================================================================
+// Reading
 
 impl<T: Deserialize> Sparse<T> {
     /// Read a sparse matrix saved by `scipy.sparse.save_npz`.
@@ -288,4 +296,160 @@ fn extract_and_check_ndim<'a, R: io::Read + io::Seek>(npz: &'a mut NpzArchive<R>
 
 fn invalid_data<S: ToString>(s: S) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, s.to_string())
+}
+
+// =============================================================================
+// Writing
+
+impl<T: AutoSerialize> Sparse<T> {
+    /// Write a sparse matrix, like `scipy.sparse.save_npz`.
+    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
+        match self {
+            Sparse::Coo(m) => m.write_npz(writer),
+            Sparse::Csc(m) => m.write_npz(writer),
+            Sparse::Csr(m) => m.write_npz(writer),
+            Sparse::Dia(m) => m.write_npz(writer),
+            Sparse::Bsr(m) => m.write_npz(writer),
+        }
+    }
+}
+
+impl<T: AutoSerialize> Coo<T> {
+    /// Write a sparse `coo_matrix` matrix, like `scipy.sparse.save_npz`.
+    ///
+    /// # Panics
+    ///
+    /// This method does not currently perform any significant validation of input,
+    /// but validation (with panics) may be added later in a future semver major bump.
+    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
+        let Coo { data, shape, row, col } = self;
+        let ref mut npz = NpzWriter::new(writer);
+        write_format(npz, "coo")?;
+        write_shape(npz, shape)?;
+        write_indices(npz, "row", row.iter().map(|&x| x as i64))?;
+        write_indices(npz, "col", col.iter().map(|&x| x as i64))?;
+        write_data(npz, &data, &[data.len() as u64])?;
+        Ok(())
+    }
+}
+
+impl<T: AutoSerialize> Csr<T> {
+    /// Write a sparse `csr_matrix` matrix, like `scipy.sparse.save_npz`.
+    ///
+    /// # Panics
+    ///
+    /// This method does not currently perform any significant validation of input,
+    /// but validation (with panics) may be added later in a future semver major bump.
+    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
+        let Csr { data, shape, indices, indptr } = self;
+        let ref mut npz = NpzWriter::new(writer);
+        write_format(npz, "csr")?;
+        write_shape(npz, shape)?;
+        write_indices(npz, "indices", indices.iter().map(|&x| x as i64))?;
+        write_indices(npz, "indptr", indptr.iter().map(|&x| x as i64))?;
+        write_data(npz, &data, &[data.len() as u64])?;
+        Ok(())
+    }
+}
+
+impl<T: AutoSerialize> Csc<T> {
+    /// Write a sparse `csc_matrix` matrix, like `scipy.sparse.save_npz`.
+    ///
+    /// # Panics
+    ///
+    /// This method does not currently perform any significant validation of input,
+    /// but validation (with panics) may be added later in a future semver major bump.
+    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
+        let Csc { data, shape, indices, indptr } = self;
+        let ref mut npz = NpzWriter::new(writer);
+        write_format(npz, "csc")?;
+        write_shape(npz, shape)?;
+        write_indices(npz, "indices", indices.iter().map(|&x| x as i64))?;
+        write_indices(npz, "indptr", indptr.iter().map(|&x| x as i64))?;
+        write_data(npz, &data, &[data.len() as u64])?;
+        Ok(())
+    }
+}
+
+impl<T: AutoSerialize> Dia<T> {
+    /// Write a sparse `dia_matrix` matrix, like `scipy.sparse.save_npz`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `data.len()` is not a multiple of `offsets.len()`.
+    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
+        let Dia { data, shape, offsets } = self;
+        let ref mut npz = NpzWriter::new(writer);
+        write_format(npz, "dia")?;
+        write_shape(npz, shape)?;
+        write_indices(npz, "offsets", offsets.iter().copied())?;
+        assert_eq!(data.len() % offsets.len(), 0);
+
+        let length = data.len() / offsets.len();
+        write_data(npz, &data, &[length as u64, offsets.len() as u64])?;
+        Ok(())
+    }
+}
+
+impl<T: AutoSerialize> Bsr<T> {
+    /// Write a sparse `bsr_matrix` matrix, like `scipy.sparse.save_npz`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `data.len()` is not equal to `indices.len() * blocksize[0] * blocksize[1]`.
+    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
+        let Bsr { data, shape, indices, indptr, blocksize } = self;
+        let ref mut npz = NpzWriter::new(writer);
+        write_format(npz, "bsr")?;
+        write_shape(npz, shape)?;
+        write_indices(npz, "indices", indices.iter().map(|&x| x as i64))?;
+        write_indices(npz, "indptr", indptr.iter().map(|&x| x as i64))?;
+
+        assert_eq!(data.len(), indices.len() * blocksize[0] * blocksize[1]);
+        write_data(npz, &data, &[indices.len() as u64, blocksize[0] as u64, blocksize[1] as u64])?;
+        Ok(())
+    }
+}
+
+fn zip_file_options() -> zip::write::FileOptions {
+    Default::default()
+}
+
+fn write_format<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, format: &str) -> io::Result<()> {
+    Builder::new()
+        .dtype(DType::Plain("|S3".parse().unwrap()))
+        .begin_nd(npz.start_array("format", zip_file_options())?, &[])?
+        .push(format.as_bytes())
+}
+
+fn write_shape<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, shape: &[u64]) -> io::Result<()> {
+    assert_eq!(shape.len(), 2);
+    Builder::new()
+        .default_dtype()
+        .begin_nd(npz.start_array("shape", zip_file_options())?, &[2])?
+        .extend(shape.iter().map(|&x| x as i64))
+}
+
+// Write signed ints as either i32 or i64 depending on their max value.
+fn write_indices<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, name: &str, data: impl ExactSizeIterator<Item=i64> + Clone) -> io::Result<()> {
+    if data.clone().max().unwrap_or(0) <= i32::MAX as i64 {
+        // small indices
+        Builder::new()
+            .default_dtype()
+            .begin_nd(npz.start_array(name, zip_file_options())?, &[data.len() as u64])?
+            .extend(data.map(|x| x as i32))
+    } else {
+        // long indices
+        Builder::new()
+            .default_dtype()
+            .begin_nd(npz.start_array(name, zip_file_options())?, &[data.len() as u64])?
+            .extend(data)
+    }
+}
+
+fn write_data<W: io::Write + io::Seek, T: AutoSerialize>(npz: &mut NpzWriter<W>, data: &[T], shape: &[u64]) -> io::Result<()> {
+    Builder::new()
+        .default_dtype()
+        .begin_nd(npz.start_array("data", zip_file_options())?, shape)?
+        .extend(data)
 }

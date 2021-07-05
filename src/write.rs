@@ -14,13 +14,13 @@ use crate::read::Order;
 const FILLER_FOR_UNKNOWN_SIZE: &'static [u8] = &[b'*'; 19];
 
 /// Builder for an output `.NPY` file.
-pub struct Builder<Row> {
+pub struct Builder<Row: ?Sized> {
     order: Order,
     dtype: Option<DType>,
-    _marker: PhantomData<fn(Row)>, // contravariant
+    _marker: PhantomData<fn(&Row)>, // contravariant
 }
 
-impl<Row> Builder<Row> {
+impl<Row: ?Sized> Builder<Row> {
     /// Construct a builder with default configuration.
     ///
     /// Data order will be initially set to C order.
@@ -62,7 +62,7 @@ impl<Row> Builder<Row> {
     }
 }
 
-impl<Row: Serialize> Builder<Row> {
+impl<Row: Serialize + ?Sized> Builder<Row> {
     /// Begin writing an array of known shape.
     pub fn begin_nd<W: Write>(&self, w: W, shape: &[u64]) -> io::Result<NpyWriter<Row, W>> {
         NpyWriter::_begin(self, MaybeSeek::Isnt(w), Some(shape))
@@ -79,7 +79,7 @@ impl<Row: Serialize> Builder<Row> {
 
 /// Serialize into a file one item at a time. To serialize an iterator, use the
 /// [`to_file`](fn.to_file.html) function.
-pub struct NpyWriter<Row: Serialize, W: Write> {
+pub struct NpyWriter<Row: Serialize + ?Sized, W: Write> {
     start_pos: Option<u64>,
     shape_info: ShapeInfo,
     num_items: u64,
@@ -123,7 +123,7 @@ impl<Row: Serialize> OutFile<Row> {
     }
 }
 
-impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
+impl<Row: Serialize + ?Sized, W: Write> NpyWriter<Row, W> {
     fn _begin(builder: &Builder<Row>, mut fw: MaybeSeek<W>, shape: Option<&[u64]>) -> io::Result<Self> {
         let &Builder { ref dtype, order, _marker } = builder;
         let dtype = dtype.as_ref().expect("Builder::dtype was never called!");
@@ -178,7 +178,7 @@ impl<Row: Serialize, W: Write> NpyWriter<Row, W> {
     }
 
     /// Write an iterator to the file
-    pub fn extend(&mut self, rows: impl IntoIterator<Item=Row>) -> io::Result<()> {
+    pub fn extend(&mut self, rows: impl IntoIterator<Item=Row>) -> io::Result<()> where Row: Sized {
         rows.into_iter().try_for_each(|row| self.push(&row))
     }
 
@@ -247,7 +247,7 @@ fn create_dict(dtype: &DType, order: Order, shape: Option<&[u64]>) -> (Vec<u8>, 
     (header, shape_info)
 }
 
-impl<Row: Serialize, W: Write> Drop for NpyWriter<Row, W> {
+impl<Row: Serialize + ?Sized, W: Write> Drop for NpyWriter<Row, W> {
     fn drop(&mut self) {
         let _ = self.finish_(); // Ignore the errors
     }
