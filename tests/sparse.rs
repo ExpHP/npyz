@@ -1,4 +1,4 @@
-use npyz::npz::NpzArchive;
+use npyz::npz::{NpzArchive, NpzWriter};
 use npyz::sparse;
 
 fn open_test_npz(name: &str) -> NpzArchive<std::io::BufReader<std::fs::File>> {
@@ -9,7 +9,7 @@ macro_rules! test_writing_sparse {
     ($Ty:ty, $matrix:expr) => {{
         let matrix = $matrix;
         let mut buf = std::io::Cursor::new(vec![]);
-        matrix.write_npz(&mut buf).unwrap();
+        matrix.write_npz(&mut NpzWriter::new(&mut buf)).unwrap();
 
         let bytes = buf.into_inner();
         let mut read_npz = NpzArchive::new(std::io::Cursor::new(&bytes)).unwrap();

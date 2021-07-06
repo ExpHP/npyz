@@ -1,8 +1,40 @@
 //! Tools for reading and writing Scipy sparse matrices in NPZ format.
 //!
+//! ```rust
+//! use std::io;
+//! use npyz::sparse;
+//!
+//! fn main() -> io::Result<()> {
+//!     let mut npz = npyz::npz::NpzArchive::open("test-data/sparse/csr.npz")?;
+//!     let mat = sparse::Csr::<i64>::from_npz(&mut npz)?;
+//!
+//!     // sparse matrices have public fields named after the attributes found in scipy.
+//!     // read or manipulate them however you like!
+//!     let sparse::Csr { data, indices, indptr, shape } = &mat;
+//!     println!("Shape: {:?}", shape);
+//!     println!("Indices: {:?}", indices);
+//!     println!("Indptr: {:?}", indptr);
+//!     println!("Data: {:?}", data);
+//!
+//!     // write to any io::Write
+//!     let writer = io::BufWriter::new(std::fs::File::create("examples/output/sparse-doctest.npz")?);
+//!     mat.write_npz(&mut npyz::npz::NpzWriter::new(writer))?;
+//!     Ok(())
+//! }
+//! ```
+//!
+//! No methods are provided on these types beyond reading and writing.  If you want to do sparse
+//! matrix math, then you should use the data you have read to construct a matrix type from a
+//! dedicated sparse matrix library.
+//!
+//! For instance, an example of how to use this module to save and load CSR matrices from the
+//! [`sprs`](https://crates.io/crates/sprs) crate can be found
+//! [in the examples directory](https://github.com/ExpHP/npyz/tree/master/examples).
+//!
 //! _This module requires the **`"npz"`** feature.
 
 use std::io;
+use std::ops::Deref;
 
 use zip::read::ZipFile;
 
@@ -15,77 +47,97 @@ use crate::header::DType;
 // =============================================================================
 // Types
 
-/// Raw representation of a scipy sparse matrix, in any format.
+/// Raw representation of a scipy sparse matrix whose exact format is known at runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Sparse<T> {
+pub enum SparseBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: AsRef<[usize]>, Offsets: AsRef<[i64]>> {
     /// The matrix is in COOrdinate format.
-    Coo(Coo<T>),
+    Coo(CooBase<T, Data, Indices>),
     /// The matrix is in Compressed Sparse Row format.
-    Csr(Csr<T>),
+    Csr(CsrBase<T, Data, Indices, Indptr>),
     /// The matrix is in Compressed Sparse Column format.
-    Csc(Csc<T>),
+    Csc(CscBase<T, Data, Indices, Indptr>),
     /// The matrix is in DIAgonal format.
-    Dia(Dia<T>),
+    Dia(DiaBase<T, Data, Offsets>),
     /// The matrix is in Block Sparse Row format.
-    Bsr(Bsr<T>),
+    Bsr(BsrBase<T, Data, Indices, Indptr>),
 }
+
+/// A sparse matrix (of type known at runtime) that owns its data.
+pub type Sparse<T> = SparseBase<T, Vec<T>, Vec<u64>, Vec<usize>, Vec<i64>>;
+/// A sparse matrix (of type known at runtime) that borrows its data from elsewhere.
+pub type SparseView<'a, T> = SparseBase<T, &'a [T], &'a [u64], &'a [usize], &'a [i64]>;
 
 /// Raw representation of a [`scipy.sparse.coo_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.coo_matrix.html).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Coo<T> {
+pub struct CooBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>> {
     /// Dimensions of the matrix `[nrow, ncol]`.
     pub shape: [u64; 2],
     /// A vector of length `nnz` containing all of the stored elements.
-    pub data: Vec<T>,
+    pub data: Data,
     /// A vector of length `nnz` indicating the row of each element.
-    pub row: Vec<u64>,
+    pub row: Indices,
     /// A vector of length `nnz` indicating the column of each element.
-    pub col: Vec<u64>,
+    pub col: Indices,
 }
+
+/// A COO matrix that owns its data.
+pub type Coo<T> = CooBase<T, Vec<T>, Vec<u64>>;
+/// A COO matrix that borrows its data from elsewhere.
+pub type CooView<'a, T> = CooBase<T, &'a [T], &'a [u64]>;
 
 /// Raw representation of a [`scipy.sparse.csr_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.csr_matrix.html).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Csr<T> {
+pub struct CsrBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: AsRef<[usize]>> {
     /// Dimensions of the matrix `[nrow, ncol]`.
     pub shape: [u64; 2],
     /// A vector of length `nnz` containing all of the nonzero elements, sorted by row.
-    pub data: Vec<T>,
+    pub data: Data,
     /// A vector of length `nnz` indicating the column of each element.
     ///
     /// > Beware: scipy **does not** require or guarantee that the column indices within each row are sorted.
-    pub indices: Vec<u64>,
+    pub indices: Indices,
     /// A vector of length `nrow + 1` indicating the indices that partition [`data`]
     /// and [`indices`] into data for each row.
     ///
     /// Typically, the elements are nondecreasing, with the first equal to 0 and the final equal
     /// to `nnz` (though the set of requirements that are actually *validated* by scipy are
     /// weaker and somewhat arbitrary).
-    pub indptr: Vec<usize>,
+    pub indptr: Indptr,
 }
+
+/// A CSR matrix that owns its data.
+pub type Csr<T> = CsrBase<T, Vec<T>, Vec<u64>, Vec<usize>>;
+/// A CSR matrix that borrows its data from elsewhere.
+pub type CsrView<'a, T> = CsrBase<T, &'a [T], &'a [u64], &'a [usize]>;
 
 /// Raw representation of a [`scipy.sparse.csc_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.csc_matrix.html).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Csc<T> {
+pub struct CscBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: AsRef<[usize]>> {
     /// Dimensions of the matrix `[nrow, ncol]`.
     pub shape: [u64; 2],
     /// A vector of length `nnz` containing all of the nonzero elements, sorted by column.
-    pub data: Vec<T>,
+    pub data: Data,
     /// A vector of length `nnz` indicating the row of each element.
     ///
     /// > Beware: scipy **does not** require or guarantee that the row indices within each column are sorted.
-    pub indices: Vec<u64>,
+    pub indices: Indices,
     /// A vector of length `ncol + 1` indicating the indices that partition [`data`]
     /// and [`indices`] into data for each column.
     ///
     /// Typically, the elements are nondecreasing, with the first equal to 0 and the final equal
     /// to `nnz` (though the set of requirements that are actually *validated* by scipy are
     /// weaker and somewhat arbitrary).
-    pub indptr: Vec<usize>,
+    pub indptr: Indptr,
 }
+
+/// A CSC matrix that owns its data.
+pub type Csc<T> = CscBase<T, Vec<T>, Vec<u64>, Vec<usize>>;
+/// A CSC matrix that borrows its data from elsewhere.
+pub type CscView<'a, T> = CscBase<T, &'a [T], &'a [u64], &'a [usize]>;
 
 /// Raw representation of a [`scipy.sparse.dia_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.dia_matrix.html).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Dia<T> {
+pub struct DiaBase<T, Data: Deref<Target=[T]>, Offsets: AsRef<[i64]>> {
     /// Dimensions of the matrix `[nrow, ncol]`.
     pub shape: [u64; 2],
     /// Contains the C-order data of a shape `[nnzd, length]` ndarray.
@@ -94,16 +146,21 @@ pub struct Dia<T> {
     /// value `0 <= length <= ncol` and is typically 1 greater than the rightmost column that
     /// contains a nonzero entry.  The values in each diagonal appear to be stored at an index
     /// equal to their column.
-    pub data: Vec<T>,
+    pub data: Data,
     /// A vector of length `nnzd` indicating which diagonal is stored in each row of `data`.
     ///
     /// Negative offsets are below the main diagonal.  Offsets can appear in any order.
-    pub offsets: Vec<i64>,
+    pub offsets: Offsets,
 }
+
+/// A DIA matrix that owns its data.
+pub type Dia<T> = DiaBase<T, Vec<T>, Vec<i64>>;
+/// A DIA matrix that borrows its data from elsewhere.
+pub type DiaView<'a, T> = DiaBase<T, &'a [T], &'a [i64]>;
 
 /// Raw representation of a [`scipy.sparse.bsr_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.bsr_matrix.html).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Bsr<T> {
+pub struct BsrBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: AsRef<[usize]>> {
     /// Dimensions of the matrix `[nrow, ncol]`.
     ///
     /// These dimensions must be divisible by the respective elements of `blocksize`.
@@ -114,19 +171,24 @@ pub struct Bsr<T> {
     /// Contains the C-order data of a shape `[nnzb, block_nrow, block_ncol]` ndarray.
     ///
     /// (effectively concatenating the flattened data of all nonzero blocks, sorted by superrow)
-    pub data: Vec<T>,
+    pub data: Data,
     /// A vector of length `nnzb` indicating the supercolumn index of each block.
     ///
     /// > Beware: scipy **does not** require or guarantee that the column indices within each row are sorted.
-    pub indices: Vec<u64>,
+    pub indices: Indices,
     /// A vector of length `(nrow / block_nrow) + 1` indicating the indices which partition
     /// [`indices`] and the outermost axis of [`data`] into data for each superrow.
     ///
     /// Typically, the elements are nondecreasing, with the first equal to 0 and the final equal
     /// to `nnzb` (though the set of requirements that are actually *validated* by scipy are
     /// weaker and somewhat arbitrary).
-    pub indptr: Vec<usize>,
+    pub indptr: Indptr,
 }
+
+/// A BSR matrix that owns its data.
+pub type Bsr<T> = BsrBase<T, Vec<T>, Vec<u64>, Vec<usize>>;
+/// A BSR matrix that borrows its data from elsewhere.
+pub type BsrView<'a, T> = BsrBase<T, &'a [T], &'a [u64], &'a [usize]>;
 
 // =============================================================================
 // Reading
@@ -206,6 +268,8 @@ impl<T: Deserialize> Bsr<T> {
         Ok(Bsr { data, shape, indices, indptr, blocksize })
     }
 }
+
+// -----
 
 fn show_format(format: &[u8]) -> String {
     let str = format.iter().map(|&b| match b {
@@ -301,115 +365,148 @@ fn invalid_data<S: ToString>(s: S) -> io::Error {
 // =============================================================================
 // Writing
 
-impl<T: AutoSerialize> Sparse<T> {
+impl<T, Data, Indices, Indptr, Offsets> SparseBase<T, Data, Indices, Indptr, Offsets>
+where
+    T: AutoSerialize,
+    Data: Deref<Target=[T]>,
+    Indices: AsRef<[u64]>,
+    Indptr: AsRef<[usize]>,
+    Offsets: AsRef<[i64]>
+{
     /// Write a sparse matrix, like `scipy.sparse.save_npz`.
-    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
+    pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
         match self {
-            Sparse::Coo(m) => m.write_npz(writer),
-            Sparse::Csc(m) => m.write_npz(writer),
-            Sparse::Csr(m) => m.write_npz(writer),
-            Sparse::Dia(m) => m.write_npz(writer),
-            Sparse::Bsr(m) => m.write_npz(writer),
+            SparseBase::Coo(m) => m.write_npz(npz),
+            SparseBase::Csc(m) => m.write_npz(npz),
+            SparseBase::Csr(m) => m.write_npz(npz),
+            SparseBase::Dia(m) => m.write_npz(npz),
+            SparseBase::Bsr(m) => m.write_npz(npz),
         }
     }
 }
 
-impl<T: AutoSerialize> Coo<T> {
+impl<T, Data, Indices> CooBase<T, Data, Indices>
+where
+    T: AutoSerialize,
+    Data: Deref<Target=[T]>,
+    Indices: AsRef<[u64]>,
+{
     /// Write a sparse `coo_matrix` matrix, like `scipy.sparse.save_npz`.
     ///
     /// # Panics
     ///
     /// This method does not currently perform any significant validation of input,
     /// but validation (with panics) may be added later in a future semver major bump.
-    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
-        let Coo { data, shape, row, col } = self;
-        let ref mut npz = NpzWriter::new(writer);
+    pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
+        let CooBase { data, shape, row, col } = self;
         write_format(npz, "coo")?;
         write_shape(npz, shape)?;
-        write_indices(npz, "row", row.iter().map(|&x| x as i64))?;
-        write_indices(npz, "col", col.iter().map(|&x| x as i64))?;
+        write_indices(npz, "row", row.as_ref().iter().map(|&x| x as i64))?;
+        write_indices(npz, "col", col.as_ref().iter().map(|&x| x as i64))?;
         write_data(npz, &data, &[data.len() as u64])?;
         Ok(())
     }
 }
 
-impl<T: AutoSerialize> Csr<T> {
+impl<T, Data, Indices, Indptr> CsrBase<T, Data, Indices, Indptr>
+where
+    T: AutoSerialize,
+    Data: Deref<Target=[T]>,
+    Indices: AsRef<[u64]>,
+    Indptr: AsRef<[usize]>,
+{
     /// Write a sparse `csr_matrix` matrix, like `scipy.sparse.save_npz`.
     ///
     /// # Panics
     ///
     /// This method does not currently perform any significant validation of input,
     /// but validation (with panics) may be added later in a future semver major bump.
-    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
-        let Csr { data, shape, indices, indptr } = self;
-        let ref mut npz = NpzWriter::new(writer);
+    pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
+        let CsrBase { data, shape, indices, indptr } = self;
         write_format(npz, "csr")?;
         write_shape(npz, shape)?;
-        write_indices(npz, "indices", indices.iter().map(|&x| x as i64))?;
-        write_indices(npz, "indptr", indptr.iter().map(|&x| x as i64))?;
+        write_indices(npz, "indices", indices.as_ref().iter().map(|&x| x as i64))?;
+        write_indices(npz, "indptr", indptr.as_ref().iter().map(|&x| x as i64))?;
         write_data(npz, &data, &[data.len() as u64])?;
         Ok(())
     }
 }
 
-impl<T: AutoSerialize> Csc<T> {
+impl<T, Data, Indices, Indptr> CscBase<T, Data, Indices, Indptr>
+where
+    T: AutoSerialize,
+    Data: Deref<Target=[T]>,
+    Indices: AsRef<[u64]>,
+    Indptr: AsRef<[usize]>,
+{
     /// Write a sparse `csc_matrix` matrix, like `scipy.sparse.save_npz`.
     ///
     /// # Panics
     ///
     /// This method does not currently perform any significant validation of input,
     /// but validation (with panics) may be added later in a future semver major bump.
-    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
-        let Csc { data, shape, indices, indptr } = self;
-        let ref mut npz = NpzWriter::new(writer);
+    pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
+        let CscBase { data, shape, indices, indptr } = self;
         write_format(npz, "csc")?;
         write_shape(npz, shape)?;
-        write_indices(npz, "indices", indices.iter().map(|&x| x as i64))?;
-        write_indices(npz, "indptr", indptr.iter().map(|&x| x as i64))?;
+        write_indices(npz, "indices", indices.as_ref().iter().map(|&x| x as i64))?;
+        write_indices(npz, "indptr", indptr.as_ref().iter().map(|&x| x as i64))?;
         write_data(npz, &data, &[data.len() as u64])?;
         Ok(())
     }
 }
 
-impl<T: AutoSerialize> Dia<T> {
+impl<T, Data, Offsets> DiaBase<T, Data, Offsets>
+where
+    T: AutoSerialize,
+    Data: Deref<Target=[T]>,
+    Offsets: AsRef<[i64]>,
+{
     /// Write a sparse `dia_matrix` matrix, like `scipy.sparse.save_npz`.
     ///
     /// # Panics
     ///
     /// Panics if `data.len()` is not a multiple of `offsets.len()`.
-    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
-        let Dia { data, shape, offsets } = self;
-        let ref mut npz = NpzWriter::new(writer);
+    pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
+        let DiaBase { data, shape, offsets } = self;
         write_format(npz, "dia")?;
         write_shape(npz, shape)?;
-        write_indices(npz, "offsets", offsets.iter().copied())?;
-        assert_eq!(data.len() % offsets.len(), 0);
+        write_indices(npz, "offsets", offsets.as_ref().iter().copied())?;
 
-        let length = data.len() / offsets.len();
-        write_data(npz, &data, &[length as u64, offsets.len() as u64])?;
+        let num_offsets = offsets.as_ref().len();
+        assert_eq!(data.len() % num_offsets, 0);
+        let length = data.len() / num_offsets;
+        write_data(npz, &data, &[length as u64, num_offsets as u64])?;
         Ok(())
     }
 }
 
-impl<T: AutoSerialize> Bsr<T> {
+impl<T, Data, Indices, Indptr> BsrBase<T, Data, Indices, Indptr>
+where
+    T: AutoSerialize,
+    Data: Deref<Target=[T]>,
+    Indices: AsRef<[u64]>,
+    Indptr: AsRef<[usize]>,
+{
     /// Write a sparse `bsr_matrix` matrix, like `scipy.sparse.save_npz`.
     ///
     /// # Panics
     ///
     /// Panics if `data.len()` is not equal to `indices.len() * blocksize[0] * blocksize[1]`.
-    pub fn write_npz<W: io::Write + io::Seek>(&self, writer: W) -> io::Result<()> {
-        let Bsr { data, shape, indices, indptr, blocksize } = self;
-        let ref mut npz = NpzWriter::new(writer);
+    pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
+        let BsrBase { data, shape, indices, indptr, blocksize } = self;
         write_format(npz, "bsr")?;
         write_shape(npz, shape)?;
-        write_indices(npz, "indices", indices.iter().map(|&x| x as i64))?;
-        write_indices(npz, "indptr", indptr.iter().map(|&x| x as i64))?;
+        write_indices(npz, "indices", indices.as_ref().iter().map(|&x| x as i64))?;
+        write_indices(npz, "indptr", indptr.as_ref().iter().map(|&x| x as i64))?;
 
-        assert_eq!(data.len(), indices.len() * blocksize[0] * blocksize[1]);
-        write_data(npz, &data, &[indices.len() as u64, blocksize[0] as u64, blocksize[1] as u64])?;
+        assert_eq!(data.len(), indices.as_ref().len() * blocksize[0] * blocksize[1]);
+        write_data(npz, &data, &[indices.as_ref().len() as u64, blocksize[0] as u64, blocksize[1] as u64])?;
         Ok(())
     }
 }
+
+// -----
 
 fn zip_file_options() -> zip::write::FileOptions {
     Default::default()

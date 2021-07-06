@@ -38,7 +38,10 @@ default-features = false
 [dev-dependencies]
 # For examples ONLY.  We don't want to provide a public interface because ndarray undergoes
 # breaking semver bumps very frequently.
-ndarray = { version = "0.15" }
+#
+# Also, sprs has an ndarray dependency that might not be the most recent.
+ndarray = { version = "0.14" }
+sprs = { version = "0.10", default-features = false }
 bencher = { version = "0.1" }
 
 [features]
@@ -64,6 +67,10 @@ required-features = ["derive"]
 [[example]]
 name = "npz-without-feature"
 required-features = ["zip"]  # only required because an optional dependency can't also be a dev dependency
+
+[[example]]
+name = "sparse-sprs"
+required-features = ["npz"]
 
 [[test]]
 name = "derive_hygiene"

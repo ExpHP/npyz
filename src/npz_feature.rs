@@ -71,7 +71,7 @@ pub struct NpzWriter<W: io::Write + io::Seek> {
 impl NpzWriter<io::BufWriter<File>> {
     /// Create a new, empty `npz` archive on the filesystem. (will clobber an existing file)
     pub fn create(path: impl AsRef<Path>) -> io::Result<Self> {
-        Ok(Self::new(io::BufWriter::new(File::open(path)?)))
+        Ok(Self::new(io::BufWriter::new(File::create(path)?)))
     }
 }
 
