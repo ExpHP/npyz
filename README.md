@@ -22,7 +22,7 @@ You also may be interested in enabling some features:
 
 ```toml
 [dependencies]
-npyz = {version = "0.5", features = ["derive", "complex"]}
+npyz = {version = "0.5", features = ["derive", "complex", "npz"]}
 ```
 
 Data can now be read from a `*.npy` file:
@@ -48,6 +48,7 @@ For further examples and information on:
 * Writing `npy` files,
 * Working with structured arrays,
 * Interop with the `ndarray` crate,
+* NPZ files and scipy sparse matrices,
 
 please see the [documentation on the root module](https://docs.rs/npyz).
 

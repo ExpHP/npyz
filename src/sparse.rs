@@ -31,7 +31,7 @@
 //! [`sprs`](https://crates.io/crates/sprs) crate can be found
 //! [in the examples directory](https://github.com/ExpHP/npyz/tree/master/examples).
 //!
-//! _This module requires the **`"npz"`** feature.
+//! _This module requires the **`"npz"`** feature._
 
 use std::io;
 use std::ops::Deref;
@@ -49,7 +49,13 @@ use crate::header::DType;
 
 /// Raw representation of a scipy sparse matrix whose exact format is known at runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SparseBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: AsRef<[usize]>, Offsets: AsRef<[i64]>> {
+pub enum SparseBase<T, Data, Indices, Indptr, Offsets>
+where  // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target=[T]>,
+    Indices: AsRef<[u64]>,
+    Indptr: AsRef<[usize]>,
+    Offsets: AsRef<[i64]>,
+{
     /// The matrix is in COOrdinate format.
     Coo(CooBase<T, Data, Indices>),
     /// The matrix is in Compressed Sparse Row format.
@@ -64,12 +70,17 @@ pub enum SparseBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: A
 
 /// A sparse matrix (of type known at runtime) that owns its data.
 pub type Sparse<T> = SparseBase<T, Vec<T>, Vec<u64>, Vec<usize>, Vec<i64>>;
-/// A sparse matrix (of type known at runtime) that borrows its data from elsewhere.
-pub type SparseView<'a, T> = SparseBase<T, &'a [T], &'a [u64], &'a [usize], &'a [i64]>;
 
 /// Raw representation of a [`scipy.sparse.coo_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.coo_matrix.html).
+///
+/// In spirit, each field is simply a Vec. (see the type alias [`Coo`]).
+/// This generic base class exists in order to allow you to use slices when writing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CooBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>> {
+pub struct CooBase<T, Data, Indices>
+where  // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target=[T]>,
+    Indices: AsRef<[u64]>,
+{
     /// Dimensions of the matrix `[nrow, ncol]`.
     pub shape: [u64; 2],
     /// A vector of length `nnz` containing all of the stored elements.
@@ -81,23 +92,31 @@ pub struct CooBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>> {
 }
 
 /// A COO matrix that owns its data.
+///
+/// Please consult the documentation of [`CooBase`] to see the list of fields publicly available on this type.
 pub type Coo<T> = CooBase<T, Vec<T>, Vec<u64>>;
-/// A COO matrix that borrows its data from elsewhere.
-pub type CooView<'a, T> = CooBase<T, &'a [T], &'a [u64]>;
 
 /// Raw representation of a [`scipy.sparse.csr_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.csr_matrix.html).
+///
+/// In spirit, each field is simply a Vec. (see the type alias [`Csr`]).
+/// This generic base class exists in order to allow you to use slices when writing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CsrBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: AsRef<[usize]>> {
+pub struct CsrBase<T, Data, Indices, Indptr>
+where  // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target=[T]>,
+    Indices: AsRef<[u64]>,
+    Indptr: AsRef<[usize]>,
+{
     /// Dimensions of the matrix `[nrow, ncol]`.
     pub shape: [u64; 2],
     /// A vector of length `nnz` containing all of the nonzero elements, sorted by row.
     pub data: Data,
     /// A vector of length `nnz` indicating the column of each element.
     ///
-    /// > Beware: scipy **does not** require or guarantee that the column indices within each row are sorted.
+    /// **Beware:** scipy **does not** require or guarantee that the column indices within each row are sorted.
     pub indices: Indices,
-    /// A vector of length `nrow + 1` indicating the indices that partition [`data`]
-    /// and [`indices`] into data for each row.
+    /// A vector of length `nrow + 1` indicating the indices that partition [`Self::data`]
+    /// and [`Self::indices`] into data for each row.
     ///
     /// Typically, the elements are nondecreasing, with the first equal to 0 and the final equal
     /// to `nnz` (though the set of requirements that are actually *validated* by scipy are
@@ -106,23 +125,31 @@ pub struct CsrBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: As
 }
 
 /// A CSR matrix that owns its data.
+///
+/// Please consult the documentation of [`CsrBase`] to see the list of fields publicly available on this type.
 pub type Csr<T> = CsrBase<T, Vec<T>, Vec<u64>, Vec<usize>>;
-/// A CSR matrix that borrows its data from elsewhere.
-pub type CsrView<'a, T> = CsrBase<T, &'a [T], &'a [u64], &'a [usize]>;
 
 /// Raw representation of a [`scipy.sparse.csc_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.csc_matrix.html).
+///
+/// In spirit, each field is simply a Vec. (see the type alias [`Csc`]).
+/// This generic base class exists in order to allow you to use slices when writing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CscBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: AsRef<[usize]>> {
+pub struct CscBase<T, Data, Indices, Indptr>
+where  // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target=[T]>,
+    Indices: AsRef<[u64]>,
+    Indptr: AsRef<[usize]>,
+{
     /// Dimensions of the matrix `[nrow, ncol]`.
     pub shape: [u64; 2],
     /// A vector of length `nnz` containing all of the nonzero elements, sorted by column.
     pub data: Data,
     /// A vector of length `nnz` indicating the row of each element.
     ///
-    /// > Beware: scipy **does not** require or guarantee that the row indices within each column are sorted.
+    /// **Beware:** scipy **does not** require or guarantee that the row indices within each column are sorted.
     pub indices: Indices,
-    /// A vector of length `ncol + 1` indicating the indices that partition [`data`]
-    /// and [`indices`] into data for each column.
+    /// A vector of length `ncol + 1` indicating the indices that partition [`Self::data`]
+    /// and [`Self::indices`] into data for each column.
     ///
     /// Typically, the elements are nondecreasing, with the first equal to 0 and the final equal
     /// to `nnz` (though the set of requirements that are actually *validated* by scipy are
@@ -131,13 +158,20 @@ pub struct CscBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: As
 }
 
 /// A CSC matrix that owns its data.
+///
+/// Please consult the documentation of [`CscBase`] to see the list of fields publicly available on this type.
 pub type Csc<T> = CscBase<T, Vec<T>, Vec<u64>, Vec<usize>>;
-/// A CSC matrix that borrows its data from elsewhere.
-pub type CscView<'a, T> = CscBase<T, &'a [T], &'a [u64], &'a [usize]>;
 
 /// Raw representation of a [`scipy.sparse.dia_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.dia_matrix.html).
+///
+/// In spirit, each field is simply a Vec. (see the type alias [`Dia`]).
+/// This generic base class exists in order to allow you to use slices when writing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiaBase<T, Data: Deref<Target=[T]>, Offsets: AsRef<[i64]>> {
+pub struct DiaBase<T, Data, Offsets>
+where  // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target=[T]>,
+    Offsets: AsRef<[i64]>,
+{
     /// Dimensions of the matrix `[nrow, ncol]`.
     pub shape: [u64; 2],
     /// Contains the C-order data of a shape `[nnzd, length]` ndarray.
@@ -154,13 +188,21 @@ pub struct DiaBase<T, Data: Deref<Target=[T]>, Offsets: AsRef<[i64]>> {
 }
 
 /// A DIA matrix that owns its data.
+///
+/// Please consult the documentation of [`DiaBase`] to see the list of fields publicly available on this type.
 pub type Dia<T> = DiaBase<T, Vec<T>, Vec<i64>>;
-/// A DIA matrix that borrows its data from elsewhere.
-pub type DiaView<'a, T> = DiaBase<T, &'a [T], &'a [i64]>;
 
 /// Raw representation of a [`scipy.sparse.bsr_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.bsr_matrix.html).
+///
+/// In spirit, each field is simply a Vec. (see the type alias [`Bsr`]).
+/// This generic base class exists in order to allow you to use slices when writing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BsrBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: AsRef<[usize]>> {
+pub struct BsrBase<T, Data, Indices, Indptr>
+where  // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target=[T]>,
+    Indices: AsRef<[u64]>,
+    Indptr: AsRef<[usize]>,
+{
     /// Dimensions of the matrix `[nrow, ncol]`.
     ///
     /// These dimensions must be divisible by the respective elements of `blocksize`.
@@ -174,10 +216,10 @@ pub struct BsrBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: As
     pub data: Data,
     /// A vector of length `nnzb` indicating the supercolumn index of each block.
     ///
-    /// > Beware: scipy **does not** require or guarantee that the column indices within each row are sorted.
+    /// **Beware:** scipy **does not** require or guarantee that the column indices within each row are sorted.
     pub indices: Indices,
     /// A vector of length `(nrow / block_nrow) + 1` indicating the indices which partition
-    /// [`indices`] and the outermost axis of [`data`] into data for each superrow.
+    /// [`Self::indices`] and the outermost axis of [`Self::data`] into data for each superrow.
     ///
     /// Typically, the elements are nondecreasing, with the first equal to 0 and the final equal
     /// to `nnzb` (though the set of requirements that are actually *validated* by scipy are
@@ -186,9 +228,9 @@ pub struct BsrBase<T, Data: Deref<Target=[T]>, Indices: AsRef<[u64]>, Indptr: As
 }
 
 /// A BSR matrix that owns its data.
+///
+/// Please consult the documentation of [`BsrBase`] to see the list of fields publicly available on this type.
 pub type Bsr<T> = BsrBase<T, Vec<T>, Vec<u64>, Vec<usize>>;
-/// A BSR matrix that borrows its data from elsewhere.
-pub type BsrView<'a, T> = BsrBase<T, &'a [T], &'a [u64], &'a [usize]>;
 
 // =============================================================================
 // Reading

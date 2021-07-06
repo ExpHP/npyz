@@ -4,7 +4,7 @@
 //! The format itself is just a `.zip` file containing files with a `.npy` extension.
 //!
 //! When the `"npz"` feature is enabled, this module provides adapters around the
-//! [`::zip`] crate that read and write NPZ files.
+//! [`zip`][::zip] crate that read and write NPZ files.
 //!
 //! Even without the `"npz"` feature, this module always provides a set of utility functions
 //! for converting between array names and filenames inside the zip file.

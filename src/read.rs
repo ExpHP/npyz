@@ -59,7 +59,7 @@ use crate::serialize::{Deserialize, TypeRead, DTypeError};
 /// ```
 ///
 /// If you were using the iterator API of `NpyData`, this is now on [`NpyReader`], which
-/// requires us to call [`NpyFile::Data]:
+/// requires us to call [`NpyFile::data`]:
 ///
 /// ```text
 /// was:
@@ -166,7 +166,7 @@ impl<R: io::Read> NpyFile<R> {
     /// Get strides for each of the dimensions.
     ///
     /// This is the amount by which the item index changes as you move along each dimension.
-    /// It is a function of both [`NpyReader::order`] and [`NpyReader::shape`],
+    /// It is a function of both [`Self::order`] and [`Self::shape`],
     /// provided for your convenience.
     pub fn strides(&self) -> &[u64] {
         &self.header.strides
@@ -177,7 +177,7 @@ impl<R: io::Read> NpyFile<R> {
         self.header.order
     }
 
-    /// Get the total number of elements in the file. (This is the product of [`NpyFile::shape`])
+    /// Get the total number of elements in the file. (This is the product of [`Self::shape`])
     pub fn len(&self) -> u64 {
         self.header.n_records
     }
@@ -250,7 +250,7 @@ impl<T: Deserialize, R: io::Read> NpyReader<T, R> {
     }
 
     /// Returns the total number of records, including those that have already been read.
-    /// (This is the product of [`NpyReader::shape`])
+    /// (This is the product of [`NpyFile::shape`])
     pub fn total_len(&self) -> u64 {
         self.header.n_records
     }
@@ -353,8 +353,9 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Construct a vector with the deserialized contents of the whole file.
     ///
     /// The output is a flat vector with the elements in the same order that they are in the file.
-    /// To help interpret the results for multidimensional data, see [`NpyReader::shape`]
-    /// and [`NpyReader::strides`].
+    /// [`NpyData`] is deprecated and does not provide any tools for inspecting the shape and
+    /// layout of the data, so if you want to correctly read multi-dimensional arrays you should
+    /// switch to [`NpyFile`].
     pub fn to_vec(&self) -> Vec<T> {
         let mut reader = self.inner.reader().clone();
         (0..self.len()).map(|_| self.inner.type_reader.read_one(&mut reader).unwrap()).collect()

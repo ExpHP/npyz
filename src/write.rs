@@ -84,7 +84,7 @@ pub mod write_options {
 
         /// Set the ouput [`Write`] object.
         ///
-        /// **Calling this method is required.**  In some cases (e.g. the builder obtained from an [`NpzWriter`]),
+        /// **Calling this method is required.**  In some cases (e.g. the builder obtained from an [`NpzWriter`][crate::npz::NpzWriter]),
         /// it will already have been called for you.
         fn writer<W>(self, writer: W) -> WithWriter<W, Self>
         where
@@ -211,7 +211,7 @@ pub mod write_options {
     /// > ```
     ///
     /// Then it is most likely because you are calling [`WriterBuilder::writer`] on a builder
-    /// that already has a writer.  For instance, [`NpzWriter::array`] comes with a writer,
+    /// that already has a writer.  For instance, [`NpzWriter::array`][crate::npz::NpzWriter::array] comes with a writer,
     /// so you do not need to add one.
     pub trait MissingWriter {}
 

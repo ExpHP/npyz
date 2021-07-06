@@ -61,8 +61,6 @@ fn invalid_data<S: ToString>(s: S) -> io::Error {
 
 /// Interface for writing an NPZ file.
 ///
-/// This is only a simple wrapper around [`zip::ZipWriter`] which transforms array names to filenames.
-///
 /// *This is only available with the **`"npz"`** feature.*
 pub struct NpzWriter<W: io::Write + io::Seek> {
     zip: zip::ZipWriter<W>,
@@ -96,7 +94,7 @@ impl<W: io::Write + io::Seek> NpzWriter<W> {
     }
 }
 
-/// Type returned by [`NpzWriter::start_array`], which implements the [`WriterBuilder`] trait.
+/// Type returned by [`NpzWriter::array`], which implements the [`WriterBuilder`] trait.
 ///
 /// Please use the methods of [`WriterBuilder`] to configure this object and begin writing.
 /// (Note that the writer does not impl `io::Seek`, and therefore you cannot use [`WriterBuilder::begin_1d`]).

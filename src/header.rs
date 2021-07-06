@@ -51,7 +51,7 @@ pub struct Field {
 impl DType {
     /// Numpy format description of record dtype.
     ///
-    /// Calling `descr` on an [`Array`] type will not produce a valid python expression
+    /// Calling `descr` on [`DType::Array`] will not produce a valid python expression
     /// (the string will only be suitable for error messages).
     pub fn descr(&self) -> String {
         use DType::*;

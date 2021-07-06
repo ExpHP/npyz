@@ -9,7 +9,8 @@ mod read_example {
         };
         let true_shape = shape.set_f(order == npyz::Order::Fortran);
 
-        ndarray::Array3::from_shape_vec(true_shape, data).unwrap_or_else(|e| panic!("shape error: {}", e))
+        ndarray::Array3::from_shape_vec(true_shape, data)
+            .unwrap_or_else(|e| panic!("shape error: {}", e))
     }
 
     // Example of parsing to an array with dynamic NDIM.
@@ -19,7 +20,8 @@ mod read_example {
         let shape = shape.into_iter().map(|x| x as usize).collect::<Vec<_>>();
         let true_shape = shape.set_f(order == npyz::Order::Fortran);
 
-        ndarray::ArrayD::from_shape_vec(true_shape, data).unwrap_or_else(|e| panic!("shape error: {}", e))
+        ndarray::ArrayD::from_shape_vec(true_shape, data)
+            .unwrap_or_else(|e| panic!("shape error: {}", e))
     }
 
     pub fn main() -> std::io::Result<()> {
