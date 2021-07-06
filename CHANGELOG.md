@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameterized over `T`), which can then be turned into an `NpyReader`.  The purpose of the
   split is to permit code to make multiple attempts to deserialize into different rust types.
   (e.g. indices in sparse NPZ files may be either `i32` or `i64`)
-- `Builder` was changed to a typestate API in order to better accomodate NPZ.
+- `Builder` was changed to a typestate API in order to avoid some runtime panics and to better accomodate NPZ.
   Generally speaking:
   - Code that writes NPY/NPZ files now typically has to `use npyz::WriterBuilder;`.
   - Calls to `npyz::Builder::new()` should now be `npyz::WriteOptions::new()`.
