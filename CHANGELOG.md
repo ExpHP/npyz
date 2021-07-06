@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.6.0] - 2021-07-05
 ### Added
 - This CHANGELOG.
 - Tools for NPZ files and scipy sparse matrices, and the associated **`"npz"`** feature.
@@ -35,6 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adds `NpyReader` for reading from an `io::Read`
 - Adds `Builder` and `NpyWriter` for writing to an `io::Write`
 
-[Unreleased]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/ExpHP/npyz/compare/0.6.0...HEAD
 [0.6.0]: https://github.com/ExpHP/npyz/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/ExpHP/npyz/compare/upstream-0.4.0...0.5.0

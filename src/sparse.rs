@@ -69,6 +69,8 @@ where  // note: explicit 'where' makes rustdoc less intimidating
 }
 
 /// A sparse matrix (of type known at runtime) that owns its data.
+///
+/// This is an enum.  Please consult [`SparseBase`] to see the list of variants.
 pub type Sparse<T> = SparseBase<T, Vec<T>, Vec<u64>, Vec<usize>, Vec<i64>>;
 
 /// Raw representation of a [`scipy.sparse.coo_matrix`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.coo_matrix.html).
