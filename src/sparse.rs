@@ -434,7 +434,8 @@ fn write_shape<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, shape: &[u64]) -
 
 // Write signed ints as either i32 or i64 depending on their max value.
 fn write_indices<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, name: &str, data: impl ExactSizeIterator<Item=i64> + Clone) -> io::Result<()> {
-    if data.clone().max().unwrap_or(0) <= i32::MAX as i64 {
+    let (min, max) = most_negative_and_positive(data.clone());
+    if (i32::MIN as i64) <= min && max <= (i32::MAX as i64) {
         // small indices
         npz.array(name, zip_file_options())?
             .default_dtype()
@@ -449,6 +450,17 @@ fn write_indices<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, name: &str, da
             .begin_nd()?
             .extend(data)
     }
+}
+
+fn most_negative_and_positive(data: impl ExactSizeIterator<Item=i64>) -> (i64, i64) {
+    let mut best_negative = 0;
+    let mut best_positive = 0;
+    // single pass for better memory characteristics
+    for x in data {
+        best_negative = best_negative.min(x);
+        best_positive = best_positive.max(x);
+    }
+    (best_negative, best_positive)
 }
 
 fn write_data<W: io::Write + io::Seek, T: AutoSerialize>(npz: &mut NpzWriter<W>, data: &[T], shape: &[u64]) -> io::Result<()> {
