@@ -28,6 +28,7 @@ zip = { version = "0.5", optional = true }
 
 # NOTE: public dependency, so make sure the doc link to Complex in README.md is kept in sync
 num-complex = { version = "0.4", optional = true }
+arrayvec = { version = "0.7.2", optional = true }
 
 [dependencies.npyz-derive]
 path = "derive"
@@ -51,6 +52,7 @@ default = []
 derive = ["npyz-derive"]
 complex = ["num-complex"]
 npz = ["zip"]
+arraystring = ["arrayvec"]
 
 [[bench]]
 name = "bench"

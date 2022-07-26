@@ -9,6 +9,10 @@ use num_complex::Complex;
 use crate::header::DType;
 use crate::type_str::{TypeStr, Endianness, TypeKind};
 
+#[cfg(feature = "arraystring")]
+use arrayvec::ArrayString;
+
+
 /// Trait that permits reading a type from an `.npy` file.
 ///
 /// Examples of types that implement this:
@@ -655,6 +659,8 @@ impl Deserialize for String {
 }
 
 
+
+
 pub struct BytesWriter {
     type_str: TypeStr,
     size: usize,
@@ -703,6 +709,83 @@ impl Serialize for [u8] {
         Ok(BytesWriter { type_str, size, is_byte_str })
     }
 }
+
+
+#[cfg(feature = "arraystring")]
+pub struct ArrayStringReader<const CAP: usize> {
+    bytes_reader: BytesReader,
+}
+
+#[cfg(feature = "arraystring")]
+impl<const CAP: usize> TypeRead for ArrayStringReader<CAP> {
+    type Value = ArrayString<CAP>;
+
+    fn read_one<R: io::Read>(&self, bytes: R) -> io::Result<Self::Value>
+    {
+        let v = self.bytes_reader.read_one(bytes)?;
+        let mut data = [0_u8; CAP];
+        v.iter().take(CAP).enumerate().for_each(|(i, c)| {
+            data[i] = *c;
+        });
+        match ArrayString::<CAP>::from_byte_string(&data) {
+            Ok(s) => Ok(s),
+            Err(e) => Err(io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Can not convert to utf-8: {}", e),
+            )),
+        }
+    }
+}
+
+#[cfg(feature = "arraystring")]
+impl<const CAP: usize> Deserialize for ArrayString<CAP> {
+    type TypeReader = ArrayStringReader<CAP>;
+
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+        Ok(ArrayStringReader::<CAP> {
+            bytes_reader: <Vec<u8> as Deserialize>::reader(dtype)?,
+        })
+    }
+}
+
+#[cfg(feature = "arraystring")]
+pub struct ArrayStringWriter<const CAP: usize> {
+    bytes_writer: BytesWriter,
+}
+
+#[cfg(feature = "arraystring")]
+impl<const CAP: usize> TypeWrite for ArrayStringWriter<CAP> {
+    type Value = ArrayString<CAP>;
+
+    fn write_one<W: io::Write>(&self, writer: W, value: &Self::Value) -> io::Result<()> where Self: Sized {
+        let bytes = value.as_bytes();
+        self.bytes_writer.write_one(writer, bytes)
+    }
+}
+
+#[cfg(feature = "arraystring")]
+impl<const CAP: usize> Serialize for ArrayString<CAP> {
+    type TypeWriter = ArrayStringWriter<CAP>;
+
+    fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
+        Ok(ArrayStringWriter::<CAP> {
+            bytes_writer: <[u8] as Serialize>::writer(dtype)?
+        })
+    }
+}
+
+#[cfg(feature = "arraystring")]
+impl<const CAP: usize> AutoSerialize for ArrayString<CAP> {
+    fn default_dtype() -> DType {
+        DType::Plain(TypeStr {
+            endianness: Endianness::Little,
+            type_kind: TypeKind::ByteStr,
+            size: CAP as u64,
+            time_units: None,
+        })
+    }
+}
+
 
 #[macro_use]
 mod helper {
