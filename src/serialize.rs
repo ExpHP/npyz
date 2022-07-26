@@ -623,6 +623,38 @@ impl Deserialize for Vec<u8> {
     }
 }
 
+
+pub struct StringReader {
+    bytes_reader: BytesReader,
+}
+
+impl TypeRead for StringReader {
+    type Value = String;
+
+    fn read_one<R: io::Read>(&self, bytes: R) -> io::Result<Self::Value>
+    {
+        let v = self.bytes_reader.read_one(bytes)?;
+        match String::from_utf8(v) {
+            Ok(s) => Ok(s),
+            Err(e) => Err(io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Can not convert to utf-8: {}", e),
+            )),
+        }
+    }
+}
+
+impl Deserialize for String {
+    type TypeReader = StringReader;
+
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+        Ok(StringReader {
+            bytes_reader: <Vec<u8> as Deserialize>::reader(dtype)?,
+        })
+    }
+}
+
+
 pub struct BytesWriter {
     type_str: TypeStr,
     size: usize,
