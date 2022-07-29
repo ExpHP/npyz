@@ -17,15 +17,19 @@ use std::fmt;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeStr {
-    pub(crate) endianness: Endianness,
-    pub(crate) type_kind: TypeKind,
-    pub(crate) size: u64,
-    pub(crate) time_units: Option<TimeUnits>,
+    /// Byte order of the data.
+    pub endianness: Endianness,
+    /// Type of the data (integer, float, Python object, etc.).
+    pub type_kind: TypeKind,
+    /// Size of the data (how many bytes is in e.g. the integer).
+    pub size: u64,
+    /// Time units, available when type kind is [`TypeKind::TimeDelta`] or [`TypeKind::DateTime`].
+    pub time_units: Option<TimeUnits>,
 }
 
 /// Represents the first character in a type-string.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum Endianness {
+pub enum Endianness {
     /// Code `<`.
     Little,
     /// Code `>`.
@@ -80,7 +84,7 @@ impl Endianness {
 ///
 /// Indicates the type of data stored.  Affects the interpretation of `size` and `endianness`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum TypeKind {
+pub enum TypeKind {
     /// Code `b`.
     ///
     /// `size` must be 1, and legal values are `0x00` (`false`) or `0x01` (`true`).
@@ -256,7 +260,7 @@ impl TypeStr {
 ///
 /// These appear inside square brackets at the end of the `descr` string for these datatypes.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum TimeUnits {
+pub enum TimeUnits {
     /// Code `Y`.
     Year,
     /// Code `M`.
