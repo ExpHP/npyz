@@ -249,6 +249,11 @@ impl<T: Deserialize, R: io::Read> NpyReader<T, R> {
         &self.reader_and_current_index.0
     }
 
+    /// Get the dtype as written in the file.
+    pub fn dtype(&self) -> DType {
+        self.header.dtype.clone()
+    }
+
     /// Returns the total number of records, including those that have already been read.
     /// (This is the product of [`NpyFile::shape`])
     pub fn total_len(&self) -> u64 {
