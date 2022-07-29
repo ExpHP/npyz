@@ -1,3 +1,5 @@
+//! An Array Interface type-string.
+
 use std::fmt;
 
 /// Represents an Array Interface type-string.

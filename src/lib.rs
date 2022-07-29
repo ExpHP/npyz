@@ -262,7 +262,7 @@ Array { a: 2, b: 3.1, c: 5 }
 mod header;
 mod read;
 mod write;
-mod type_str;
+pub mod type_str;
 mod serialize;
 #[cfg(feature = "npz")]
 mod npz_feature;
