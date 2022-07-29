@@ -254,6 +254,11 @@ impl<T: Deserialize, R: io::Read> NpyReader<T, R> {
         self.header.dtype.clone()
     }
 
+    /// Get the shape as written in the file.
+    pub fn shape(&self) -> &[u64] {
+        &self.header.shape
+    }
+
     /// Returns the total number of records, including those that have already been read.
     /// (This is the product of [`NpyFile::shape`])
     pub fn total_len(&self) -> u64 {
