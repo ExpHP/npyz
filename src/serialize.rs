@@ -138,6 +138,15 @@ impl<T: TypeRead> TypeReadDyn for T {
     }
 }
 
+impl<T> TypeRead for Box<dyn TypeReadDyn<Value=T>> {
+    type Value = T;
+
+    #[inline(always)]
+    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<T> where Self: Sized {
+        (**self).read_one_dyn(&mut reader)
+    }
+}
+
 /// The proper trait to use for trait objects of [`TypeWrite`].
 ///
 /// `Box<dyn TypeWrite>` is useless because `dyn TypeWrite` has no object-safe methods.
@@ -153,6 +162,24 @@ impl<T: TypeWrite> TypeWriteDyn for T {
         self.write_one(writer, value)
     }
 }
+
+impl<T: ?Sized> TypeWrite for Box<dyn TypeWriteDyn<Value=T>> {
+    type Value = T;
+
+    #[inline(always)]
+    fn write_one<W: io::Write>(&self, mut writer: W, value: &T) -> io::Result<()>
+    where Self: Sized,
+    {
+        // Boxes must always go through two virtual dispatches.
+        //
+        // (one on the TypeWrite trait object, and one on the Writer which must be
+        //  cast to the monomorphic type `&mut dyn io::write`)
+        (**self).write_one_dyn(&mut writer, value)
+    }
+}
+
+// =============================================================================
+// Error type
 
 /// Indicates that a particular rust type does not support serialization or deserialization
 /// as a given [`DType`].
@@ -261,29 +288,79 @@ impl fmt::Display for DTypeError {
     }
 }
 
-impl<T> TypeRead for Box<dyn TypeReadDyn<Value=T>> {
-    type Value = T;
+// =============================================================================
+// Generic/forwarded impls
 
-    #[inline(always)]
-    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<T> where Self: Sized {
-        (**self).read_one_dyn(&mut reader)
-    }
-}
+#[macro_use]
+mod helper {
+    use super::*;
+    use std::ops::Deref;
 
-impl<T: ?Sized> TypeWrite for Box<dyn TypeWriteDyn<Value=T>> {
-    type Value = T;
-
-    #[inline(always)]
-    fn write_one<W: io::Write>(&self, mut writer: W, value: &T) -> io::Result<()>
-    where Self: Sized,
+    pub struct TypeWriteViaDeref<T>
+    where
+        T: Deref,
+        <T as Deref>::Target: Serialize,
     {
-        // Boxes must always go through two virtual dispatches.
-        //
-        // (one on the TypeWrite trait object, and one on the Writer which must be
-        //  cast to the monomorphic type `&mut dyn io::write`)
-        (**self).write_one_dyn(&mut writer, value)
+        pub(crate) inner: <<T as Deref>::Target as Serialize>::TypeWriter,
+    }
+
+    impl<T, U: ?Sized> TypeWrite for TypeWriteViaDeref<T>
+    where
+        T: Deref<Target=U>,
+        U: Serialize,
+    {
+        type Value = T;
+
+        #[inline(always)]
+        fn write_one<W: io::Write>(&self, writer: W, value: &T) -> io::Result<()> {
+            self.inner.write_one(writer, value)
+        }
+    }
+
+    macro_rules! impl_serialize_by_deref {
+        ([$($generics:tt)*] $T:ty => $Target:ty $(where $($bounds:tt)+)*) => {
+            impl<$($generics)*> Serialize for $T
+            $(where $($bounds)+)*
+            {
+                type TypeWriter = helper::TypeWriteViaDeref<$T>;
+
+                #[inline(always)]
+                fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
+                    Ok(helper::TypeWriteViaDeref { inner: <$Target>::writer(dtype)? })
+                }
+            }
+        };
+    }
+
+    macro_rules! impl_auto_serialize {
+        ([$($generics:tt)*] $T:ty as $Delegate:ty $(where $($bounds:tt)+)*) => {
+            impl<$($generics)*> AutoSerialize for $T
+            $(where $($bounds)+)*
+            {
+                #[inline(always)]
+                fn default_dtype() -> DType {
+                    <$Delegate>::default_dtype()
+                }
+            }
+        };
     }
 }
+
+impl_serialize_by_deref!{['a, T: ?Sized] &'a T => T where T: Serialize}
+impl_serialize_by_deref!{['a, T: ?Sized] &'a mut T => T where T: Serialize}
+impl_serialize_by_deref!{[T: ?Sized] Box<T> => T where T: Serialize}
+impl_serialize_by_deref!{[T: ?Sized] std::rc::Rc<T> => T where T: Serialize}
+impl_serialize_by_deref!{[T: ?Sized] std::sync::Arc<T> => T where T: Serialize}
+impl_serialize_by_deref!{['a, T: ?Sized] std::borrow::Cow<'a, T> => T where T: Serialize + std::borrow::ToOwned}
+impl_auto_serialize!{[T: ?Sized] &T as T where T: AutoSerialize}
+impl_auto_serialize!{[T: ?Sized] &mut T as T where T: AutoSerialize}
+impl_auto_serialize!{[T: ?Sized] Box<T> as T where T: AutoSerialize}
+impl_auto_serialize!{[T: ?Sized] std::rc::Rc<T> as T where T: AutoSerialize}
+impl_auto_serialize!{[T: ?Sized] std::sync::Arc<T> as T where T: AutoSerialize}
+impl_auto_serialize!{[T: ?Sized] std::borrow::Cow<'_, T> as T where T: AutoSerialize + std::borrow::ToOwned}
+
+// =============================================================================
+// Integers, floats, complex
 
 /// Implementation detail of reading and writing for primitive types.
 pub trait PrimitiveReadWrite: Sized {
@@ -398,8 +475,10 @@ impl<T: PrimitiveReadWrite> TypeWrite for PrimitiveWriter<T> {
 }
 
 #[cfg(feature = "complex")]
+#[doc(hidden)]
 pub struct ComplexReader<F> { pub(super) float: PrimitiveReader<F> }
 #[cfg(feature = "complex")]
+#[doc(hidden)]
 pub struct ComplexWriter<F> { pub(super) float: PrimitiveWriter<F> }
 
 #[cfg(feature = "complex")]
@@ -582,6 +661,10 @@ macro_rules! impl_float_serializable {
 // TODO: numpy supports f16, f128
 impl_float_serializable! { [ 4 f32 ] [ 8 f64 ] }
 
+// =============================================================================
+// Bytes
+
+#[doc(hidden)]
 pub struct BytesReader {
     size: usize,
     is_byte_str: bool,
@@ -623,6 +706,7 @@ impl Deserialize for Vec<u8> {
     }
 }
 
+#[doc(hidden)]
 pub struct BytesWriter {
     type_str: TypeStr,
     size: usize,
@@ -672,75 +756,10 @@ impl Serialize for [u8] {
     }
 }
 
-#[macro_use]
-mod helper {
-    use super::*;
-    use std::ops::Deref;
-
-    pub struct TypeWriteViaDeref<T>
-    where
-        T: Deref,
-        <T as Deref>::Target: Serialize,
-    {
-        pub(crate) inner: <<T as Deref>::Target as Serialize>::TypeWriter,
-    }
-
-    impl<T, U: ?Sized> TypeWrite for TypeWriteViaDeref<T>
-    where
-        T: Deref<Target=U>,
-        U: Serialize,
-    {
-        type Value = T;
-
-        #[inline(always)]
-        fn write_one<W: io::Write>(&self, writer: W, value: &T) -> io::Result<()> {
-            self.inner.write_one(writer, value)
-        }
-    }
-
-    macro_rules! impl_serialize_by_deref {
-        ([$($generics:tt)*] $T:ty => $Target:ty $(where $($bounds:tt)+)*) => {
-            impl<$($generics)*> Serialize for $T
-            $(where $($bounds)+)*
-            {
-                type TypeWriter = helper::TypeWriteViaDeref<$T>;
-
-                #[inline(always)]
-                fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
-                    Ok(helper::TypeWriteViaDeref { inner: <$Target>::writer(dtype)? })
-                }
-            }
-        };
-    }
-
-    macro_rules! impl_auto_serialize {
-        ([$($generics:tt)*] $T:ty as $Delegate:ty $(where $($bounds:tt)+)*) => {
-            impl<$($generics)*> AutoSerialize for $T
-            $(where $($bounds)+)*
-            {
-                #[inline(always)]
-                fn default_dtype() -> DType {
-                    <$Delegate>::default_dtype()
-                }
-            }
-        };
-    }
-}
-
 impl_serialize_by_deref!{[] Vec<u8> => [u8]}
 
-impl_serialize_by_deref!{['a, T: ?Sized] &'a T => T where T: Serialize}
-impl_serialize_by_deref!{['a, T: ?Sized] &'a mut T => T where T: Serialize}
-impl_serialize_by_deref!{[T: ?Sized] Box<T> => T where T: Serialize}
-impl_serialize_by_deref!{[T: ?Sized] std::rc::Rc<T> => T where T: Serialize}
-impl_serialize_by_deref!{[T: ?Sized] std::sync::Arc<T> => T where T: Serialize}
-impl_serialize_by_deref!{['a, T: ?Sized] std::borrow::Cow<'a, T> => T where T: Serialize + std::borrow::ToOwned}
-impl_auto_serialize!{[T: ?Sized] &T as T where T: AutoSerialize}
-impl_auto_serialize!{[T: ?Sized] &mut T as T where T: AutoSerialize}
-impl_auto_serialize!{[T: ?Sized] Box<T> as T where T: AutoSerialize}
-impl_auto_serialize!{[T: ?Sized] std::rc::Rc<T> as T where T: AutoSerialize}
-impl_auto_serialize!{[T: ?Sized] std::sync::Arc<T> as T where T: AutoSerialize}
-impl_auto_serialize!{[T: ?Sized] std::borrow::Cow<'_, T> as T where T: AutoSerialize + std::borrow::ToOwned}
+// =============================================================================
+// Arrays
 
 impl DType {
     /// Expect an array dtype, get the inner dtype.
@@ -828,6 +847,8 @@ mod arrays {
         }
     }
 }
+
+// =============================================================================
 
 #[cfg(test)]
 #[deny(unused)]
