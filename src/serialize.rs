@@ -1086,6 +1086,16 @@ mod tests {
     fn reader_expect_err<T: Deserialize>(dtype: &DType) {
         T::reader(dtype).err().expect("reader_expect_err failed!");
     }
+    fn reader_expect_read_ok<T: Deserialize>(dtype: &DType, bytes: &[u8]) {
+        T::reader(dtype).unwrap_or_else(|e| panic!("{}", e))
+            .read_one(bytes)
+            .ok().expect("reader_expect_read_ok failed!");
+    }
+    fn reader_expect_read_err<T: Deserialize>(dtype: &DType, bytes: &[u8]) {
+        T::reader(dtype).unwrap_or_else(|e| panic!("{}", e))
+            .read_one(bytes)
+            .err().expect("reader_expect_read_err failed!");
+    }
 
     fn writer_output<T: Serialize + ?Sized>(dtype: &DType, value: &T) -> Vec<u8> {
         let mut vec = vec![];
@@ -1098,6 +1108,12 @@ mod tests {
         T::writer(dtype).err().expect("writer_expect_err failed!");
     }
 
+    fn writer_expect_write_ok<T: Serialize + ?Sized>(dtype: &DType, value: &T) {
+        let mut vec = vec![];
+        T::writer(dtype).unwrap_or_else(|e| panic!("{}", e))
+            .write_one(&mut vec, value)
+            .ok().expect("writer_expect_write_ok failed!");
+    }
     fn writer_expect_write_err<T: Serialize + ?Sized>(dtype: &DType, value: &T) {
         let mut vec = vec![];
         T::writer(dtype).unwrap_or_else(|e| panic!("{}", e))
@@ -1377,23 +1393,32 @@ mod tests {
         assert_eq!(writer_output::<&[char]>(&ts, &&char_vec("\x01\x03\x05")[..]), blob![le(1_u32), le(3_u32), le(5_u32)]);
     }
 
+    const FIRST_BAD_CODEPOINT: u32 = 0x110000;
+    const A_SURROGATE_CODEPOINT: u32 = 0xD805;
 
     #[test]
-    fn invalid_utf32() {
-        let ts = DType::parse("'|S3'").unwrap();
+    fn reading_invalid_utf32() {
+        let ts = DType::parse("'<U1'").unwrap();
+        reader_expect_read_ok::<Vec<u32>>(&ts, &blob![le(FIRST_BAD_CODEPOINT - 1)]);
+        reader_expect_read_ok::<Vec<char>>(&ts, &blob![le(FIRST_BAD_CODEPOINT - 1)]);
 
-        assert_eq!(writer_output::<Vec<u8>>(&ts, &vec![1, 3, 5]), blob![1, 3, 5]);
-        assert_eq!(writer_output::<&[u8]>(&ts, &&[1, 3, 5][..]), blob![1, 3, 5]);
+        reader_expect_read_err::<Vec<u32>>(&ts, &blob![le(FIRST_BAD_CODEPOINT)]);
+        reader_expect_read_err::<Vec<char>>(&ts, &blob![le(FIRST_BAD_CODEPOINT)]);
 
-        let ts = DType::parse("'<U3'").unwrap();
+        reader_expect_read_err::<Vec<u32>>(&ts, &blob![le(FIRST_BAD_CODEPOINT + 1)]);
+        reader_expect_read_err::<Vec<char>>(&ts, &blob![le(FIRST_BAD_CODEPOINT + 1)]);
 
-        assert_eq!(writer_output::<Vec<u32>>(&ts, &vec![1, 3, 5]), blob![le(1_u32), le(3_u32), le(5_u32)]);
-        assert_eq!(writer_output::<&[u32]>(&ts, &&[1, 3, 5][..]), blob![le(1_u32), le(3_u32), le(5_u32)]);
+        reader_expect_read_ok::<Vec<u32>>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
+        reader_expect_read_err::<Vec<char>>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
+    }
 
-        let ts = DType::parse("'<U3'").unwrap();
-
-        assert_eq!(writer_output::<Vec<char>>(&ts, &char_vec("\x01\x03\x05")), blob![le(1_u32), le(3_u32), le(5_u32)]);
-        assert_eq!(writer_output::<&[char]>(&ts, &&char_vec("\x01\x03\x05")[..]), blob![le(1_u32), le(3_u32), le(5_u32)]);
+    #[test]
+    fn writing_invalid_utf32() {
+        let ts = DType::parse("'<U1'").unwrap();
+        writer_expect_write_ok::<[u32]>(&ts, &[FIRST_BAD_CODEPOINT - 1]);
+        writer_expect_write_err::<[u32]>(&ts, &[FIRST_BAD_CODEPOINT]);
+        writer_expect_write_err::<[u32]>(&ts, &[FIRST_BAD_CODEPOINT + 1]);
+        writer_expect_write_ok::<[u32]>(&ts, &[A_SURROGATE_CODEPOINT]);
     }
 
     #[test]
