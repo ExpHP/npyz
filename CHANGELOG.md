@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Added serialization and deserialization for the `U` type.  Supported rust types are `Vec<char>`, `Vec<u32>`, and `String` (and, of course, `[char]`, `[u32]`, and `str` for serialization).
+
+### Changed
+- `np.datetime64` now uses i64 instead of u64 for serialization, as it is defined to use a symmetric interval around the epoch.
 
 ## [0.6.0] - 2021-07-05
 ### Added
