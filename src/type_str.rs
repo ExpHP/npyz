@@ -109,7 +109,7 @@ pub(crate) enum TypeKind {
     TimeDelta,
     /// Code `M`. Represents a `numpy.datetime64`.
     ///
-    /// Can use `u64` for serialization. `size` must be 8.
+    /// Can use `i64` for serialization. `size` must be 8.
     /// Check [`PlainDtype::time_units`] for the units.
     DateTime,
     /// Code `S`. Represents a Python 3 `bytes` (`str` in Python 2).

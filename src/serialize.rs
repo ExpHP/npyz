@@ -521,7 +521,7 @@ fn expect_scalar_dtype<'a>(dtype: &'a DType, rust_type: &'static str) -> Result<
 
 macro_rules! impl_integer_serializable {
     (
-        meta: [ (main_ty: $Int:path) (date_ty: $DateTime:path) ]
+        meta: [ (main_ty: $Int:path) (support_ty: $SupportTy:pat) ]
         ints: [ $([$size:tt $int:ty])* ]
     ) => {$(
         impl Deserialize for $int {
@@ -533,8 +533,7 @@ macro_rules! impl_integer_serializable {
                     //
                     // DateTime is an unsigned integer and TimeDelta is a signed integer,
                     // so we support those too.
-                    &TypeStr { size: $size, endianness, type_kind: $Int, .. } |
-                    &TypeStr { size: $size, endianness, type_kind: $DateTime, .. } => {
+                    &TypeStr { size: $size, endianness, type_kind: $SupportTy, .. } => {
                         Ok(PrimitiveReader::new(endianness))
                     },
                     type_str => Err(DTypeError::bad_scalar("read", type_str, stringify!($int))),
@@ -548,8 +547,7 @@ macro_rules! impl_integer_serializable {
             fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
                 match expect_scalar_dtype(dtype, stringify!($int))? {
                     // Write an integer of the correct size and signedness.
-                    &TypeStr { size: $size, endianness, type_kind: $Int, .. } |
-                    &TypeStr { size: $size, endianness, type_kind: $DateTime, .. } => {
+                    &TypeStr { size: $size, endianness, type_kind: $SupportTy, .. } => {
                         Ok(PrimitiveWriter::new(endianness))
                     },
                     type_str => Err(DTypeError::bad_scalar("write", type_str, stringify!($int))),
@@ -566,12 +564,17 @@ macro_rules! impl_integer_serializable {
 }
 
 impl_integer_serializable! {
-    meta: [ (main_ty: TypeKind::Int) (date_ty: TypeKind::TimeDelta) ]
-    ints: [ [1 i8] [2 i16] [4 i32] [8 i64] ]
+    meta: [ (main_ty: TypeKind::Int) (support_ty: TypeKind::Int) ]
+    ints: [ [1 i8] [2 i16] [4 i32] ]
 }
 
 impl_integer_serializable! {
-    meta: [ (main_ty: TypeKind::Uint) (date_ty: TypeKind::DateTime) ]
+    meta: [ (main_ty: TypeKind::Int) (support_ty: TypeKind::Int | TypeKind::TimeDelta | TypeKind::DateTime) ]
+    ints: [ [8 i64] ]
+}
+
+impl_integer_serializable! {
+    meta: [ (main_ty: TypeKind::Uint) (support_ty: TypeKind::Uint) ]
     ints: [ [1 u8] [2 u16] [4 u32] [8 u64] ]
 }
 
@@ -1077,6 +1080,9 @@ mod tests {
         T::reader(dtype).unwrap_or_else(|e| panic!("{}", e)).read_one(bytes).expect("reader_output failed")
     }
 
+    fn reader_expect_ok<T: Deserialize>(dtype: &DType) {
+        assert!(T::reader(dtype).is_ok())
+    }
     fn reader_expect_err<T: Deserialize>(dtype: &DType) {
         T::reader(dtype).err().expect("reader_expect_err failed!");
     }
@@ -1196,10 +1202,27 @@ mod tests {
         let be = DType::parse("'>M8[ns]'").unwrap();
         let le = DType::parse("'<M8[ns]'").unwrap();
 
-        assert_eq!(reader_output::<u64>(&be, &blob![be(1_i64)]), 1);
-        assert_eq!(reader_output::<u64>(&le, &blob![le(1_i64)]), 1);
-        assert_eq!(writer_output::<u64>(&be, &1), blob![be(1_i64)]);
-        assert_eq!(writer_output::<u64>(&le, &1), blob![le(1_i64)]);
+        assert_eq!(reader_output::<i64>(&be, &blob![be(1_i64)]), 1);
+        assert_eq!(reader_output::<i64>(&le, &blob![le(1_i64)]), 1);
+        assert_eq!(writer_output::<i64>(&be, &1), blob![be(1_i64)]);
+        assert_eq!(writer_output::<i64>(&le, &1), blob![le(1_i64)]);
+    }
+
+
+    #[test]
+    fn bad_datetime_types() {
+        // the "size must be 8" restriction is part of DType parsing
+        assert!(DType::parse("'>m8[ns]'").is_ok());
+        assert!(DType::parse("'>m4[ns]'").is_err());
+        assert!(DType::parse("'>M4[ns]'").is_err());
+
+        // must be signed
+        let datetime = DType::parse("'<M8[ns]'").unwrap();
+        let timedelta = DType::parse("'<m8[ns]'").unwrap();
+        reader_expect_ok::<i64>(&datetime);
+        reader_expect_err::<u64>(&datetime);
+        reader_expect_ok::<i64>(&timedelta);
+        reader_expect_err::<u64>(&timedelta);
     }
 
     #[test]
