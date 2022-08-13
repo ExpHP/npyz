@@ -129,6 +129,15 @@ pub(crate) enum TypeKind {
     ///
     /// Like Rust's `char`, the code points must have a value in `[0, 0x110000)`.  However, unlike
     /// `char`, surrogate code points are allowed.
+    ///
+    /// Can use `Vec<u32>`, `Vec<char>`, or `String` for serialization.  Using `Vec<u32>` allows
+    /// surrogate code points to appear, so that all strings produced by numpy can be round-tripped.
+    /// (the range of values will still be validated).
+    ///
+    /// > **Notice:** When serializing `str` to `U`, it may be difficult to determine the necessary
+    /// > size of the field.  For strings produced in rust code, it is recommended to serialize
+    /// > `[char]` instead.  The `str` serialization is merely provided to help round-trip back
+    /// > `Strings` that were originally parsed from another `.npy` file.
     UnicodeStr,
     /// Code `V`.  Represents a binary blob of `size` bytes.
     ///
