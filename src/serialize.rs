@@ -624,7 +624,7 @@ macro_rules! impl_float_serializable {
                 const SIZE: u64 = 2 * $size;
 
                 match expect_scalar_dtype(dtype, stringify!(Complex<$float>))? {
-                    TypeStr { size: SIZE, endianness, type_kind: TypeKind::Complex, .. } => {
+                    &TypeStr { size: SIZE, endianness, type_kind: TypeKind::Complex, .. } => {
                         Ok(ComplexReader { float: PrimitiveReader::new(endianness) })
                     },
                     type_str => Err(DTypeError::bad_scalar("read", type_str, stringify!(Complex<$float>))),
@@ -641,7 +641,7 @@ macro_rules! impl_float_serializable {
                 const SIZE: u64 = 2 * $size;
 
                 match expect_scalar_dtype(dtype, stringify!(Complex<$float>))? {
-                    TypeStr { size: SIZE, endianness, type_kind: TypeKind::Complex, .. } => {
+                    &TypeStr { size: SIZE, endianness, type_kind: TypeKind::Complex, .. } => {
                         Ok(ComplexWriter { float: PrimitiveWriter::new(endianness) })
                     },
                     type_str => Err(DTypeError::bad_scalar("write", type_str, stringify!(Complex<$float>))),
@@ -1265,8 +1265,8 @@ mod tests {
 
         assert_eq!(reader_output::<Complex64>(&be, &be_bytes), c);
         assert_eq!(reader_output::<Complex64>(&le, &le_bytes), c);
-        assert_eq!(writer_output::<Complex64>(&be, &c), &be_bytes);
-        assert_eq!(writer_output::<Complex64>(&le, &c), &le_bytes);
+        assert_eq!(writer_output::<Complex64>(&be, &c), be_bytes);
+        assert_eq!(writer_output::<Complex64>(&le, &c), le_bytes);
 
         let c = Complex32 { re: 42.0, im: 63.0 };
         let be_bytes = blob![be(c.re.to_bits()), be(c.im.to_bits())];
@@ -1277,8 +1277,8 @@ mod tests {
 
         assert_eq!(reader_output::<Complex32>(&be, &be_bytes), c);
         assert_eq!(reader_output::<Complex32>(&le, &le_bytes), c);
-        assert_eq!(writer_output::<Complex32>(&be, &c), &be_bytes);
-        assert_eq!(writer_output::<Complex32>(&le, &c), &le_bytes);
+        assert_eq!(writer_output::<Complex32>(&be, &c), be_bytes);
+        assert_eq!(writer_output::<Complex32>(&le, &c), le_bytes);
     }
 
     #[test]

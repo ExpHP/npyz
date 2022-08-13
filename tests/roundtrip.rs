@@ -243,7 +243,7 @@ fn roundtrip_datetime() {
     #[derive(npyz::Serialize, npyz::Deserialize)]
     #[derive(Debug, PartialEq, Clone)]
     struct Row {
-        datetime: u64,
+        datetime: i64,
         timedelta_le: i64,
         timedelta_be: i64,
     }
