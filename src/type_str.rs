@@ -112,7 +112,7 @@ pub(crate) enum TypeKind {
     /// Can use `i64` for serialization. `size` must be 8.
     /// Check [`PlainDtype::time_units`] for the units.
     DateTime,
-    /// Code `S`. Represents a Python 3 `bytes` (`str` in Python 2).
+    /// Code `S` or `a`. Represents a zero-terminated Python 3 `bytes` (`str` in Python 2).
     ///
     /// Can use `Vec<u8>` for serialization.
     ///
@@ -155,7 +155,7 @@ impl TypeKind {
             'c' => Some(TypeKind::Complex),
             'm' => Some(TypeKind::TimeDelta),
             'M' => Some(TypeKind::DateTime),
-            'S' => Some(TypeKind::ByteStr),
+            'S' | 'a' => Some(TypeKind::ByteStr),
             'U' => Some(TypeKind::UnicodeStr),
             'V' => Some(TypeKind::RawData),
             _ => None,
