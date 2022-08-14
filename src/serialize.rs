@@ -1367,6 +1367,7 @@ mod tests {
     #[test]
     fn wrong_length() {
         let s_3 = DType::parse("'|S3'").unwrap();
+        assert_eq!(DType::parse("'|a3'").unwrap(), s_3);  // doesn't need its own tests
         let v_3 = DType::parse("'|V3'").unwrap();
         let u_3 = DType::parse("'>U3'").unwrap();
 
