@@ -663,7 +663,7 @@ macro_rules! impl_float_serializable {
 impl_float_serializable! { [ 4 f32 ] [ 8 f64 ] }
 
 // =============================================================================
-// Bytes
+// Bytes and strings
 
 #[doc(hidden)]
 pub struct BytesReader {
@@ -744,6 +744,109 @@ impl Serialize for [u8] {
             _ => return Err(DTypeError::bad_scalar::<Self>("read", &type_str)),
         };
         Ok(BytesWriter { type_str, size, is_byte_str })
+    }
+}
+
+pub use fixed_size::FixedSizeBytes;
+mod fixed_size {
+    /// Wrapper around `[u8; N]` that can serialize as `|VN`.  The size must match exactly.
+    ///
+    /// This wrapper needs to exist because `[u8; N]` itself already has another `Serialize` impl,
+    /// due to the generic impl for `[T; N]`.  (basically, `[u8; N]` serializes as a field of type
+    /// `|u1` and shape `[N]` in a structured record)
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct FixedSizeBytes<const N: usize>(pub [u8; N]);
+
+    impl<const N: usize> From<FixedSizeBytes<N>> for [u8; N] {
+        fn from(FixedSizeBytes(bytes): FixedSizeBytes<N>) -> [u8; N] {
+            bytes
+        }
+    }
+
+    impl<const N: usize> From<[u8; N]> for FixedSizeBytes<N> {
+        fn from(bytes: [u8; N]) -> FixedSizeBytes<N> {
+            FixedSizeBytes(bytes)
+        }
+    }
+
+    impl<const N: usize> core::ops::Deref for FixedSizeBytes<N> {
+        type Target = [u8; N];
+
+        fn deref(&self) -> &[u8; N] {
+            &self.0
+        }
+    }
+
+    impl<const N: usize> core::ops::DerefMut for FixedSizeBytes<N> {
+        fn deref_mut(&mut self) -> &mut [u8; N] {
+            &mut self.0
+        }
+    }
+
+    impl<const N: usize> AsRef<[u8]> for FixedSizeBytes<N> {
+        fn as_ref(&self) -> &[u8] {
+            &self.0
+        }
+    }
+
+    impl<const N: usize> AsMut<[u8]> for FixedSizeBytes<N> {
+        fn as_mut(&mut self) -> &mut [u8] {
+            &mut self.0
+        }
+    }
+}
+
+#[doc(hidden)]
+pub struct FixedSizeBytesReader<const N: usize> {
+    _priv: (),
+}
+
+impl<const N: usize> TypeRead for FixedSizeBytesReader<N> {
+    type Value = FixedSizeBytes<N>;
+
+    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<FixedSizeBytes<N>> {
+        let mut array = [0; N];
+        reader.read_exact(&mut array)?;
+        Ok(FixedSizeBytes(array))
+    }
+}
+
+impl<const N: usize> Deserialize for FixedSizeBytes<N> {
+    type TypeReader = FixedSizeBytesReader<N>;
+
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
+        let size = size_field_as_usize(type_str)?;
+        if (type_str.type_kind, size) != (TypeKind::RawData, N) {
+            return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
+        };
+        Ok(FixedSizeBytesReader { _priv: () })
+    }
+}
+
+#[doc(hidden)]
+pub struct FixedSizeBytesWriter<const N: usize> {
+    _priv: (),
+}
+
+impl<const N: usize> TypeWrite for FixedSizeBytesWriter<N> {
+    type Value = FixedSizeBytes<N>;
+
+    fn write_one<W: io::Write>(&self, mut w: W, bytes: &FixedSizeBytes<N>) -> io::Result<()> {
+        w.write_all(&bytes.0)
+    }
+}
+
+impl<const N: usize> Serialize for FixedSizeBytes<N> {
+    type TypeWriter = FixedSizeBytesWriter<N>;
+
+    fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
+        let size = size_field_as_usize(type_str)?;
+        if (type_str.type_kind, size) != (TypeKind::RawData, N) {
+            return Err(DTypeError::bad_scalar::<Self>("write", &type_str));
+        };
+        Ok(FixedSizeBytesWriter { _priv: () })
     }
 }
 
@@ -853,7 +956,6 @@ impl<const N: usize> TypeRead for Utf32WithSurrogatesArrayVecReader<N> {
         Ok(out)
     }
 }
-
 
 #[cfg(feature = "arrayvec")]
 impl<const N: usize> TypeRead for Utf32ArrayVecReader<N> {
@@ -1453,6 +1555,8 @@ mod tests {
         let ts = DType::parse("'|V0'").unwrap();
         assert_eq!(reader_output::<Vec<u8>>(&ts, &[]), vec![]);
         assert_eq!(writer_output::<[u8]>(&ts, &[]), blob![]);
+        assert_eq!(reader_output::<FixedSizeBytes<0>>(&ts, &[]), FixedSizeBytes([]));
+        assert_eq!(writer_output::<FixedSizeBytes<0>>(&ts, &FixedSizeBytes([])), blob![]);
 
         let ts = DType::parse("'>U0'").unwrap();
         assert_eq!(reader_output::<Vec<u32>>(&ts, &[]), vec![]);
@@ -1497,6 +1601,17 @@ mod tests {
         writer_expect_write_err::<[u32]>(&u_3, &[1, 3, 5, 7]);
         writer_expect_write_err::<[char]>(&u_3, &char_vec("\x01\x03\x05\x07"));
         writer_expect_write_err::<str>(&u_3, "\x01\x03\x05\x07");
+    }
+
+    #[test]
+    fn fixed_size_bytes_restrictions() {
+        let s_3 = DType::parse("'|S3'").unwrap();
+        let v_3 = DType::parse("'|V3'").unwrap();
+
+        writer_expect_err::<FixedSizeBytes<3>>(&s_3);
+        writer_expect_err::<FixedSizeBytes<2>>(&v_3);
+        writer_expect_err::<FixedSizeBytes<4>>(&v_3);
+        assert_eq!(writer_output::<FixedSizeBytes<3>>(&v_3, &FixedSizeBytes([1, 3, 5])), blob![1, 3, 5]);
     }
 
     #[test]
