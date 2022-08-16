@@ -963,6 +963,9 @@ impl<const N: usize> TypeRead for Utf32WithSurrogatesArrayVecReader<N> {
         for _ in 0..usize::min(self.num_u32s_in_dtype, N) {
             out.push(self.codepoint_reader.read_one(&mut reader)?);
         }
+        for _ in N..self.num_u32s_in_dtype {
+            self.codepoint_reader.read_one(&mut reader)?;
+        }
         arrayvec_truncate_trailing_nuls(&mut out, |&x| x == 0);
         Ok(out)
     }
@@ -976,6 +979,9 @@ impl<const N: usize> TypeRead for Utf32ArrayVecReader<N> {
         let mut out = ArrayVec::new();
         for _ in 0..usize::min(self.num_u32s_in_dtype, N) {
             out.push(self.char_reader.read_one(&mut reader)?);
+        }
+        for _ in N..self.num_u32s_in_dtype {
+            self.char_reader.read_one(&mut reader)?;
         }
         arrayvec_truncate_trailing_nuls(&mut out, |&x| x == '\0');
         Ok(out)
@@ -1370,8 +1376,13 @@ mod tests {
 
     // NOTE: Tests for arrays are in tests/serialize_array.rs because they require derives
 
-    fn reader_output<T: Deserialize>(dtype: &DType, bytes: &[u8]) -> T {
-        T::reader(dtype).unwrap_or_else(|e| panic!("{}", e)).read_one(bytes).expect("reader_output failed")
+    fn reader_output<T: Deserialize + fmt::Debug>(dtype: &DType, bytes: &[u8]) -> T {
+        let type_reader = T::reader(dtype).unwrap_or_else(|e| panic!("{}", e));
+
+        let mut reader = bytes;
+        let value = type_reader.read_one(&mut reader).expect("reader_output failed");
+        assert_eq!(reader.len(), 0, "reader did not read all bytes");
+        value
     }
 
     fn reader_expect_ok<T: Deserialize>(dtype: &DType) {
@@ -1381,9 +1392,11 @@ mod tests {
         T::reader(dtype).err().expect("reader_expect_err failed!");
     }
     fn reader_expect_read_ok<T: Deserialize>(dtype: &DType, bytes: &[u8]) {
+        let mut reader = bytes;
         T::reader(dtype).unwrap_or_else(|e| panic!("{}", e))
-            .read_one(bytes)
+            .read_one(&mut reader)
             .ok().expect("reader_expect_read_ok failed!");
+        assert_eq!(reader.len(), 0, "reader did not read all bytes");
     }
     fn reader_expect_read_err<T: Deserialize>(dtype: &DType, bytes: &[u8]) {
         T::reader(dtype).unwrap_or_else(|e| panic!("{}", e))
@@ -1401,7 +1414,6 @@ mod tests {
     fn writer_expect_err<T: Serialize + ?Sized>(dtype: &DType) {
         T::writer(dtype).err().expect("writer_expect_err failed!");
     }
-
     fn writer_expect_write_ok<T: Serialize + ?Sized>(dtype: &DType, value: &T) {
         let mut vec = vec![];
         T::writer(dtype).unwrap_or_else(|e| panic!("{}", e))
@@ -1721,7 +1733,7 @@ mod tests {
     #[test]
     #[cfg(feature = "arrayvec")]
     fn arrayvec_truncated_reading() {
-        let ts = DType::parse("'<U6'").unwrap();
+        let ts = DType::parse("'<U5'").unwrap();
         let data = blob![le(1_u32), le(3_u32), le(5_u32), le(7_u32), le(9_u32)];
 
         assert_eq!(reader_output::<ArrayVec<u32, 2>>(&ts, &data), ArrayVec::from_iter(vec![1, 3]));
