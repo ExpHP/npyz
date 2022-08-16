@@ -850,14 +850,19 @@ impl<const N: usize> Serialize for FixedSizeBytes<N> {
     }
 }
 
+/// Helper for reading codepoints of `U`.
+struct CodePointReader {
+    int_reader: PrimitiveReader<u32>,
+}
+/// Helper for reading codepoints of `U` as `char`.
+struct CharReader {
+    int_reader: PrimitiveReader<u32>,
+}
 /// Reads `U` to `Vec<u32>`, permitting surrogates.
 #[doc(hidden)]
 pub struct Utf32WithSurrogatesReader {
-    int_reader: PrimitiveReader<u32>,
+    codepoint_reader: CodePointReader,
     num_u32s: usize,
-}
-struct CharReader {
-    int_reader: PrimitiveReader<u32>,
 }
 /// Reads `U` to `Vec<char>`.
 #[doc(hidden)]
@@ -869,7 +874,7 @@ pub struct Utf32Reader {
 #[cfg(feature = "arrayvec")]
 #[doc(hidden)]
 pub struct Utf32WithSurrogatesArrayVecReader<const N: usize> {
-    int_reader: PrimitiveReader<u32>,
+    codepoint_reader: CodePointReader,
     num_u32s_in_dtype: usize,
 }
 /// Reads `U` to `ArrayVec<char, N>`.
@@ -886,20 +891,12 @@ pub struct Utf32StringReader {
     num_u32s: usize,
 }
 
-impl TypeRead for Utf32WithSurrogatesReader {
-    type Value = Vec<u32>;
+impl TypeRead for CodePointReader {
+    type Value = u32;
 
-    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Vec<u32>> {
-        let mut vec = {
-            (0..self.num_u32s)
-                .map(|_| {
-                    self.int_reader.read_one(&mut reader)
-                        .and_then(validate_type_u_code_unit)
-                })
-                .collect::<io::Result<Vec<_>>>()?
-        };
-        truncate_trailing_nuls(&mut vec, |&x| x == 0);
-        Ok(vec)
+    fn read_one<R: io::Read>(&self, reader: R) -> io::Result<u32> {
+        self.int_reader.read_one(reader)
+            .and_then(validate_type_u_code_unit)
     }
 }
 
@@ -911,6 +908,20 @@ impl TypeRead for CharReader {
         char::try_from(u32).map_err(|_| {
             invalid_data(format_args!("invalid UTF-32 code unit: {:x}", u32))
         })
+    }
+}
+
+impl TypeRead for Utf32WithSurrogatesReader {
+    type Value = Vec<u32>;
+
+    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Vec<u32>> {
+        let mut vec = {
+            (0..self.num_u32s)
+                .map(|_| self.codepoint_reader.read_one(&mut reader))
+                .collect::<io::Result<Vec<_>>>()?
+        };
+        truncate_trailing_nuls(&mut vec, |&x| x == 0);
+        Ok(vec)
     }
 }
 
@@ -950,7 +961,7 @@ impl<const N: usize> TypeRead for Utf32WithSurrogatesArrayVecReader<N> {
     fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Self::Value> {
         let mut out = ArrayVec::new();
         for _ in 0..usize::min(self.num_u32s_in_dtype, N) {
-            out.push(self.int_reader.read_one(&mut reader)?);
+            out.push(self.codepoint_reader.read_one(&mut reader)?);
         }
         arrayvec_truncate_trailing_nuls(&mut out, |&x| x == 0);
         Ok(out)
@@ -981,8 +992,8 @@ impl Deserialize for Vec<u32> {
         };
 
         let num_u32s = size_field_as_usize(type_str)?;
-        let int_reader = PrimitiveReader::new(type_str.endianness);
-        Ok(Utf32WithSurrogatesReader { num_u32s, int_reader })
+        let codepoint_reader = CodePointReader { int_reader: PrimitiveReader::new(type_str.endianness) };
+        Ok(Utf32WithSurrogatesReader { num_u32s, codepoint_reader })
     }
 }
 
@@ -1028,8 +1039,8 @@ impl<const N: usize> Deserialize for ArrayVec<u32, N> {
             return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
 
-        let int_reader = PrimitiveReader::new(type_str.endianness);
-        Ok(Utf32WithSurrogatesArrayVecReader { num_u32s_in_dtype, int_reader })
+        let codepoint_reader = CodePointReader { int_reader: PrimitiveReader::new(type_str.endianness) };
+        Ok(Utf32WithSurrogatesArrayVecReader { num_u32s_in_dtype, codepoint_reader })
     }
 }
 
@@ -1218,13 +1229,15 @@ mod arrayvec_serialize_impls {
 
     impl<const N: usize> AutoSerialize for ArrayVec<u32, N> {
         fn default_dtype() -> DType {
-            DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::UnicodeStr, u64::from(N), None))
+            let size = u64::try_from(N).unwrap();
+            DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::UnicodeStr, size, None))
         }
     }
 
     impl<const N: usize> AutoSerialize for ArrayVec<char, N> {
         fn default_dtype() -> DType {
-            DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::UnicodeStr, u64::from(N), None))
+            let size = u64::try_from(N).unwrap();
+            DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::UnicodeStr, size, None))
         }
     }
 }
