@@ -11,12 +11,18 @@ use arrayvec::{ArrayVec, ArrayString};
 use crate::header::DType;
 use crate::type_str::{TypeStr, Endianness, TypeKind};
 
+#[allow(unused)] // used by docstrings
+use crate::type_matchup_docs;
+
 /// Trait that permits reading a type from an `.npy` file.
+///
+/// > Complete documentation of all types that implement this trait is available on the
+/// > [`type_matchup_docs`] module.
 ///
 /// Examples of types that implement this:
 ///
 /// * Primitive integers, floats, `Complex` (with the **`"complex"`** feature)
-/// * Owned byte containers (`Vec<u8>`)
+/// * Owned containers (`Vec<u8>`, `String`)
 ///
 /// _This trait is derivable when enabling the **`"derive"`** feature._ This makes it easier
 /// to work with structured arrays.
@@ -43,10 +49,13 @@ pub trait Deserialize: Sized {
 
 /// Trait that permits writing a type to an `.npy` file.
 ///
+/// > Complete documentation of all types that implement this trait is available on the
+/// > [`type_matchup_docs`] module.
+///
 /// Examples of types that implement this:
 ///
 /// * Primitive integers, floats, `Complex` (with the **`"complex"`** feature)
-/// * Byte slices (`[u8]`)
+/// * Slice types (`[u8]`, `str`)
 ///
 /// _This trait is derivable when enabling the **`"derive"`** feature._ This makes it easier
 /// to work with structured arrays.
@@ -74,6 +83,9 @@ pub trait Serialize {
 
 /// Subtrait of [`Serialize`] for types which have a reasonable default [`DType`].
 ///
+/// > Complete documentation of all types that implement this trait is available on the
+/// > [`type_matchup_docs`] module.
+///
 /// This opens up some simpler APIs for serialization. (e.g. [`crate::to_file`], [`crate::WriterBuilder::default_dtype`])
 ///
 /// _This trait is derivable when enabling the **`"derive"`** feature._ This makes it easier
@@ -90,6 +102,8 @@ pub trait AutoSerialize: Serialize {
 }
 
 /// Like some sort of `for<R: io::Read> Fn(R) -> io::Result<T>`.
+///
+/// To obtain one of these, use the [`Deserialize`] trait.
 ///
 /// For an example of how to implement this manually, see `Vector5` in the
 /// [roundtrip test](https://github.com/ExpHP/npyz/tree/master/tests/roundtrip.rs).
@@ -108,6 +122,8 @@ pub trait TypeRead {
 }
 
 /// Like some sort of `for<W: io::Write> Fn(W, &T) -> io::Result<()>`.
+///
+/// To obtain one of these, use the [`Serialize`] trait.
 ///
 /// For an example of how to implement this manually, see `Vector5` in the
 /// [roundtrip test](https://github.com/ExpHP/npyz/tree/master/tests/roundtrip.rs).
@@ -1155,6 +1171,8 @@ impl<const N: usize> Deserialize for ArrayVec<char, N> {
     }
 }
 
+/// _This impl is only available with the **`"arrayvec"`** feature._
+#[cfg(feature = "arrayvec")]
 impl<const N: usize> Deserialize for ArrayString<N> {
     type TypeReader = Utf8ArrayStringReader<N>;
 

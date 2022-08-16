@@ -20,8 +20,8 @@ No features are enabled by default.  Here is the list of existing features:
   may introduce a major version bump of one of these crates.  (NOTE: to ease this issue somewhat,
   `npyz` will re-export the versions of the crates it uses)
   * **`"complex"`** enables the use of [`num_complex::Complex`].
-  * **`"arrayvec"`** enables the use of [`arrayvec::ArrayVec`]`<u32>` and `arrayvec::ArrayVec<char>`
-    for unicode strings.
+  * **`"arrayvec"`** enables the use of [`arrayvec::ArrayVec`] and [`arrayvec::ArrayString`]
+    as alternatives to `Vec` and `String` for some string types.
 * **`"derive"`** enables derives of traits for working with structured arrays.
   This will add a build-time dependency on common proc macro utilities (`syn`, `quote`).
 * **`"npz"`** enables adapters for working with NPZ files
@@ -114,6 +114,11 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 ```
+
+## Supported dtypes
+
+A complete description of the supported numpy dtypes and the corresponding rust types
+can be found on the [`crate::type_matchup_docs`] module.
 
 ## Working with `ndarray`
 
@@ -273,6 +278,8 @@ mod npz_feature;
 pub mod npz;
 #[cfg(feature = "npz")]
 pub mod sparse;
+
+pub mod type_matchup_docs;
 
 // Expose public dependencies
 #[cfg(feature = "complex")]
