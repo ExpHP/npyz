@@ -152,7 +152,7 @@ pub(crate) enum TypeKind {
     UnicodeStr,
     /// Code `V`.  Represents a binary blob of `size` bytes.
     ///
-    /// Can use `Vec<u8>` for serialization.
+    /// Can use `Vec<u8>` or [`FixedSizeBytes`]`<N>` (a wrapper around `[u8; N]`) for serialization.
     RawData,
 }
 
