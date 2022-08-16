@@ -138,6 +138,17 @@ pub(crate) enum TypeKind {
     /// > size of the field.  For strings produced in rust code, it is recommended to serialize
     /// > `[char]` instead.  The `str` serialization is merely provided to help round-trip back
     /// > `Strings` that were originally parsed from another `.npy` file.
+    ///
+    /// ## `arrayvec`
+    ///
+    /// > _The functionality described below is only available when enabling the `"arrayvec"`
+    /// > feature._
+    ///
+    /// For a more memory-efficient representation, strings may also be deserialized to/from
+    /// `ArrayVec<u32, N>` or `ArrayVec<char, N>`.  `N` will automatically be used as the default
+    /// size when serializing (though a smaller size can be chosen, assuming that none of the items
+    /// are longer than this size).  When reading, dtypes with sizes larger than `N` will have their
+    /// content truncated at a valid prefix.
     UnicodeStr,
     /// Code `V`.  Represents a binary blob of `size` bytes.
     ///

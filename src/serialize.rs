@@ -5,6 +5,8 @@ use std::marker::PhantomData;
 
 #[cfg(feature = "complex")]
 use num_complex::Complex;
+#[cfg(feature = "arrayvec")]
+use arrayvec::ArrayVec;
 
 use crate::header::DType;
 use crate::type_str::{TypeStr, Endianness, TypeKind};
@@ -224,14 +226,10 @@ impl DTypeError {
     }
 
     // verb should be "read" or "write"
-    fn bad_scalar(verb: &'static str, type_str: &TypeStr, rust_type: &'static str) -> Self {
+    fn bad_scalar<T: ?Sized>(verb: &'static str, type_str: &TypeStr) -> Self {
         let type_str = type_str.clone();
+        let rust_type = std::any::type_name::<T>();
         DTypeError(ErrorKind::BadScalar { type_str, rust_type, verb })
-    }
-
-    fn expected_scalar(dtype: &DType, rust_type: &'static str) -> Self {
-        let dtype = dtype.descr();
-        DTypeError(ErrorKind::ExpectedScalar { dtype, rust_type })
     }
 
     fn bad_usize(x: u64) -> Self {
@@ -513,9 +511,11 @@ fn bad_length<T>(slice: &[T], type_str: &TypeStr) -> io::Error {
     invalid_data(format_args!("bad item length {} for type-string '{}'", slice.len(), type_str))
 }
 
-fn expect_scalar_dtype<'a>(dtype: &'a DType, rust_type: &'static str) -> Result<&'a TypeStr, DTypeError> {
+fn expect_scalar_dtype<T: ?Sized>(dtype: &DType) -> Result<&TypeStr, DTypeError> {
     dtype.as_scalar().ok_or_else(|| {
-        DTypeError::expected_scalar(dtype, rust_type)
+        let dtype = dtype.descr();
+        let rust_type = std::any::type_name::<T>();
+        DTypeError(ErrorKind::ExpectedScalar { dtype, rust_type })
     })
 }
 
@@ -528,7 +528,7 @@ macro_rules! impl_integer_serializable {
             type TypeReader = PrimitiveReader<$int>;
 
             fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
-                match expect_scalar_dtype(dtype, stringify!($int))? {
+                match expect_scalar_dtype::<Self>(dtype)? {
                     // Read an integer of the correct size and signedness.
                     //
                     // DateTime is an unsigned integer and TimeDelta is a signed integer,
@@ -536,7 +536,7 @@ macro_rules! impl_integer_serializable {
                     &TypeStr { size: $size, endianness, type_kind: $SupportTy, .. } => {
                         Ok(PrimitiveReader::new(endianness))
                     },
-                    type_str => Err(DTypeError::bad_scalar("read", type_str, stringify!($int))),
+                    type_str => Err(DTypeError::bad_scalar::<Self>("read", type_str)),
                 }
             }
         }
@@ -545,12 +545,12 @@ macro_rules! impl_integer_serializable {
             type TypeWriter = PrimitiveWriter<$int>;
 
             fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
-                match expect_scalar_dtype(dtype, stringify!($int))? {
+                match expect_scalar_dtype::<Self>(dtype)? {
                     // Write an integer of the correct size and signedness.
                     &TypeStr { size: $size, endianness, type_kind: $SupportTy, .. } => {
                         Ok(PrimitiveWriter::new(endianness))
                     },
-                    type_str => Err(DTypeError::bad_scalar("write", type_str, stringify!($int))),
+                    type_str => Err(DTypeError::bad_scalar::<Self>("write", type_str)),
                 }
             }
         }
@@ -585,12 +585,12 @@ macro_rules! impl_float_serializable {
             type TypeReader = PrimitiveReader<$float>;
 
             fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
-                match expect_scalar_dtype(dtype, stringify!($float))? {
+                match expect_scalar_dtype::<Self>(dtype)? {
                     // Read a float of the correct size
                     &TypeStr { size: $size, endianness, type_kind: TypeKind::Float, .. } => {
                         Ok(PrimitiveReader::new(endianness))
                     },
-                    type_str => Err(DTypeError::bad_scalar("read", type_str, stringify!($float))),
+                    type_str => Err(DTypeError::bad_scalar::<Self>("read", type_str)),
                 }
             }
         }
@@ -599,12 +599,12 @@ macro_rules! impl_float_serializable {
             type TypeWriter = PrimitiveWriter<$float>;
 
             fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
-                match expect_scalar_dtype(dtype, stringify!($float))? {
+                match expect_scalar_dtype::<Self>(dtype)? {
                     // Write a float of the correct size
                     &TypeStr { size: $size, endianness, type_kind: TypeKind::Float, .. } => {
                         Ok(PrimitiveWriter::new(endianness))
                     },
-                    type_str => Err(DTypeError::bad_scalar("write", type_str, stringify!($float))),
+                    type_str => Err(DTypeError::bad_scalar::<Self>("write", type_str)),
                 }
             }
         }
@@ -623,11 +623,11 @@ macro_rules! impl_float_serializable {
             fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
                 const SIZE: u64 = 2 * $size;
 
-                match expect_scalar_dtype(dtype, stringify!(Complex<$float>))? {
+                match expect_scalar_dtype::<Self>(dtype)? {
                     &TypeStr { size: SIZE, endianness, type_kind: TypeKind::Complex, .. } => {
                         Ok(ComplexReader { float: PrimitiveReader::new(endianness) })
                     },
-                    type_str => Err(DTypeError::bad_scalar("read", type_str, stringify!(Complex<$float>))),
+                    type_str => Err(DTypeError::bad_scalar::<Self>("read", type_str)),
                 }
             }
         }
@@ -640,11 +640,11 @@ macro_rules! impl_float_serializable {
             fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
                 const SIZE: u64 = 2 * $size;
 
-                match expect_scalar_dtype(dtype, stringify!(Complex<$float>))? {
+                match expect_scalar_dtype::<Self>(dtype)? {
                     &TypeStr { size: SIZE, endianness, type_kind: TypeKind::Complex, .. } => {
                         Ok(ComplexWriter { float: PrimitiveWriter::new(endianness) })
                     },
-                    type_str => Err(DTypeError::bad_scalar("write", type_str, stringify!(Complex<$float>))),
+                    type_str => Err(DTypeError::bad_scalar::<Self>("write", type_str)),
                 }
             }
         }
@@ -691,13 +691,13 @@ impl TypeRead for BytesReader {
 impl Deserialize for Vec<u8> {
     type TypeReader = BytesReader;
 
-    fn reader(type_str: &DType) -> Result<Self::TypeReader, DTypeError> {
-        let type_str = type_str.as_scalar().ok_or_else(|| DTypeError::expected_scalar(type_str, "Vec<u8>"))?;
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
         let size = size_field_as_usize(type_str)?;
         let is_byte_str = match *type_str {
             TypeStr { type_kind: TypeKind::ByteStr, .. } => true,
             TypeStr { type_kind: TypeKind::RawData, .. } => false,
-            _ => return Err(DTypeError::bad_scalar("read", type_str, "Vec<u8>")),
+            _ => return Err(DTypeError::bad_scalar::<Self>("read", type_str)),
         };
         Ok(BytesReader { size, is_byte_str })
     }
@@ -734,14 +734,14 @@ impl Serialize for [u8] {
     type TypeWriter = BytesWriter;
 
     fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
-        let type_str = dtype.as_scalar().ok_or_else(|| DTypeError::expected_scalar(dtype, "[u8]"))?;
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
 
         let size = size_field_as_usize(type_str)?;
         let type_str = type_str.clone();
         let is_byte_str = match type_str {
             TypeStr { type_kind: TypeKind::ByteStr, .. } => true,
             TypeStr { type_kind: TypeKind::RawData, .. } => false,
-            _ => return Err(DTypeError::bad_scalar("read", &type_str, "[u8]")),
+            _ => return Err(DTypeError::bad_scalar::<Self>("read", &type_str)),
         };
         Ok(BytesWriter { type_str, size, is_byte_str })
     }
@@ -761,6 +761,20 @@ struct CharReader {
 pub struct Utf32Reader {
     char_reader: CharReader,
     num_u32s: usize,
+}
+/// Reads `U` to `ArrayVec<u32, N>`, permitting surrogates.
+#[cfg(feature = "arrayvec")]
+#[doc(hidden)]
+pub struct Utf32WithSurrogatesArrayVecReader<const N: usize> {
+    int_reader: PrimitiveReader<u32>,
+    num_u32s_in_dtype: usize,
+}
+/// Reads `U` to `ArrayVec<char, N>`.
+#[cfg(feature = "arrayvec")]
+#[doc(hidden)]
+pub struct Utf32ArrayVecReader<const N: usize> {
+    char_reader: CharReader,
+    num_u32s_in_dtype: usize,
 }
 /// Reads `U` to `String`.
 #[doc(hidden)]
@@ -826,13 +840,42 @@ impl TypeRead for Utf32StringReader {
     }
 }
 
+#[cfg(feature = "arrayvec")]
+impl<const N: usize> TypeRead for Utf32WithSurrogatesArrayVecReader<N> {
+    type Value = ArrayVec<u32, N>;
+
+    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Self::Value> {
+        let mut out = ArrayVec::new();
+        for _ in 0..usize::min(self.num_u32s_in_dtype, N) {
+            out.push(self.int_reader.read_one(&mut reader)?);
+        }
+        arrayvec_truncate_trailing_nuls(&mut out, |&x| x == 0);
+        Ok(out)
+    }
+}
+
+
+#[cfg(feature = "arrayvec")]
+impl<const N: usize> TypeRead for Utf32ArrayVecReader<N> {
+    type Value = ArrayVec<char, N>;
+
+    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Self::Value> {
+        let mut out = ArrayVec::new();
+        for _ in 0..usize::min(self.num_u32s_in_dtype, N) {
+            out.push(self.char_reader.read_one(&mut reader)?);
+        }
+        arrayvec_truncate_trailing_nuls(&mut out, |&x| x == '\0');
+        Ok(out)
+    }
+}
+
 impl Deserialize for Vec<u32> {
     type TypeReader = Utf32WithSurrogatesReader;
 
-    fn reader(type_str: &DType) -> Result<Self::TypeReader, DTypeError> {
-        let type_str = type_str.as_scalar().ok_or_else(|| DTypeError::expected_scalar(type_str, "Vec<u32>"))?;
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
         if type_str.type_kind != TypeKind::UnicodeStr {
-            return Err(DTypeError::bad_scalar("read", &type_str, "Vec<u32>"));
+            return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
 
         let num_u32s = size_field_as_usize(type_str)?;
@@ -844,10 +887,10 @@ impl Deserialize for Vec<u32> {
 impl Deserialize for Vec<char> {
     type TypeReader = Utf32Reader;
 
-    fn reader(type_str: &DType) -> Result<Self::TypeReader, DTypeError> {
-        let type_str = type_str.as_scalar().ok_or_else(|| DTypeError::expected_scalar(type_str, "Vec<char>"))?;
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
         if type_str.type_kind != TypeKind::UnicodeStr {
-            return Err(DTypeError::bad_scalar("read", &type_str, "Vec<char>"));
+            return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
 
         let num_u32s = size_field_as_usize(type_str)?;
@@ -859,15 +902,49 @@ impl Deserialize for Vec<char> {
 impl Deserialize for String {
     type TypeReader = Utf32StringReader;
 
-    fn reader(type_str: &DType) -> Result<Self::TypeReader, DTypeError> {
-        let type_str = type_str.as_scalar().ok_or_else(|| DTypeError::expected_scalar(type_str, "String"))?;
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
         if type_str.type_kind != TypeKind::UnicodeStr {
-            return Err(DTypeError::bad_scalar("read", &type_str, "String"));
+            return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
 
         let num_u32s = size_field_as_usize(type_str)?;
         let char_reader = CharReader { int_reader: PrimitiveReader::new(type_str.endianness) };
         Ok(Utf32StringReader { num_u32s, char_reader })
+    }
+}
+
+#[cfg(feature = "arrayvec")]
+impl<const N: usize> Deserialize for ArrayVec<u32, N> {
+    type TypeReader = Utf32WithSurrogatesArrayVecReader<N>;
+
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
+        let num_u32s_in_dtype = size_field_as_usize(type_str)?;
+
+        if type_str.type_kind != TypeKind::UnicodeStr {
+            return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
+        };
+
+        let int_reader = PrimitiveReader::new(type_str.endianness);
+        Ok(Utf32WithSurrogatesArrayVecReader { num_u32s_in_dtype, int_reader })
+    }
+}
+
+#[cfg(feature = "arrayvec")]
+impl<const N: usize> Deserialize for ArrayVec<char, N> {
+    type TypeReader = Utf32ArrayVecReader<N>;
+
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
+        let num_u32s_in_dtype = size_field_as_usize(type_str)?;
+
+        if type_str.type_kind != TypeKind::UnicodeStr {
+            return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
+        };
+
+        let char_reader = CharReader { int_reader: PrimitiveReader::new(type_str.endianness) };
+        Ok(Utf32ArrayVecReader { num_u32s_in_dtype, char_reader })
     }
 }
 
@@ -939,7 +1016,7 @@ impl TypeWrite for Utf32StrWriter {
             str_len += 1;
             if str_len > self.num_u32s {
                 return Err(invalid_data(format_args!(
-                    "string has too many code units ({}) for type-string {}",
+                    "string has too many code units ({}) for type-string '{}'",
                     str.chars().count(), &self.type_str,
                 )));
             }
@@ -956,9 +1033,9 @@ impl Serialize for [u32] {
     type TypeWriter = Utf32WithSurrogatesWriter;
 
     fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
-        let type_str = dtype.as_scalar().ok_or_else(|| DTypeError::expected_scalar(dtype, "[u32]"))?;
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
         if type_str.type_kind != TypeKind::UnicodeStr {
-            return Err(DTypeError::bad_scalar("write", &type_str, "[u32]"));
+            return Err(DTypeError::bad_scalar::<Self>("write", &type_str));
         };
 
         let num_u32s = size_field_as_usize(type_str)?;
@@ -972,9 +1049,9 @@ impl Serialize for [char] {
     type TypeWriter = Utf32Writer;
 
     fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
-        let type_str = dtype.as_scalar().ok_or_else(|| DTypeError::expected_scalar(dtype, "[char]"))?;
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
         if type_str.type_kind != TypeKind::UnicodeStr {
-            return Err(DTypeError::bad_scalar("write", &type_str, "[char]"));
+            return Err(DTypeError::bad_scalar::<Self>("write", &type_str));
         };
 
         let num_u32s = size_field_as_usize(type_str)?;
@@ -988,9 +1065,9 @@ impl Serialize for str {
     type TypeWriter = Utf32StrWriter;
 
     fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
-        let type_str = dtype.as_scalar().ok_or_else(|| DTypeError::expected_scalar(dtype, "str"))?;
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
         if type_str.type_kind != TypeKind::UnicodeStr {
-            return Err(DTypeError::bad_scalar("write", &type_str, "str"));
+            return Err(DTypeError::bad_scalar::<Self>("write", &type_str));
         };
 
         let num_u32s = size_field_as_usize(type_str)?;
@@ -1019,13 +1096,39 @@ fn truncate_trailing_nuls<T>(vec: &mut Vec<T>, mut is_null: impl FnMut(&T) -> bo
     vec.truncate(end);
 }
 
+#[cfg(feature = "arrayvec")]
+fn arrayvec_truncate_trailing_nuls<T, const N: usize>(vec: &mut ArrayVec<T, N>, mut is_null: impl FnMut(&T) -> bool) {
+    let end = vec.iter().rposition(|x| !is_null(x)).map_or(0, |ind| ind + 1);
+    vec.truncate(end);
+}
+
 impl_serialize_by_deref!{[] Vec<u8> => [u8]}
 impl_serialize_by_deref!{[] Vec<u32> => [u32]}
 impl_serialize_by_deref!{[] Vec<char> => [char]}
 impl_serialize_by_deref!{[] String => str}
 
+#[cfg(feature = "arrayvec")]
+mod arrayvec_serialize_impls {
+    use super::*;
+
+    impl_serialize_by_deref!{[const N: usize] ArrayVec<u32, N> => [u32]}
+    impl_serialize_by_deref!{[const N: usize] ArrayVec<char, N> => [char]}
+
+    impl<const N: usize> AutoSerialize for ArrayVec<u32, N> {
+        fn default_dtype() -> DType {
+            DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::UnicodeStr, u64::from(N), None))
+        }
+    }
+
+    impl<const N: usize> AutoSerialize for ArrayVec<char, N> {
+        fn default_dtype() -> DType {
+            DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::UnicodeStr, u64::from(N), None))
+        }
+    }
+}
+
 // =============================================================================
-// Arrays
+// Arrays in structured records
 
 impl DType {
     /// Expect an array dtype, get the inner dtype.
@@ -1425,6 +1528,20 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "arrayvec")]
+    fn arrayvec_truncate_trailing_nuls() {
+        let ts = DType::parse("'<U2'").unwrap();
+        assert_eq!(reader_output::<ArrayVec<u32, 2>>(&ts, &blob![le(1u32), le(3u32)]), ArrayVec::from_iter(vec![1, 3]));
+        assert_eq!(reader_output::<ArrayVec<u32, 2>>(&ts, &blob![le(1u32), le(0u32)]), ArrayVec::from_iter(vec![1]));
+        assert_eq!(reader_output::<ArrayVec<u32, 2>>(&ts, &blob![le(0u32), le(0u32)]), ArrayVec::from_iter(vec![]));
+
+        let ts = DType::parse("'<U2'").unwrap();
+        assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(1u32), le(3u32)]), ArrayVec::from_iter("\x01\x03".chars()));
+        assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(1u32), le(0u32)]), ArrayVec::from_iter("\x01".chars()));
+        assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(0u32), le(0u32)]), ArrayVec::from_iter("".chars()));
+    }
+
+    #[test]
     fn preserve_interior_nuls() {
         let value: &[u8] = &[0, 1, 0, 0, 3, 5];
         let encoded: &[u8] = &blob![0, 1, 0, 0, 3, 5];
@@ -1474,6 +1591,16 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "arrayvec")]
+    fn arrayvec_truncated_reading() {
+        let ts = DType::parse("'<U6'").unwrap();
+        let data = blob![le(1_u32), le(3_u32), le(5_u32), le(7_u32), le(9_u32)];
+
+        assert_eq!(reader_output::<ArrayVec<u32, 2>>(&ts, &data), ArrayVec::from_iter(vec![1, 3]));
+        assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &data), ArrayVec::from_iter("\x01\x03".chars()));
+    }
+
+    #[test]
     fn serialize_types_that_deref_to_slices() {
         let ts = DType::parse("'|S3'").unwrap();
 
@@ -1512,6 +1639,23 @@ mod tests {
         reader_expect_read_ok::<Vec<u32>>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
         reader_expect_read_err::<Vec<char>>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
         reader_expect_read_err::<String>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
+    }
+
+    #[test]
+    #[cfg(feature = "arrayvec")]
+    fn arrayvec_reading_invalid_utf32() {
+        let ts = DType::parse("'<U1'").unwrap();
+        reader_expect_read_ok::<ArrayVec<u32, 1>>(&ts, &blob![le(FIRST_BAD_CODEPOINT - 1)]);
+        reader_expect_read_ok::<ArrayVec<char, 1>>(&ts, &blob![le(FIRST_BAD_CODEPOINT - 1)]);
+
+        reader_expect_read_err::<ArrayVec<u32, 1>>(&ts, &blob![le(FIRST_BAD_CODEPOINT)]);
+        reader_expect_read_err::<ArrayVec<char, 1>>(&ts, &blob![le(FIRST_BAD_CODEPOINT)]);
+
+        reader_expect_read_err::<ArrayVec<u32, 1>>(&ts, &blob![le(FIRST_BAD_CODEPOINT + 1)]);
+        reader_expect_read_err::<ArrayVec<char, 1>>(&ts, &blob![le(FIRST_BAD_CODEPOINT + 1)]);
+
+        reader_expect_read_ok::<ArrayVec<u32, 1>>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
+        reader_expect_read_err::<ArrayVec<char, 1>>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
     }
 
     #[test]

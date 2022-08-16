@@ -15,10 +15,13 @@ read and write *.npy files. Files are handled using iterators, so they don't nee
 
 No features are enabled by default.  Here is the list of existing features:
 
-* **`"complex"`** enables the use of [`num_complex::Complex`].
-  This requires opt-in because it is a stability hazard; `num_complex` sometimes
-  undergoes major semver version bumps and it is your responsibility to make sure
-  that your code and `npyz` are using the same version.
+* There are a couple of features which enable support for serialization/deserialization of foreign
+  types. These require opt-in because they can be stability hazards; a major version bump of `npyz`
+  may introduce a major version bump of one of these crates.  (NOTE: to ease this issue somewhat,
+  `npyz` will re-export the versions of the crates it uses)
+  * **`"complex"`** enables the use of [`num_complex::Complex`].
+  * **`"arrayvec"`** enables the use of [`arrayvec::ArrayVec`]`<u32>` and `arrayvec::ArrayVec<char>`
+    for unicode strings.
 * **`"derive"`** enables derives of traits for working with structured arrays.
   This will add a build-time dependency on common proc macro utilities (`syn`, `quote`).
 * **`"npz"`** enables adapters for working with NPZ files
@@ -272,8 +275,10 @@ pub mod npz;
 pub mod sparse;
 
 // Expose public dependencies
-#[cfg(feature = "num-complex")]
+#[cfg(feature = "complex")]
 pub use num_complex;
+#[cfg(feature = "arrayvec")]
+pub use arrayvec;
 #[cfg(feature = "zip")]
 pub use zip;
 
