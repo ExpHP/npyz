@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 #[cfg(feature = "complex")]
 use num_complex::Complex;
 #[cfg(feature = "arrayvec")]
-use arrayvec::ArrayVec;
+use arrayvec::{ArrayVec, ArrayString};
 
 use crate::header::DType;
 use crate::type_str::{TypeStr, Endianness, TypeKind};
@@ -103,7 +103,8 @@ pub trait TypeRead {
     type Value;
 
     /// The function.
-    fn read_one<R: io::Read>(&self, bytes: R) -> io::Result<Self::Value> where Self: Sized;
+    fn read_one<R: io::Read>(&self, bytes: R) -> io::Result<Self::Value>
+    where Self: Sized;
 }
 
 /// Like some sort of `for<W: io::Write> Fn(W, &T) -> io::Result<()>`.
@@ -894,6 +895,22 @@ pub struct Utf32StringReader {
     char_reader: CharReader,
     num_u32s: usize,
 }
+/// Reads `S` to `String`.
+#[doc(hidden)]
+pub struct Utf8StringReader {
+    bytes_reader: BytesReader,
+}
+/// Reads `S` to `ArrayString`.
+#[cfg(feature = "arrayvec")]
+#[doc(hidden)]
+pub struct Utf8ArrayStringReader<const N: usize> {
+    string_reader: Utf8StringReader,
+}
+#[doc(hidden)]
+pub enum StringReader {
+    Utf8(Utf8StringReader),
+    Utf32(Utf32StringReader),
+}
 
 impl TypeRead for CodePointReader {
     type Value = u32;
@@ -992,6 +1009,69 @@ impl<const N: usize> TypeRead for Utf32ArrayVecReader<N> {
     }
 }
 
+impl TypeRead for Utf8StringReader {
+    type Value = String;
+
+    fn read_one<R: io::Read>(&self, reader: R) -> io::Result<Self::Value> {
+        let vec = self.bytes_reader.read_one(reader)?;
+        String::from_utf8(vec).map_err(|e| {
+            invalid_data(format_args!("invalid utf-8: {}", e))
+        })
+    }
+}
+
+impl TypeRead for StringReader {
+    type Value = String;
+
+    fn read_one<R: io::Read>(&self, reader: R) -> io::Result<Self::Value> {
+        match self {
+            StringReader::Utf8(imp) => imp.read_one(reader),
+            StringReader::Utf32(imp) => imp.read_one(reader),
+        }
+    }
+}
+
+#[cfg(feature = "arrayvec")]
+impl<const N: usize> TypeRead for Utf8ArrayStringReader<N> {
+    type Value = ArrayString<N>;
+
+    fn read_one<R: io::Read>(&self, reader: R) -> io::Result<Self::Value> {
+        let mut string = self.string_reader.read_one(reader)?;
+        while N < string.len() {
+            string.pop();
+        }
+        Ok(ArrayString::try_from(&string[..]).unwrap())
+    }
+}
+
+impl Utf8StringReader {
+    fn try_from_type_str(type_str: &TypeStr) -> Option<Result<Self, DTypeError>> {
+        if type_str.type_kind != TypeKind::ByteStr {
+            return None;
+        }
+        let size = match size_field_as_usize(type_str) {
+            Err(e) => return Some(Err(e)),
+            Ok(val) => val,
+        };
+        let bytes_reader = BytesReader { size, is_byte_str: true };
+        Some(Ok(Utf8StringReader { bytes_reader }))
+    }
+}
+
+impl Utf32StringReader {
+    fn try_from_type_str(type_str: &TypeStr) -> Option<Result<Self, DTypeError>> {
+        if type_str.type_kind != TypeKind::UnicodeStr {
+            return None;
+        }
+        let num_u32s = match size_field_as_usize(type_str) {
+            Err(e) => return Some(Err(e)),
+            Ok(val) => val,
+        };
+        let char_reader = CharReader { int_reader: PrimitiveReader::new(type_str.endianness) };
+        Some(Ok(Utf32StringReader { num_u32s, char_reader }))
+    }
+}
+
 impl Deserialize for Vec<u32> {
     type TypeReader = Utf32WithSurrogatesReader;
 
@@ -1023,17 +1103,19 @@ impl Deserialize for Vec<char> {
 }
 
 impl Deserialize for String {
-    type TypeReader = Utf32StringReader;
+    type TypeReader = StringReader;
 
     fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
         let type_str = expect_scalar_dtype::<Self>(dtype)?;
-        if type_str.type_kind != TypeKind::UnicodeStr {
-            return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
-        };
 
-        let num_u32s = size_field_as_usize(type_str)?;
-        let char_reader = CharReader { int_reader: PrimitiveReader::new(type_str.endianness) };
-        Ok(Utf32StringReader { num_u32s, char_reader })
+        // dispatch based on 'U' vs 'S'
+        if let Some(imp) = Utf32StringReader::try_from_type_str(type_str) {
+            Ok(StringReader::Utf32(imp?))
+        } else if let Some(imp) = Utf8StringReader::try_from_type_str(type_str) {
+            Ok(StringReader::Utf8(imp?))
+        } else {
+            Err(DTypeError::bad_scalar::<Self>("read", &type_str))
+        }
     }
 }
 
@@ -1073,6 +1155,18 @@ impl<const N: usize> Deserialize for ArrayVec<char, N> {
     }
 }
 
+impl<const N: usize> Deserialize for ArrayString<N> {
+    type TypeReader = Utf8ArrayStringReader<N>;
+
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+        let type_str = expect_scalar_dtype::<Self>(dtype)?;
+        match Utf8StringReader::try_from_type_str(type_str) {
+            Some(string_reader) => Ok(Utf8ArrayStringReader { string_reader: string_reader? }),
+            None => Err(DTypeError::bad_scalar::<Self>("read", &type_str)),
+        }
+    }
+}
+
 /// Writes `Vec<u32>` to `U`, permitting surrogates.
 #[doc(hidden)]
 pub struct Utf32WithSurrogatesWriter {
@@ -1093,6 +1187,18 @@ pub struct Utf32StrWriter {
     int_writer: PrimitiveWriter<u32>,
     type_str: TypeStr,
     num_u32s: usize,
+}
+
+#[doc(hidden)]
+pub struct Utf8StrWriter {
+    type_str: TypeStr,
+    num_bytes: usize,
+}
+
+#[doc(hidden)]
+pub enum StrWriter {
+    Utf8(Utf8StrWriter),
+    Utf32(Utf32StrWriter),
 }
 
 impl TypeWrite for Utf32WithSurrogatesWriter {
@@ -1154,6 +1260,35 @@ impl TypeWrite for Utf32StrWriter {
     }
 }
 
+impl TypeWrite for Utf8StrWriter {
+    type Value = str;
+
+    fn write_one<W: io::Write>(&self, mut w: W, str: &str) -> io::Result<()> {
+        if str.len() > self.num_bytes {
+            return Err(invalid_data(format_args!(
+                "string has too many code units ({}) for type-string '{}'",
+                str.chars().count(), &self.type_str,
+            )));
+        }
+        w.write_all(str.as_bytes())?;
+        if str.len() < self.num_bytes {
+            w.write_all(&vec![0; self.num_bytes - str.len()])?;
+        }
+        Ok(())
+    }
+}
+
+impl TypeWrite for StrWriter {
+    type Value = str;
+
+    fn write_one<W: io::Write>(&self, w: W, str: &str) -> io::Result<()> {
+        match self {
+            StrWriter::Utf8(imp) => imp.write_one(w, str),
+            StrWriter::Utf32(imp) => imp.write_one(w, str),
+        }
+    }
+}
+
 impl Serialize for [u32] {
     type TypeWriter = Utf32WithSurrogatesWriter;
 
@@ -1187,18 +1322,24 @@ impl Serialize for [char] {
 }
 
 impl Serialize for str {
-    type TypeWriter = Utf32StrWriter;
+    type TypeWriter = StrWriter;
 
     fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
         let type_str = expect_scalar_dtype::<Self>(dtype)?;
-        if type_str.type_kind != TypeKind::UnicodeStr {
-            return Err(DTypeError::bad_scalar::<Self>("write", &type_str));
-        };
-
-        let num_u32s = size_field_as_usize(type_str)?;
-        let type_str = type_str.clone();
-        let int_writer = PrimitiveWriter::new(type_str.endianness);
-        Ok(Utf32StrWriter { int_writer, type_str, num_u32s })
+        match type_str.type_kind {
+            TypeKind::UnicodeStr => {
+                let num_u32s = size_field_as_usize(type_str)?;
+                let type_str = type_str.clone();
+                let int_writer = PrimitiveWriter::new(type_str.endianness);
+                Ok(StrWriter::Utf32(Utf32StrWriter { int_writer, type_str, num_u32s }))
+            },
+            TypeKind::ByteStr => {
+                let num_bytes = size_field_as_usize(type_str)?;
+                let type_str = type_str.clone();
+                Ok(StrWriter::Utf8(Utf8StrWriter { type_str, num_bytes }))
+            },
+            _ => Err(DTypeError::bad_scalar::<Self>("write", &type_str)),
+        }
     }
 }
 
@@ -1244,6 +1385,10 @@ mod arrayvec_serialize_impls {
         /// _This impl is only available with the **`arrayvec`** feature._
         [const N: usize] ArrayVec<char, N> => [char]
     }
+    impl_serialize_by_deref!{
+        /// _This impl is only available with the **`arrayvec`** feature._
+        [const N: usize] ArrayString<N> => str
+    }
 
     /// _This impl is only available with the **`arrayvec`** feature._
     impl<const N: usize> AutoSerialize for ArrayVec<u32, N> {
@@ -1258,6 +1403,14 @@ mod arrayvec_serialize_impls {
         fn default_dtype() -> DType {
             let size = u64::try_from(N).unwrap();
             DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::UnicodeStr, size, None))
+        }
+    }
+
+    /// _This impl is only available with the **`arrayvec`** feature._
+    impl<const N: usize> AutoSerialize for ArrayString<N> {
+        fn default_dtype() -> DType {
+            let size = u64::try_from(N).unwrap();
+            DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::ByteStr, size, None))
         }
     }
 }
@@ -1425,6 +1578,9 @@ mod tests {
         vec
     }
 
+    fn writer_expect_ok<T: Serialize + ?Sized>(dtype: &DType) {
+        assert!(T::writer(dtype).is_ok())
+    }
     fn writer_expect_err<T: Serialize + ?Sized>(dtype: &DType) {
         T::writer(dtype).err().expect("writer_expect_err failed!");
     }
@@ -1594,6 +1750,8 @@ mod tests {
         let ts = DType::parse("'|V0'").unwrap();
         assert_eq!(reader_output::<Vec<u8>>(&ts, &[]), vec![]);
         assert_eq!(writer_output::<[u8]>(&ts, &[]), blob![]);
+
+        let ts = DType::parse("'|V0'").unwrap();
         assert_eq!(reader_output::<FixedSizeBytes<0>>(&ts, &[]), FixedSizeBytes([]));
         assert_eq!(writer_output::<FixedSizeBytes<0>>(&ts, &FixedSizeBytes([])), blob![]);
 
@@ -1608,10 +1766,15 @@ mod tests {
         let ts = DType::parse("'>U0'").unwrap();
         assert_eq!(reader_output::<String>(&ts, &[]), String::new());
         assert_eq!(writer_output::<str>(&ts, ""), blob![]);
+
+        let ts = DType::parse("'|S0'").unwrap();
+        assert_eq!(reader_output::<String>(&ts, &[]), String::new());
+        assert_eq!(writer_output::<str>(&ts, ""), blob![]);
     }
 
+    // tests for null padding and rejection of inputs that don't fit
     #[test]
-    fn wrong_length() {
+    fn write_wrong_length() {
         let s_3 = DType::parse("'|S3'").unwrap();
         assert_eq!(DType::parse("'|a3'").unwrap(), s_3);  // doesn't need its own tests
         let v_3 = DType::parse("'|V3'").unwrap();
@@ -1622,24 +1785,28 @@ mod tests {
         assert_eq!(writer_output::<[u32]>(&u_3, &[1, 3, 5]), blob![be(1_u32), be(3_u32), be(5_u32)]);
         assert_eq!(writer_output::<[char]>(&u_3, &char_vec("\x01\x03\x05")[..]), blob![be(1_u32), be(3_u32), be(5_u32)]);
         assert_eq!(writer_output::<str>(&u_3, "\x01\x03\x05"), blob![be(1_u32), be(3_u32), be(5_u32)]);
+        assert_eq!(writer_output::<str>(&s_3, "\x01\x03\x05"), blob![1, 3, 5]);
 
         assert_eq!(writer_output::<[u8]>(&s_3, &[1]), blob![1, 0, 0]);
         writer_expect_write_err::<[u8]>(&v_3, &[1]);
         assert_eq!(writer_output::<[u32]>(&u_3, &[1]), blob![be(1_u32), be(0_u32), be(0_u32)]);
         assert_eq!(writer_output::<[char]>(&u_3, &char_vec("\x01")), blob![be(1_u32), be(0_u32), be(0_u32)]);
         assert_eq!(writer_output::<str>(&u_3, "\x01"), blob![be(1_u32), be(0_u32), be(0_u32)]);
+        assert_eq!(writer_output::<str>(&s_3, "\x01"), blob![1, 0, 0]);
 
         assert_eq!(writer_output::<[u8]>(&s_3, &[]), blob![0, 0, 0]);
         writer_expect_write_err::<[u8]>(&v_3, &[]);
         assert_eq!(writer_output::<[u32]>(&u_3, &[]), blob![be(0_u32), be(0_u32), be(0_u32)]);
         assert_eq!(writer_output::<[char]>(&u_3, &[]), blob![be(0_u32), be(0_u32), be(0_u32)]);
         assert_eq!(writer_output::<str>(&u_3, ""), blob![be(0_u32), be(0_u32), be(0_u32)]);
+        assert_eq!(writer_output::<str>(&s_3, ""), blob![0, 0, 0]);
 
         writer_expect_write_err::<[u8]>(&s_3, &[1, 3, 5, 7]);
         writer_expect_write_err::<[u8]>(&v_3, &[1, 3, 5, 7]);
         writer_expect_write_err::<[u32]>(&u_3, &[1, 3, 5, 7]);
         writer_expect_write_err::<[char]>(&u_3, &char_vec("\x01\x03\x05\x07"));
         writer_expect_write_err::<str>(&u_3, "\x01\x03\x05\x07");
+        writer_expect_write_err::<str>(&s_3, "\x01\x03\x05\x07");
     }
 
     #[test]
@@ -1679,6 +1846,11 @@ mod tests {
         assert_eq!(reader_output::<String>(&ts, &blob![le(1u32), le(3u32)]), "\x01\x03");
         assert_eq!(reader_output::<String>(&ts, &blob![le(1u32), le(0u32)]), "\x01");
         assert_eq!(reader_output::<String>(&ts, &blob![le(0u32), le(0u32)]), "");
+
+        let ts = DType::parse("'|S2'").unwrap();
+        assert_eq!(reader_output::<String>(&ts, &blob![1, 3]), "\x01\x03");
+        assert_eq!(reader_output::<String>(&ts, &blob![1, 0]), "\x01");
+        assert_eq!(reader_output::<String>(&ts, &blob![0, 0]), "");
     }
 
     #[test]
@@ -1693,6 +1865,11 @@ mod tests {
         assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(1u32), le(3u32)]), ArrayVec::from_iter("\x01\x03".chars()));
         assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(1u32), le(0u32)]), ArrayVec::from_iter("\x01".chars()));
         assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(0u32), le(0u32)]), ArrayVec::from_iter("".chars()));
+
+        let ts = DType::parse("'|S2'").unwrap();
+        assert_eq!(reader_output::<ArrayString<2>>(&ts, &blob![1, 3]), ArrayString::<2>::try_from("\x01\x03").unwrap());
+        assert_eq!(reader_output::<ArrayString<2>>(&ts, &blob![1, 0]), ArrayString::<2>::try_from("\x01").unwrap());
+        assert_eq!(reader_output::<ArrayString<2>>(&ts, &blob![0, 0]), ArrayString::<2>::try_from("").unwrap());
     }
 
     #[test]
@@ -1721,6 +1898,13 @@ mod tests {
         let value: &str = "\x00\x01\x00\x00\x03\x05";
         let encoded: &[u8] = &blob![le(0_u32), le(1_u32), le(0_u32), le(0_u32), le(3_u32), le(5_u32)];
         let ts = DType::parse("'<U6'").unwrap();
+
+        assert_eq!(reader_output::<String>(&ts, encoded), value.to_string());
+        assert_eq!(writer_output(&ts, value), encoded.to_vec());
+
+        let value: &str = "\x00\x01\x00\x00\x03\x05";
+        let encoded: &[u8] = &[0, 1, 0, 0, 3, 5];
+        let ts = DType::parse("'|S6'").unwrap();
 
         assert_eq!(reader_output::<String>(&ts, encoded), value.to_string());
         assert_eq!(writer_output(&ts, value), encoded.to_vec());
@@ -1755,28 +1939,56 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "arrayvec")]
+    fn arrayvec_no_array_string_from_u() {
+        // We don't want ArrayString to read U because it would be nigh impossible for the caller
+        // to determine when the data that we read may be truncated.
+        reader_expect_ok::<ArrayString<50>>(&DType::parse("'|S6'").unwrap());
+        reader_expect_err::<ArrayString<50>>(&DType::parse("'<U6'").unwrap());
+        writer_expect_ok::<ArrayString<50>>(&DType::parse("'|S6'").unwrap());
+        writer_expect_ok::<ArrayString<50>>(&DType::parse("'<U6'").unwrap());
+    }
+
+    #[test]
+    #[cfg(feature = "arrayvec")]
+    fn arrayvec_array_string_truncated_in_middle_of_char() {
+        let ts = DType::parse("'|S6'").unwrap();
+        let data = "abはe".as_bytes().to_vec();  // has a 3-byte char
+
+        assert_eq!(reader_output::<ArrayString<2>>(&ts, &data), ArrayString::<2>::try_from("ab").unwrap());
+        assert_eq!(reader_output::<ArrayString<3>>(&ts, &data), ArrayString::<3>::try_from("ab").unwrap());
+        assert_eq!(reader_output::<ArrayString<4>>(&ts, &data), ArrayString::<4>::try_from("ab").unwrap());
+        assert_eq!(reader_output::<ArrayString<5>>(&ts, &data), ArrayString::<5>::try_from("abは").unwrap());
+    }
+
+    #[test]
     fn serialize_types_that_deref_to_slices() {
         let ts = DType::parse("'|S3'").unwrap();
-
         assert_eq!(writer_output::<Vec<u8>>(&ts, &vec![1, 3, 5]), blob![1, 3, 5]);
         assert_eq!(writer_output::<&[u8]>(&ts, &&[1, 3, 5][..]), blob![1, 3, 5]);
 
         let ts = DType::parse("'<U3'").unwrap();
-
         assert_eq!(writer_output::<Vec<u32>>(&ts, &vec![1, 3, 5]), blob![le(1_u32), le(3_u32), le(5_u32)]);
         assert_eq!(writer_output::<&[u32]>(&ts, &&[1, 3, 5][..]), blob![le(1_u32), le(3_u32), le(5_u32)]);
 
         let ts = DType::parse("'<U3'").unwrap();
-
         assert_eq!(writer_output::<Vec<char>>(&ts, &char_vec("\x01\x03\x05")), blob![le(1_u32), le(3_u32), le(5_u32)]);
         assert_eq!(writer_output::<&[char]>(&ts, &&char_vec("\x01\x03\x05")[..]), blob![le(1_u32), le(3_u32), le(5_u32)]);
+
+        let ts = DType::parse("'<U3'").unwrap();
+        assert_eq!(writer_output::<String>(&ts, &"\x01\x03\x05".to_string()), blob![le(1_u32), le(3_u32), le(5_u32)]);
+        assert_eq!(writer_output::<&str>(&ts, &"\x01\x03\x05"), blob![le(1_u32), le(3_u32), le(5_u32)]);
+
+        let ts = DType::parse("'|S3'").unwrap();
+        assert_eq!(writer_output::<String>(&ts, &"\x01\x03\x05".to_string()), blob![1, 3, 5]);
+        assert_eq!(writer_output::<&str>(&ts, &"\x01\x03\x05"), blob![1, 3, 5]);
     }
 
     const FIRST_BAD_CODEPOINT: u32 = 0x110000;
     const A_SURROGATE_CODEPOINT: u32 = 0xD805;
 
     #[test]
-    fn reading_invalid_utf32() {
+    fn reading_invalid_utf32_or_utf8() {
         let ts = DType::parse("'<U1'").unwrap();
         reader_expect_read_ok::<Vec<u32>>(&ts, &blob![le(FIRST_BAD_CODEPOINT - 1)]);
         reader_expect_read_ok::<Vec<char>>(&ts, &blob![le(FIRST_BAD_CODEPOINT - 1)]);
@@ -1793,11 +2005,14 @@ mod tests {
         reader_expect_read_ok::<Vec<u32>>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
         reader_expect_read_err::<Vec<char>>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
         reader_expect_read_err::<String>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
+
+        let ts = DType::parse("'|S3'").unwrap();
+        reader_expect_read_err::<String>(&ts, &blob![0xFF, 0x00, 0x01]);
     }
 
     #[test]
     #[cfg(feature = "arrayvec")]
-    fn arrayvec_reading_invalid_utf32() {
+    fn arrayvec_reading_invalid_utf32_or_utf8() {
         let ts = DType::parse("'<U1'").unwrap();
         reader_expect_read_ok::<ArrayVec<u32, 1>>(&ts, &blob![le(FIRST_BAD_CODEPOINT - 1)]);
         reader_expect_read_ok::<ArrayVec<char, 1>>(&ts, &blob![le(FIRST_BAD_CODEPOINT - 1)]);
@@ -1810,6 +2025,9 @@ mod tests {
 
         reader_expect_read_ok::<ArrayVec<u32, 1>>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
         reader_expect_read_err::<ArrayVec<char, 1>>(&ts, &blob![le(A_SURROGATE_CODEPOINT)]);
+
+        let ts = DType::parse("'|S3'").unwrap();
+        reader_expect_read_err::<ArrayString<3>>(&ts, &blob![0xFF, 0x00, 0x01]);
     }
 
     #[test]
