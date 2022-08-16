@@ -119,6 +119,12 @@ pub(crate) enum TypeKind {
     /// A `bytes` of length `size`.  Strings shorter than this length are zero-padded on the right.
     /// This implies that they cannot contain trailing `NUL`s. (They can, however, contain interior
     /// `NUL`s).  To preserve trailing `NUL`s, use `RawData` (`V`) instead.
+    ///
+    /// This can also use `String`. In this case, the bytes are expected to be encoded in UTF-8.
+    /// This is supported as a more compact alternative to the `U` format that is natively used by
+    /// python strings.
+    ///
+    /// (with the `"arrayvec"` feature, [`ArrayString`] is also supported)
     ByteStr,
     /// Code `U`. Represents a Python 3 `str` (`unicode` in Python 2).
     ///
