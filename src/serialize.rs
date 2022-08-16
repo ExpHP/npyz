@@ -316,7 +316,11 @@ mod helper {
     }
 
     macro_rules! impl_serialize_by_deref {
-        ([$($generics:tt)*] $T:ty => $Target:ty $(where $($bounds:tt)+)*) => {
+        (
+            $(#[$($attr:tt)+])*
+            [$($generics:tt)*] $T:ty => $Target:ty $(where $($bounds:tt)+)*
+        ) => {
+            $(#[$($attr)+])*
             impl<$($generics)*> Serialize for $T
             $(where $($bounds)+)*
             {
@@ -616,7 +620,7 @@ macro_rules! impl_float_serializable {
         }
 
         #[cfg(feature = "complex")]
-        /// _This impl is only available with the **`complex`** feature._
+        /// _This impl is only available with the **`"complex"`** feature._
         impl Deserialize for Complex<$float> {
             type TypeReader = ComplexReader<$float>;
 
@@ -633,7 +637,7 @@ macro_rules! impl_float_serializable {
         }
 
         #[cfg(feature = "complex")]
-        /// _This impl is only available with the **`complex`** feature._
+        /// _This impl is only available with the **`"complex"`** feature._
         impl Serialize for Complex<$float> {
             type TypeWriter = ComplexWriter<$float>;
 
@@ -650,7 +654,7 @@ macro_rules! impl_float_serializable {
         }
 
         #[cfg(feature = "complex")]
-        /// _This impl is only available with the **`complex`** feature._
+        /// _This impl is only available with the **`"complex"`** feature._
         impl AutoSerialize for Complex<$float> {
             fn default_dtype() -> DType {
                 DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::Complex, $size, None))
@@ -1033,6 +1037,7 @@ impl Deserialize for String {
     }
 }
 
+/// _This impl is only available with the **`"arrayvec"`** feature._
 #[cfg(feature = "arrayvec")]
 impl<const N: usize> Deserialize for ArrayVec<u32, N> {
     type TypeReader = Utf32WithSurrogatesArrayVecReader<N>;
@@ -1050,6 +1055,7 @@ impl<const N: usize> Deserialize for ArrayVec<u32, N> {
     }
 }
 
+/// _This impl is only available with the **`"arrayvec"`** feature._
 #[cfg(feature = "arrayvec")]
 impl<const N: usize> Deserialize for ArrayVec<char, N> {
     type TypeReader = Utf32ArrayVecReader<N>;
@@ -1230,9 +1236,16 @@ impl_serialize_by_deref!{[] String => str}
 mod arrayvec_serialize_impls {
     use super::*;
 
-    impl_serialize_by_deref!{[const N: usize] ArrayVec<u32, N> => [u32]}
-    impl_serialize_by_deref!{[const N: usize] ArrayVec<char, N> => [char]}
+    impl_serialize_by_deref!{
+        /// _This impl is only available with the **`arrayvec`** feature._
+        [const N: usize] ArrayVec<u32, N> => [u32]
+    }
+    impl_serialize_by_deref!{
+        /// _This impl is only available with the **`arrayvec`** feature._
+        [const N: usize] ArrayVec<char, N> => [char]
+    }
 
+    /// _This impl is only available with the **`arrayvec`** feature._
     impl<const N: usize> AutoSerialize for ArrayVec<u32, N> {
         fn default_dtype() -> DType {
             let size = u64::try_from(N).unwrap();
@@ -1240,6 +1253,7 @@ mod arrayvec_serialize_impls {
         }
     }
 
+    /// _This impl is only available with the **`arrayvec`** feature._
     impl<const N: usize> AutoSerialize for ArrayVec<char, N> {
         fn default_dtype() -> DType {
             let size = u64::try_from(N).unwrap();
