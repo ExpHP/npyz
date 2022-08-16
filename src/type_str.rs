@@ -23,6 +23,14 @@ pub struct TypeStr {
     pub(crate) time_units: Option<TimeUnits>,
 }
 
+impl TypeStr {
+    /// Extract the "size" field from the type string.
+    ///
+    /// For most **(but not all!)** types, this is the number of bytes that a single value occupies.
+    /// For the `U` type, it is the number of code units.
+    pub fn size_field(&self) -> u64 { self.size }
+}
+
 /// Represents the first character in a type-string.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum Endianness {
