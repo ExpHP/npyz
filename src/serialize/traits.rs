@@ -231,8 +231,8 @@ impl std::error::Error for DTypeError {}
 
 impl DTypeError {
     /// Construct with a custom error message.
-    pub fn custom<S: AsRef<str>>(msg: S) -> Self {
-        DTypeError(ErrorKind::Custom(msg.as_ref().to_string()))
+    pub fn custom<S: core::fmt::Display>(msg: S) -> Self {
+        DTypeError(ErrorKind::Custom(msg.to_string()))
     }
 
     // verb should be "read" or "write"
