@@ -12,10 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for the `a` type, which is just an alias of `S`.
 - Added the `arrayvec` feature.  This enables deserialization of
   type `U` without individual allocations per element.
+- Exposed various data from `TypeStr`.  New types include `Endianness`, `TypeChar`,
+  and `TimeUnits` types. `TypeStr` now has getters to extract these fields.
 
 ### Changed
 - `np.datetime64` now uses i64 instead of u64 for serialization, as it is
   defined to use a symmetric interval around the epoch.
+- `DType::num_bytes` has been changed to return `Option<usize>`, rather than panicking when
+  the described datatype is too large to fit in the target platform's `usize` type.
 
 ## [0.6.0] - 2021-07-05
 ### Added

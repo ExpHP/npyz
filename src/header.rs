@@ -106,12 +106,15 @@ impl DType {
     }
 
     /// Get the number of bytes that each item of this type occupies.
-    pub fn num_bytes(&self) -> usize {
+    ///
+    /// If this value overflows the plaform's `usize` datatype, returns `None`.
+    pub fn num_bytes(&self) -> Option<usize> {
         match self {
             DType::Plain(ty) => ty.num_bytes(),
-            DType::Array(n, inner) => inner.num_bytes() * *n as usize,
+            DType::Array(n, inner) => inner.num_bytes()?.checked_mul(usize::try_from(*n).ok()?),
             DType::Record(fields) => {
-                fields.iter().map(|field| field.dtype.num_bytes()).sum()
+                fields.iter().map(|field| field.dtype.num_bytes())
+                    .fold(Some(0), |a, b| a?.checked_add(b?))
             },
         }
     }

@@ -2,8 +2,9 @@ use std::fmt;
 
 /// Represents an Array Interface type-string.
 ///
-/// This is more or less the `DType` of a scalar type.
-/// Exposes a `FromStr` impl for construction, and a `Display` impl for writing.
+/// This is more or less the [`DType`][`crate::DType`] of a scalar type.
+/// Exposes a [`FromStr`][`core::str::FromStr`] impl for construction,
+/// and a [`Display`][`core::fmt::Display`] impl for writing.
 ///
 /// ```
 /// # fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -12,10 +13,13 @@ use std::fmt;
 /// let ts = "|i1".parse::<TypeStr>()?;
 ///
 /// assert_eq!(format!("{}", ts), "|i1");
+/// assert_eq!(ts.endianness(), npyz::Endianness::Irrelevant);
+/// assert_eq!(ts.type_char(), npyz::Endianness::Int);
+/// assert_eq!(ts.size_field(), 1);
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeStr {
     pub(crate) endianness: Endianness,
     pub(crate) type_char: TypeChar,
@@ -24,29 +28,47 @@ pub struct TypeStr {
 }
 
 impl TypeStr {
-    /// Extract the "size" field from the type string.
+    /// Extract the endianness character from the type string.
+    pub fn endianness(&self) -> Endianness { self.endianness }
+
+    /// Extract the type character from the type string.
+    ///
+    /// For most **(but not all!)** types, this is the number of bytes that a single value occupies.
+    /// For the `U` type, it is the number of code units.
+    pub fn type_char(&self) -> TypeChar { self.type_char }
+
+    /// Extract the "size" field from the type string.  This is the number that appears after the type character.
     ///
     /// For most **(but not all!)** types, this is the number of bytes that a single value occupies.
     /// For the `U` type, it is the number of code units.
     pub fn size_field(&self) -> u64 { self.size }
+
+    /// Extract the time units, if this type string has any.  Only [`TypeChar::TimeDelta`] and
+    /// [`TypeChar::DateTime`] have time units.
+    pub fn time_units(&self) -> Option<TimeUnits> { self.time_units }
+
+    /// Get the number of bytes for a single value.
+    ///
+    /// If this value would overflow the platform's `usize` type, returns `None`.
+    pub fn num_bytes(&self) -> Option<usize> { type_str_num_bytes_as_usize(self) }
 }
 
-/// Represents the first character in a type-string.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum Endianness {
+/// Represents the first character in a [`TypeStr`], which describes endianness.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum Endianness {
     /// Code `<`.
     Little,
     /// Code `>`.
     Big,
     /// Code `|`. Used when endianness is irrelevant.
     ///
-    /// Only valid when the size is `1`, or when `kind` is `TypeChar::Other`
-    /// or `TypeChar::ByteStr`.
+    /// Only valid when the size is `1`, or the type character is [`TypeChar::ByteStr`].
     Irrelevant,
 }
 
 impl Endianness {
-    fn from_char(s: char) -> Option<Self> {
+    /// Parse the endianness character.
+    pub fn from_char(s: char) -> Option<Self> {
         match s {
             '<' => Some(Endianness::Little),
             '>' => Some(Endianness::Big),
@@ -55,7 +77,8 @@ impl Endianness {
         }
     }
 
-    fn to_str(self) -> &'static str {
+    /// Get the string representation of this endianness.
+    pub fn to_str(self) -> &'static str {
         match self {
             Endianness::Little => "<",
             Endianness::Big => ">",
@@ -65,7 +88,8 @@ impl Endianness {
 }
 
 impl Endianness {
-    pub(crate) fn of_machine() -> Self {
+    /// Get the machine endianness.
+    pub fn of_machine() -> Self {
         match i32::from_be(0x00_00_00_01) {
             0x00_00_00_01 => Endianness::Big,
             0x01_00_00_00 => Endianness::Little,
@@ -73,7 +97,8 @@ impl Endianness {
         }
     }
 
-    /// Returns `true` if byteorder swapping is necessary between two types.
+    /// Returns `true` if byteorder swapping is required to convert data from this endianness to
+    /// another.
     pub(crate) fn requires_swap(self, other: Endianness) -> bool {
         match (self, other) {
             (Endianness::Little, Endianness::Big) |
@@ -84,11 +109,16 @@ impl Endianness {
     }
 }
 
-/// Represents the second character in a type-string.
+/// Represents the second character in a [`TypeStr`].
 ///
-/// Indicates the type of data stored.  Affects the interpretation of `size` and `endianness`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum TypeChar {
+/// Indicates the type of data stored.  Affects the interpretation of [`TypeStr::size_field`] and
+/// [`TypeStr::endianness`].
+///
+/// Complete documentation of which rust types can serialize as which dtypes can be found
+/// at [`type_matchup_docs`][`crate::type_matchup_docs`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum TypeChar {
     /// Code `b`.
     ///
     /// `size` must be 1, and legal values are `0x00` (`false`) or `0x01` (`true`).
@@ -109,30 +139,23 @@ pub(crate) enum TypeChar {
     ///
     /// The real part followed by the imaginary part, with `size` bytes total between the two of
     /// them. Each part has the specified endianness, but the real part always comes first.
+    ///
+    /// You can deserialize this using the **`"complex"`** feature.
     Complex,
     /// Code `m`. Represents a `numpy.timedelta64`.
     ///
     /// Can use `i64` for serialization. `size` must be 8.
-    /// Check [`PlainDtype::time_units`] for the units.
+    /// Check [`TypeStr::time_units`] for the units.
     TimeDelta,
     /// Code `M`. Represents a `numpy.datetime64`.
     ///
     /// Can use `i64` for serialization. `size` must be 8.
-    /// Check [`PlainDtype::time_units`] for the units.
+    /// Check [`TypeStr::time_units`] for the units.
     DateTime,
     /// Code `S` or `a`. Represents a zero-terminated Python 3 `bytes` (`str` in Python 2).
     ///
-    /// Can use `Vec<u8>` for serialization.
-    ///
-    /// A `bytes` of length `size`.  Strings shorter than this length are zero-padded on the right.
-    /// This implies that they cannot contain trailing `NUL`s. (They can, however, contain interior
-    /// `NUL`s).  To preserve trailing `NUL`s, use `RawData` (`V`) instead.
-    ///
-    /// This can also use `String`. In this case, the bytes are expected to be encoded in UTF-8.
-    /// This is supported as a more compact alternative to the `U` format that is natively used by
-    /// python strings.
-    ///
-    /// (with the `"arrayvec"` feature, [`ArrayString`] is also supported)
+    /// Can use `Vec<u8>` for serialization, or some other types; see
+    /// [`type_matchup_docs`][`crate::type_matchup_docs`] for more info.
     ByteStr,
     /// Code `U`. Represents a Python 3 `str` (`unicode` in Python 2).
     ///
@@ -141,37 +164,22 @@ pub(crate) enum TypeChar {
     /// zero-padded on the right. (thus they cannot contain trailing copies of U+0000 'NULL';
     /// they can, however, contain interior copies)
     ///
-    /// Like Rust's `char`, the code points must have a value in `[0, 0x110000)`.  However, unlike
-    /// `char`, surrogate code points are allowed.
+    /// Note the deliberate use of the term "code point" and not "scalar value"; values outside of
+    /// the range `[0, 0x110000)` are forbidden, but surrogate code points **are** allowed.
     ///
-    /// Can use `Vec<u32>`, `Vec<char>`, or `String` for serialization.  Using `Vec<u32>` allows
-    /// surrogate code points to appear, so that all strings produced by numpy can be round-tripped.
-    /// (the range of values will still be validated).
-    ///
-    /// > **Notice:** When serializing `str` to `U`, it may be difficult to determine the necessary
-    /// > size of the field.  For strings produced in rust code, it is recommended to serialize
-    /// > `[char]` instead.  The `str` serialization is merely provided to help round-trip back
-    /// > `Strings` that were originally parsed from another `.npy` file.
-    ///
-    /// ## `arrayvec`
-    ///
-    /// > _The functionality described below is only available when enabling the `"arrayvec"`
-    /// > feature._
-    ///
-    /// For a more memory-efficient representation, strings may also be deserialized to/from
-    /// `ArrayVec<u32, N>` or `ArrayVec<char, N>`.  `N` will automatically be used as the default
-    /// size when serializing (though a smaller size can be chosen, assuming that none of the items
-    /// are longer than this size).  When reading, dtypes with sizes larger than `N` will have their
-    /// content truncated at a valid prefix.
+    /// See [`type_matchup_docs`][`crate::type_matchup_docs`] for information on which types can
+    /// use this for serialization.
     UnicodeStr,
     /// Code `V`.  Represents a binary blob of `size` bytes.
     ///
-    /// Can use `Vec<u8>` or [`FixedSizeBytes`]`<N>` (a wrapper around `[u8; N]`) for serialization.
+    /// Can use [`crate::FixedSizeBytes`] for serialization, or some other types; see
+    /// [`type_matchup_docs`][`crate::type_matchup_docs`] for more info.
     RawData,
 }
 
 impl TypeChar {
-    fn from_char(s: char) -> Option<Self> {
+    /// Parse a character into a datatype.
+    pub fn from_char(s: char) -> Option<Self> {
         match s {
             'b' => Some(TypeChar::Bool),
             'i' => Some(TypeChar::Int),
@@ -187,7 +195,8 @@ impl TypeChar {
         }
     }
 
-    fn to_str(self) -> &'static str {
+    /// Get the string representation of this datatype.  e.g. `"i"`.
+    pub fn to_str(self) -> &'static str {
         match self {
             TypeChar::Bool => "b",
             TypeChar::Int => "i",
@@ -248,7 +257,7 @@ impl TypeChar {
         }
     }
 
-    /// Returns `true` if `|` endianness is illegal.
+    /// Returns `true` if this dtype must have time units.
     fn has_units(self) -> bool {
         match self {
             TypeChar::TimeDelta |
@@ -267,30 +276,31 @@ impl TypeStr {
         };
         TypeStr { endianness, type_char, size, time_units }.validate().unwrap()
     }
+}
 
-    /// The number of bytes for a single scalar value.
-    pub(crate) fn num_bytes(&self) -> usize {
-        match self.type_char {
-            TypeChar::Bool |
-            TypeChar::Int |
-            TypeChar::Uint |
-            TypeChar::Float |
-            TypeChar::Complex |
-            TypeChar::TimeDelta |
-            TypeChar::DateTime |
-            TypeChar::ByteStr |
-            TypeChar::RawData => self.size as usize,
+fn type_str_num_bytes_as_usize(type_str: &TypeStr) -> Option<usize> {
+    let size_field = usize::try_from(type_str.size).ok()?;
+    match type_str.type_char {
+        TypeChar::Bool |
+        TypeChar::Int |
+        TypeChar::Uint |
+        TypeChar::Float |
+        TypeChar::Complex |
+        TypeChar::TimeDelta |
+        TypeChar::DateTime |
+        TypeChar::ByteStr |
+        TypeChar::RawData => Some(size_field),
 
-            TypeChar::UnicodeStr => self.size as usize * 4,
-        }
+        TypeChar::UnicodeStr => size_field.checked_mul(4),
     }
 }
 
-/// Represents the units of the `m` and `M` datatypes.
+/// Represents the units of the `m` and `M` datatypes in a [`TypeStr`].
 ///
-/// These appear inside square brackets at the end of the `descr` string for these datatypes.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum TimeUnits {
+/// These appear inside square brackets at the end of the string for these datatypes.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum TimeUnits {
     /// Code `Y`.
     Year,
     /// Code `M`.
@@ -320,7 +330,8 @@ pub(crate) enum TimeUnits {
 }
 
 impl TimeUnits {
-    fn from_str(s: &str) -> Option<TimeUnits> {
+    /// Parse a time unit string (without the surrounding brackets).
+    pub fn from_str(s: &str) -> Option<TimeUnits> {
         match s {
             "Y" => Some(TimeUnits::Year),
             "M" => Some(TimeUnits::Month),
@@ -339,7 +350,8 @@ impl TimeUnits {
         }
     }
 
-    fn to_str(self) -> &'static str {
+    /// Get the string representation of this time unit (without the surrounding brackets).
+    pub fn to_str(self) -> &'static str {
         match self {
             TimeUnits::Year => "Y",
             TimeUnits::Month => "M",
