@@ -65,14 +65,14 @@ There are three type codes for variable-sized strings of data found in npy files
 Each will be described in its own section further below.
 The following support matrix shows how various rust types may serialize as these type codes.
 
-| rust type               | feature      | `V` | `S`/`a` | `U` |  [`AutoSerialize`] dtype | notes |
+| rust type               | feature      | `VM` | `SM`/`aM` | `UM` |  [`AutoSerialize`] dtype | notes |
 |:---------               | ------------ | --- | ------- | --- | ------------------ | :--- |
 | `String`/`str`          |              | ❌ | ✅ | ✅ | ➖   | |
-| `Vec<u8>`/`[u8]`        |              | ✅ | ✅ | ❌ | ➖   | size must match `N` exactly for `V` |
+| `Vec<u8>`/`[u8]`        |              | ✅ | ✅ | ❌ | ➖   | length must `== M` when writing `V` |
 | `Vec<u32>`/`[u32]`      |              | ❌ | ❌ | ✅ | ➖   | most general type to read `U` |
 | `Vec<char>`/`[char]`    |              | ❌ | ❌ | ✅ | ➖   | |
-| [`FixedSizeBytes`]`<N>` |              | ✅ | ❌ | ❌ | `VN` | size must match `N` exactly |
-| [`ArrayVec`]`<u8, N>`   | `"arrayvec"` | ✅ | ✅ | ❌ | ➖   | truncates when reading |
+| [`FixedSizeBytes`]`<N>` |              | ✅ | ❌ | ❌ | `VN` | requires `N == M` |
+| [`ArrayVec`]`<u8, N>`   | `"arrayvec"` | ✅ | ✅ | ❌ | ➖   | `VM` requires `M <= N` upfront <br/> `S`/`a` truncates when reading |
 | [`ArrayVec`]`<u32, N>`  | `"arrayvec"` | ❌ | ❌ | ✅ | `UN` | truncates when reading |
 | [`ArrayVec`]`<char, N>` | `"arrayvec"` | ❌ | ❌ | ✅ | `UN` | truncates when reading |
 | [`ArrayString`]`<N>`    | `"arrayvec"` | ❌ | ✅ | W  | `SN` | truncates when reading |
@@ -135,9 +135,13 @@ to allow the serialization/deserialization of types from [`arrayvec`].
 These types have the additional benefit that they implement [`AutoSerialize`] (by defaulting to the
 const parameter `N` as their size), though they all support dtypes with arbitrary size.
 
-When reading a string that is too long to fit in the destination type, it will be truncated to a
-valid prefix.  The justification is that there is no straightforward way for downstream code to
-implement such recovery behavior on their own.
+When reading a string that is too long to fit in the destination type, it will be truncated.
+The justification is that there is no straightforward way for downstream code to implement such
+recovery behavior on their own.
+Truncation is only performed on `S`, `a`, and `U` data (never on `V` data), and always produces a
+valid value of that type.  (e.g. `ArrayString<N>` will truncate to a valid UTF-8 prefix, while
+`ArrayVec<u8, N>` will truncate to arbitrary bytes).
+
 If you do not wish to allow truncation to occur, you may check that [`TypeStr::size_field`]`() <= N`.
 (`N` being the const length of the arrayvec)
 
@@ -150,8 +154,9 @@ have occurred.
 
 One can work with structured arrays by enabling the **`"derive"`** feature, which provides derive
 macros for [`Serialize`], [`Deserialize`], and [`AutoSerialize`].
-
-```rust
+*/
+#![cfg_attr(any(not(doctest), feature="derive"), doc = r##"
+```
 // make sure to add `features = ["derive"]` in Cargo.toml!
 #[derive(npyz::Deserialize)]
 struct Struct {
@@ -159,6 +164,8 @@ struct Struct {
     b: f32,
 }
 ```
+"##)]
+/*!
 
 This type can be used to deserialize the numpy dtype `np.dtype([('a', '<i4'), ('b', '<f4')])`.
 
@@ -166,14 +173,17 @@ This type can be used to deserialize the numpy dtype `np.dtype([('a', '<i4'), ('
 
 Members of structured arrays are allowed to be n-dimensional arrays.  These can be represented
 in rust using the primitive array type `[T; N]`:
-
-```rust
+ */
+#![cfg_attr(any(not(doctest), feature="derive"), doc = r##"
+```
 // make sure to add `features = ["derive"]` in Cargo.toml!
 #[derive(npyz::Deserialize)]
 struct Struct {
     a: [[i32; 3]; 4],
 }
 ```
+"##)]
+/*!
 
 This type can deserialize the numpy dtype `np.dtype([('a', '<i4', (4, 3))])`.
 **/

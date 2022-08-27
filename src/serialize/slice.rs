@@ -14,21 +14,18 @@ use super::{invalid_data, expect_scalar_dtype};
 
 #[doc(hidden)]
 pub struct BytesReader {
-    size: usize,
-    is_byte_str: bool,
+    info: ByteVecDTypeInfo,
 }
 
 impl TypeRead for BytesReader {
     type Value = Vec<u8>;
 
     fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Vec<u8>> {
-        let mut vec = vec![0; self.size];
+        let mut vec = vec![0; self.info.size];
         reader.read_exact(&mut vec)?;
 
-        // truncate trailing zeros for type 'S'
-        if self.is_byte_str {
-            let end = vec.iter().rposition(|x| x != &0).map_or(0, |ind| ind + 1);
-            vec.truncate(end);
+        if self.info.is_byte_str {
+            truncate_trailing_nuls(&mut vec, |&x| x == 0);
         }
 
         Ok(vec)
@@ -39,22 +36,14 @@ impl Deserialize for Vec<u8> {
     type TypeReader = BytesReader;
 
     fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
-        let type_str = expect_scalar_dtype::<Self>(dtype)?;
-        let size = size_field_as_usize(type_str)?;
-        let is_byte_str = match *type_str {
-            TypeStr { type_kind: TypeKind::ByteStr, .. } => true,
-            TypeStr { type_kind: TypeKind::RawData, .. } => false,
-            _ => return Err(DTypeError::bad_scalar::<Self>("read", type_str)),
-        };
-        Ok(BytesReader { size, is_byte_str })
+        let info = check_byte_vec_dtype::<Self>("read", dtype)?;
+        Ok(BytesReader { info })
     }
 }
 
 #[doc(hidden)]
 pub struct BytesWriter {
-    type_str: TypeStr,
-    size: usize,
-    is_byte_str: bool,
+    info: ByteVecDTypeInfo,
 }
 
 impl TypeWrite for BytesWriter {
@@ -63,15 +52,15 @@ impl TypeWrite for BytesWriter {
     fn write_one<W: io::Write>(&self, mut w: W, bytes: &[u8]) -> io::Result<()> {
         use std::cmp::Ordering;
 
-        match (bytes.len().cmp(&self.size), self.is_byte_str) {
+        match (bytes.len().cmp(&self.info.size), self.info.is_byte_str) {
             (Ordering::Greater, _) |
-            (Ordering::Less, false) => return Err(bad_length(bytes, &self.type_str)),
+            (Ordering::Less, false) => return Err(bad_length(bytes, &self.info.type_str)),
             _ => {},
         }
 
         w.write_all(bytes)?;
-        if self.is_byte_str {
-            w.write_all(&vec![0; self.size - bytes.len()])?;
+        if self.info.is_byte_str {
+            w.write_all(&vec![0; self.info.size - bytes.len()])?;
         }
         Ok(())
     }
@@ -81,20 +70,99 @@ impl Serialize for [u8] {
     type TypeWriter = BytesWriter;
 
     fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
-        let type_str = expect_scalar_dtype::<Self>(dtype)?;
-
-        let size = size_field_as_usize(type_str)?;
-        let type_str = type_str.clone();
-        let is_byte_str = match type_str {
-            TypeStr { type_kind: TypeKind::ByteStr, .. } => true,
-            TypeStr { type_kind: TypeKind::RawData, .. } => false,
-            _ => return Err(DTypeError::bad_scalar::<Self>("read", &type_str)),
-        };
-        Ok(BytesWriter { type_str, size, is_byte_str })
+        let info = check_byte_vec_dtype::<Self>("write", dtype)?;
+        Ok(BytesWriter { info })
     }
 }
 
+#[cfg(feature = "arrayvec")]
+#[doc(hidden)]
+#[non_exhaustive]
+pub struct ArrayVecBytesReader<const N: usize> {
+    info: ByteVecDTypeInfo,
+}
+
+#[cfg(feature = "arrayvec")]
+impl<const N: usize> TypeRead for ArrayVecBytesReader<N> {
+    type Value = ArrayVec<u8, N>;
+
+    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<ArrayVec<u8, N>> {
+        let mut buffer = [0; N];
+        reader.read_exact(&mut buffer[..usize::min(N, self.info.size)])?;
+        if self.info.size > N {
+            reader.read_exact(&mut vec![0; self.info.size - N])?;
+        }
+
+        let mut array_vec: ArrayVec<u8, N> = buffer.into();
+        if self.info.is_byte_str {
+            arrayvec_truncate_trailing_nuls(&mut array_vec, |&x| x == 0);
+        }
+
+        Ok(array_vec)
+    }
+}
+
+/// _This impl is only available with the **`arrayvec`** feature._
+#[cfg(feature = "arrayvec")]
+impl<const N: usize> Deserialize for ArrayVec<u8, N> {
+    type TypeReader = ArrayVecBytesReader<N>;
+
+    fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
+        let info = check_array_byte_vec_dtype::<Self, N>("read", dtype)?;
+        Ok(ArrayVecBytesReader { info })
+    }
+}
+
+#[doc(hidden)]
+#[cfg(feature = "arrayvec")]
+pub struct ArrayVecBytesWriter<const N: usize> {
+    bytes_writer: BytesWriter,
+}
+
+#[cfg(feature = "arrayvec")]
+impl<const N: usize> TypeWrite for ArrayVecBytesWriter<N> {
+    type Value = ArrayVec<u8, N>;
+
+    fn write_one<W: io::Write>(&self, w: W, bytes: &ArrayVec<u8, N>) -> io::Result<()> {
+        self.bytes_writer.write_one(w, bytes)
+    }
+}
+
+/// _This impl is only available with the **`arrayvec`** feature._
+#[cfg(feature = "arrayvec")]
+impl<const N: usize> Serialize for ArrayVec<u8, N> {
+    type TypeWriter = ArrayVecBytesWriter<N>;
+
+    fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
+        let info = check_array_byte_vec_dtype::<Self, N>("write", dtype)?;
+        Ok(ArrayVecBytesWriter { bytes_writer: BytesWriter { info } })
+    }
+}
+
+struct ByteVecDTypeInfo { type_str: TypeStr, size: usize, is_byte_str: bool }
+fn check_byte_vec_dtype<T: ?Sized>(verb: &'static str, dtype: &DType) -> Result<ByteVecDTypeInfo, DTypeError> {
+    let type_str = expect_scalar_dtype::<T>(dtype)?;
+    let size = size_field_as_usize(type_str)?;
+    let is_byte_str = match *type_str {
+        TypeStr { type_kind: TypeKind::ByteStr, .. } => true,
+        TypeStr { type_kind: TypeKind::RawData, .. } => false,
+        _ => return Err(DTypeError::bad_scalar::<T>(verb, type_str)),
+    };
+    Ok(ByteVecDTypeInfo { type_str: type_str.clone(), size, is_byte_str })
+}
+
+fn check_array_byte_vec_dtype<T: ?Sized, const N: usize>(verb: &'static str, dtype: &DType) -> Result<ByteVecDTypeInfo, DTypeError> {
+    let info = check_byte_vec_dtype::<T>(verb, dtype)?;
+    // prevent large |VN types at dtype parsing time because they are impossible to fit
+    if !info.is_byte_str && N < info.size {
+        return Err(DTypeError::bad_scalar::<T>(verb, &info.type_str));
+    }
+    Ok(info)
+}
+
 pub use fixed_size::FixedSizeBytes;
+use crate::serialize::traits::ErrorKind;
+
 mod fixed_size {
     /// Wrapper around `[u8; N]` that can serialize as `|VN`.  The size must match exactly.
     ///
@@ -144,9 +212,8 @@ mod fixed_size {
 }
 
 #[doc(hidden)]
-pub struct FixedSizeBytesReader<const N: usize> {
-    _priv: (),
-}
+#[non_exhaustive]
+pub struct FixedSizeBytesReader<const N: usize> { }
 
 impl<const N: usize> TypeRead for FixedSizeBytesReader<N> {
     type Value = FixedSizeBytes<N>;
@@ -167,14 +234,13 @@ impl<const N: usize> Deserialize for FixedSizeBytes<N> {
         if (type_str.type_kind, size) != (TypeKind::RawData, N) {
             return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
-        Ok(FixedSizeBytesReader { _priv: () })
+        Ok(FixedSizeBytesReader { })
     }
 }
 
 #[doc(hidden)]
-pub struct FixedSizeBytesWriter<const N: usize> {
-    _priv: (),
-}
+#[non_exhaustive]
+pub struct FixedSizeBytesWriter<const N: usize> {}
 
 impl<const N: usize> TypeWrite for FixedSizeBytesWriter<N> {
     type Value = FixedSizeBytes<N>;
@@ -193,7 +259,7 @@ impl<const N: usize> Serialize for FixedSizeBytes<N> {
         if (type_str.type_kind, size) != (TypeKind::RawData, N) {
             return Err(DTypeError::bad_scalar::<Self>("write", &type_str));
         };
-        Ok(FixedSizeBytesWriter { _priv: () })
+        Ok(FixedSizeBytesWriter { })
     }
 }
 
@@ -387,21 +453,23 @@ impl<const N: usize> TypeRead for Utf8ArrayStringReader<N> {
 }
 
 impl Utf8StringReader {
-    fn try_from_type_str(type_str: &TypeStr) -> Option<Result<Self, DTypeError>> {
-        if type_str.type_kind != TypeKind::ByteStr {
-            return None;
+    fn try_from_dtype(dtype: &DType) -> Option<Result<Self, DTypeError>> {
+        match <Vec<u8>>::reader(dtype) {
+            Err(e @ DTypeError(ErrorKind::UsizeOverflow { .. })) => Some(Err(e)),
+            Err(_) => None,
+            Ok(bytes_reader) => {
+                if !bytes_reader.info.is_byte_str {
+                    return None;
+                }
+                Some(Ok(Utf8StringReader { bytes_reader }))
+            },
         }
-        let size = match size_field_as_usize(type_str) {
-            Err(e) => return Some(Err(e)),
-            Ok(val) => val,
-        };
-        let bytes_reader = BytesReader { size, is_byte_str: true };
-        Some(Ok(Utf8StringReader { bytes_reader }))
     }
 }
 
 impl Utf32StringReader {
-    fn try_from_type_str(type_str: &TypeStr) -> Option<Result<Self, DTypeError>> {
+    fn try_from_dtype(dtype: &DType) -> Option<Result<Self, DTypeError>> {
+        let type_str = expect_scalar_dtype::<Self>(dtype).ok()?;
         if type_str.type_kind != TypeKind::UnicodeStr {
             return None;
         }
@@ -448,14 +516,13 @@ impl Deserialize for String {
     type TypeReader = StringReader;
 
     fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
-        let type_str = expect_scalar_dtype::<Self>(dtype)?;
-
         // dispatch based on 'U' vs 'S'
-        if let Some(imp) = Utf32StringReader::try_from_type_str(type_str) {
+        if let Some(imp) = Utf32StringReader::try_from_dtype(dtype) {
             Ok(StringReader::Utf32(imp?))
-        } else if let Some(imp) = Utf8StringReader::try_from_type_str(type_str) {
+        } else if let Some(imp) = Utf8StringReader::try_from_dtype(dtype) {
             Ok(StringReader::Utf8(imp?))
         } else {
+            let type_str = expect_scalar_dtype::<Self>(dtype)?;
             Err(DTypeError::bad_scalar::<Self>("read", &type_str))
         }
     }
@@ -503,10 +570,12 @@ impl<const N: usize> Deserialize for ArrayString<N> {
     type TypeReader = Utf8ArrayStringReader<N>;
 
     fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
-        let type_str = expect_scalar_dtype::<Self>(dtype)?;
-        match Utf8StringReader::try_from_type_str(type_str) {
+        match Utf8StringReader::try_from_dtype(dtype) {
             Some(string_reader) => Ok(Utf8ArrayStringReader { string_reader: string_reader? }),
-            None => Err(DTypeError::bad_scalar::<Self>("read", &type_str)),
+            None => {
+                let type_str = expect_scalar_dtype::<Self>(dtype)?;
+                Err(DTypeError::bad_scalar::<Self>("read", &type_str))
+            },
         }
     }
 }
@@ -851,6 +920,30 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "arrayvec")]
+    fn write_wrong_length_arrayvec() {
+        let s_3 = DType::parse("'|S3'").unwrap();
+        let v_3 = DType::parse("'|V3'").unwrap();
+
+        // Most arrayvec write impls defer to the slice implementation just like Vec, so they are
+        // already tested by the `write_wrong_length`. However, ArrayVec<u8> has additional
+        // preconditions for |V.
+        assert_eq!(writer_output(&s_3, &ArrayVec::<u8, 2>::from_iter([1, 3])), blob![1, 3, 0]);
+        assert_eq!(writer_output(&s_3, &ArrayVec::<u8, 2>::from_iter([1])), blob![1, 0, 0]);
+        assert_eq!(writer_output(&s_3, &ArrayVec::<u8, 3>::from_iter([1, 3, 5])), blob![1, 3, 5]);
+        assert_eq!(writer_output(&s_3, &ArrayVec::<u8, 3>::from_iter([1])), blob![1, 0, 0]);
+        writer_expect_write_err(&s_3, &ArrayVec::<u8, 4>::from_iter([1, 3, 5, 7]));
+        assert_eq!(writer_output(&s_3, &ArrayVec::<u8, 4>::from_iter([1])), blob![1, 0, 0]);
+
+        writer_expect_err::<ArrayVec<u8, 2>>(&v_3);
+        assert_eq!(writer_output(&v_3, &ArrayVec::<u8, 3>::from_iter([1, 3, 5])), blob![1, 3, 5]);
+        writer_expect_write_err(&v_3, &ArrayVec::<u8, 3>::from_iter([1]));
+        writer_expect_write_err(&v_3, &ArrayVec::<u8, 4>::from_iter([1, 3, 5, 7]));
+        assert_eq!(writer_output(&v_3, &ArrayVec::<u8, 4>::from_iter([1, 3, 5])), blob![1, 3, 5]);
+        writer_expect_write_err(&v_3, &ArrayVec::<u8, 4>::from_iter([1]));
+    }
+
+    #[test]
     fn fixed_size_bytes_restrictions() {
         let s_3 = DType::parse("'|S3'").unwrap();
         let v_3 = DType::parse("'|V3'").unwrap();
@@ -911,6 +1004,16 @@ mod tests {
         assert_eq!(reader_output::<ArrayString<2>>(&ts, &blob![1, 3]), ArrayString::<2>::try_from("\x01\x03").unwrap());
         assert_eq!(reader_output::<ArrayString<2>>(&ts, &blob![1, 0]), ArrayString::<2>::try_from("\x01").unwrap());
         assert_eq!(reader_output::<ArrayString<2>>(&ts, &blob![0, 0]), ArrayString::<2>::try_from("").unwrap());
+
+        let ts = DType::parse("'|S2'").unwrap();
+        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 3]), ArrayVec::<u8, 2>::from_iter(vec![1, 3]));
+        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 0]), ArrayVec::<u8, 2>::from_iter(vec![1]));
+        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![0, 0]), ArrayVec::<u8, 2>::from_iter(vec![]));
+
+        let ts = DType::parse("'|V2'").unwrap();
+        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 3]), ArrayVec::<u8, 2>::from_iter(vec![1, 3]));
+        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 0]), ArrayVec::<u8, 2>::from_iter(vec![1, 0]));
+        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![0, 0]), ArrayVec::<u8, 2>::from_iter(vec![0, 0]));
     }
 
     #[test]
@@ -959,6 +1062,12 @@ mod tests {
 
         assert_eq!(reader_output::<ArrayVec<u32, 2>>(&ts, &data), ArrayVec::from_iter(vec![1, 3]));
         assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &data), ArrayVec::from_iter("\x01\x03".chars()));
+
+        let ts = DType::parse("'|S5'").unwrap();
+        let data = blob![1, 3, 5, 7, 9];
+
+        assert_eq!(reader_output::<ArrayString<2>>(&ts, &data), ArrayString::<2>::try_from("\x01\x03").unwrap());
+        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &data), ArrayVec::<u8, 2>::try_from(&[1, 3][..]).unwrap());
     }
 
     #[test]
@@ -974,14 +1083,21 @@ mod tests {
 
     #[test]
     #[cfg(feature = "arrayvec")]
-    fn arrayvec_array_string_truncated_in_middle_of_char() {
+    fn arrayvec_truncated_in_middle_of_utf8_char() {
         let ts = DType::parse("'|S6'").unwrap();
         let data = "abはe".as_bytes().to_vec();  // has a 3-byte char
 
+        // ArrayString cares about UTF8
         assert_eq!(reader_output::<ArrayString<2>>(&ts, &data), ArrayString::<2>::try_from("ab").unwrap());
         assert_eq!(reader_output::<ArrayString<3>>(&ts, &data), ArrayString::<3>::try_from("ab").unwrap());
         assert_eq!(reader_output::<ArrayString<4>>(&ts, &data), ArrayString::<4>::try_from("ab").unwrap());
         assert_eq!(reader_output::<ArrayString<5>>(&ts, &data), ArrayString::<5>::try_from("abは").unwrap());
+
+        // but ArrayVec<u8> does not
+        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &data), ArrayVec::<u8, 2>::try_from(&data[..2]).unwrap());
+        assert_eq!(reader_output::<ArrayVec<u8, 3>>(&ts, &data), ArrayVec::<u8, 3>::try_from(&data[..3]).unwrap());
+        assert_eq!(reader_output::<ArrayVec<u8, 4>>(&ts, &data), ArrayVec::<u8, 4>::try_from(&data[..4]).unwrap());
+        assert_eq!(reader_output::<ArrayVec<u8, 5>>(&ts, &data), ArrayVec::<u8, 5>::try_from(&data[..5]).unwrap());
     }
 
     #[test]
