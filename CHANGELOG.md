@@ -10,10 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Supported rust types are `Vec<char>`, `Vec<u32>`, and `String`
   (and, of course, `[char]`, `[u32]`, and `str` for serialization).
 - Added support for the `a` type, which is just an alias of `S`.
+- Added the `FixedSizeBytes` wrapper type around `[u8; N]`, which enables
+  deserialization of type `V` without individual allocations per element. 
 - Added the `arrayvec` feature.  This enables deserialization of
-  type `U` without individual allocations per element.
+  types `U` and `S` without individual allocations per element.
+  (thanks to @m-dupont for the initial implementation)
+- `NpyReader::shape` and `NpyReader::dtype` accessors, for downstream code without
+  access to an `NpyFile`.
 - Exposed various data from `TypeStr`.  New types include `Endianness`, `TypeChar`,
   and `TimeUnits` types. `TypeStr` now has getters to extract these fields.
+  (thanks to @Shatur for requesting this)
 
 ### Changed
 - `np.datetime64` now uses i64 instead of u64 for serialization, as it is
