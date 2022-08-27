@@ -11,7 +11,7 @@ macro_rules! gen_benches {
     ($read_to_vec_testname:ident, $write_testname:ident, $T:ty, $new:expr) => {
         #[inline(never)]
         fn write_array_via_push() -> Vec<u8> {
-            let cap = 1000 + <$T>::default_dtype().num_bytes() * NITER;
+            let cap = 1000 + <$T>::default_dtype().num_bytes().unwrap() * NITER;
             let mut cursor = Cursor::new(Vec::with_capacity(cap));
             {
                 let mut writer = npyz::WriteOptions::new().default_dtype().writer(&mut cursor).begin_1d().unwrap();
