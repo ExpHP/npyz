@@ -34,6 +34,10 @@ When the **`"complex"`** feature is enabled, rust types [`Complex32`] and [`Comp
 
 **Notice:** numpy does have have complex numbers backed by 128-bit floats, but this is not supported by `npyz`.
 
+### Bool
+
+The rust type `bool` may be serialized as `|b1`.
+
 ### Endianness
 
 In all of the above cases, npyz uses the machine endianness by default when serializing, but
