@@ -9,7 +9,7 @@ use num_complex::Complex;
 use crate::header::DType;
 use crate::type_str::{TypeStr, Endianness, TypeChar};
 use super::{DTypeError, TypeRead, TypeWrite, Serialize, Deserialize, AutoSerialize};
-use super::{expect_scalar_dtype};
+use super::{expect_scalar_dtype, invalid_data};
 
 /// Implementation detail of reading and writing for primitive types.
 pub trait PrimitiveReadWrite: Sized {
@@ -72,6 +72,21 @@ derive_int_primitive_read_write!{ u8 u16 u32 u64 }
 derive_int_primitive_read_write!{ i8 i16 i32 i64 }
 derive_float_primitive_read_write!{ f32 as u32 }
 derive_float_primitive_read_write!{ f64 as u64 }
+
+impl PrimitiveReadWrite for bool {
+    fn primitive_read_one<R: io::Read>(mut reader: R, _swap_bytes: bool) -> io::Result<bool> {
+        let mut buf = [0; 1];
+        reader.read_exact(&mut buf)?;
+        if buf[0] >= 2 {
+            return Err(invalid_data(format_args!("invalid value for bool: {}", buf[0])))
+        }
+        Ok(buf[0] != 0)
+    }
+
+    fn primitive_write_one<W: io::Write>(&self, mut writer: W, _swap_bytes: bool) -> io::Result<()> {
+        writer.write_all(&[*self as u8])
+    }
+}
 
 /// Implementation of [`TypeRead`] using [`PrimitiveReadWrite`].
 #[doc(hidden)]
@@ -154,13 +169,13 @@ impl<F: PrimitiveReadWrite> TypeWrite for ComplexWriter<F> {
     }
 }
 
-macro_rules! impl_integer_serializable {
+macro_rules! impl_primitive_serializable {
     (
-        meta: [ (main_ty: $Int:path) (support_ty: $SupportTy:pat) ]
-        ints: [ $([$size:tt $int:ty])* ]
+        rust: [ $([$size:tt $prim:ty])* ]
+        npy: [ (main_ty: $MainTy:path) (support_ty: $SupportTy:pat) ]
     ) => {$(
-        impl Deserialize for $int {
-            type TypeReader = PrimitiveReader<$int>;
+        impl Deserialize for $prim {
+            type TypeReader = PrimitiveReader<$prim>;
 
             fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
                 match expect_scalar_dtype::<Self>(dtype)? {
@@ -176,8 +191,8 @@ macro_rules! impl_integer_serializable {
             }
         }
 
-        impl Serialize for $int {
-            type TypeWriter = PrimitiveWriter<$int>;
+        impl Serialize for $prim {
+            type TypeWriter = PrimitiveWriter<$prim>;
 
             fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
                 match expect_scalar_dtype::<Self>(dtype)? {
@@ -190,66 +205,42 @@ macro_rules! impl_integer_serializable {
             }
         }
 
-        impl AutoSerialize for $int {
+        impl AutoSerialize for $prim {
             fn default_dtype() -> DType {
-                DType::new_scalar(TypeStr::with_auto_endianness($Int, $size, None))
+                DType::new_scalar(TypeStr::with_auto_endianness($MainTy, $size, None))
             }
         }
     )*};
 }
 
-impl_integer_serializable! {
-    meta: [ (main_ty: TypeChar::Int) (support_ty: TypeChar::Int) ]
-    ints: [ [1 i8] [2 i16] [4 i32] ]
+impl_primitive_serializable! {
+    rust: [ [1 i8] [2 i16] [4 i32] ]
+    npy: [ (main_ty: TypeChar::Int) (support_ty: TypeChar::Int) ]
 }
 
-impl_integer_serializable! {
-    meta: [ (main_ty: TypeChar::Int) (support_ty: TypeChar::Int | TypeChar::TimeDelta | TypeChar::DateTime) ]
-    ints: [ [8 i64] ]
+impl_primitive_serializable! {
+    rust: [ [8 i64] ]
+    npy: [ (main_ty: TypeChar::Int) (support_ty: TypeChar::Int | TypeChar::TimeDelta | TypeChar::DateTime) ]
 }
 
-impl_integer_serializable! {
-    meta: [ (main_ty: TypeChar::Uint) (support_ty: TypeChar::Uint) ]
-    ints: [ [1 u8] [2 u16] [4 u32] [8 u64] ]
+impl_primitive_serializable! {
+    rust: [ [1 u8] [2 u16] [4 u32] [8 u64] ]
+    npy: [ (main_ty: TypeChar::Uint) (support_ty: TypeChar::Uint) ]
 }
 
-// Takes info about each data size, from largest to smallest.
-macro_rules! impl_float_serializable {
+// TODO: numpy supports f16, f128
+impl_primitive_serializable! {
+    rust: [ [4 f32] [8 f64] ]
+    npy: [ (main_ty: TypeChar::Float) (support_ty: TypeChar::Float) ]
+}
+
+impl_primitive_serializable! {
+    rust: [ [1 bool] ]
+    npy: [ (main_ty: TypeChar::Bool) (support_ty: TypeChar::Bool) ]
+}
+
+macro_rules! impl_complex_serializable {
     ( $( [ $size:literal $float:ident ] )+ ) => { $(
-        impl Deserialize for $float {
-            type TypeReader = PrimitiveReader<$float>;
-
-            fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
-                match expect_scalar_dtype::<Self>(dtype)? {
-                    // Read a float of the correct size
-                    &TypeStr { size: $size, endianness, type_char: TypeChar::Float, .. } => {
-                        Ok(PrimitiveReader::new(endianness))
-                    },
-                    type_str => Err(DTypeError::bad_scalar::<Self>("read", type_str)),
-                }
-            }
-        }
-
-        impl Serialize for $float {
-            type TypeWriter = PrimitiveWriter<$float>;
-
-            fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
-                match expect_scalar_dtype::<Self>(dtype)? {
-                    // Write a float of the correct size
-                    &TypeStr { size: $size, endianness, type_char: TypeChar::Float, .. } => {
-                        Ok(PrimitiveWriter::new(endianness))
-                    },
-                    type_str => Err(DTypeError::bad_scalar::<Self>("write", type_str)),
-                }
-            }
-        }
-
-        impl AutoSerialize for $float {
-            fn default_dtype() -> DType {
-                DType::new_scalar(TypeStr::with_auto_endianness(TypeChar::Float, $size, None))
-            }
-        }
-
         #[cfg(feature = "complex")]
         /// _This impl is only available with the **`"complex"`** feature._
         impl Deserialize for Complex<$float> {
@@ -294,8 +285,7 @@ macro_rules! impl_float_serializable {
     )+};
 }
 
-// TODO: numpy supports f16, f128
-impl_float_serializable! { [ 4 f32 ] [ 8 f64 ] }
+impl_complex_serializable! { [ 4 f32 ] [ 8 f64 ] }
 
 
 #[cfg(test)]
@@ -356,6 +346,20 @@ mod tests {
         assert_eq!(reader_output::<f32>(&le, &le_bytes), 42.0);
         assert_eq!(writer_output::<f32>(&be, &42.0), &be_bytes);
         assert_eq!(writer_output::<f32>(&le, &42.0), &le_bytes);
+    }
+
+    #[test]
+    fn native_bool() {
+        assert!(DType::parse("'|b2'").is_err());
+        let dtype = DType::parse("'|b1'").unwrap();
+
+        assert_eq!(reader_output::<bool>(&dtype, &[0]), false);
+        assert_eq!(reader_output::<bool>(&dtype, &[1]), true);
+        reader_expect_read_err::<bool>(&dtype, &[2]);
+        reader_expect_read_err::<bool>(&dtype, &[255]);
+
+        assert_eq!(writer_output::<bool>(&dtype, &false), &[0]);
+        assert_eq!(writer_output::<bool>(&dtype, &true), &[1]);
     }
 
     #[test]
