@@ -14,7 +14,7 @@ use std::fmt;
 ///
 /// assert_eq!(format!("{}", ts), "|i1");
 /// assert_eq!(ts.endianness(), npyz::Endianness::Irrelevant);
-/// assert_eq!(ts.type_char(), npyz::Endianness::Int);
+/// assert_eq!(ts.type_char(), npyz::TypeChar::Int);
 /// assert_eq!(ts.size_field(), 1);
 /// # Ok(())
 /// # }
