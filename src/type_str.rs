@@ -18,7 +18,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeStr {
     pub(crate) endianness: Endianness,
-    pub(crate) type_kind: TypeKind,
+    pub(crate) type_char: TypeChar,
     pub(crate) size: u64,
     pub(crate) time_units: Option<TimeUnits>,
 }
@@ -40,8 +40,8 @@ pub(crate) enum Endianness {
     Big,
     /// Code `|`. Used when endianness is irrelevant.
     ///
-    /// Only valid when the size is `1`, or when `kind` is `TypeKind::Other`
-    /// or `TypeKind::ByteStr`.
+    /// Only valid when the size is `1`, or when `kind` is `TypeChar::Other`
+    /// or `TypeChar::ByteStr`.
     Irrelevant,
 }
 
@@ -88,7 +88,7 @@ impl Endianness {
 ///
 /// Indicates the type of data stored.  Affects the interpretation of `size` and `endianness`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum TypeKind {
+pub(crate) enum TypeChar {
     /// Code `b`.
     ///
     /// `size` must be 1, and legal values are `0x00` (`false`) or `0x01` (`true`).
@@ -170,89 +170,89 @@ pub(crate) enum TypeKind {
     RawData,
 }
 
-impl TypeKind {
+impl TypeChar {
     fn from_char(s: char) -> Option<Self> {
         match s {
-            'b' => Some(TypeKind::Bool),
-            'i' => Some(TypeKind::Int),
-            'u' => Some(TypeKind::Uint),
-            'f' => Some(TypeKind::Float),
-            'c' => Some(TypeKind::Complex),
-            'm' => Some(TypeKind::TimeDelta),
-            'M' => Some(TypeKind::DateTime),
-            'S' | 'a' => Some(TypeKind::ByteStr),
-            'U' => Some(TypeKind::UnicodeStr),
-            'V' => Some(TypeKind::RawData),
+            'b' => Some(TypeChar::Bool),
+            'i' => Some(TypeChar::Int),
+            'u' => Some(TypeChar::Uint),
+            'f' => Some(TypeChar::Float),
+            'c' => Some(TypeChar::Complex),
+            'm' => Some(TypeChar::TimeDelta),
+            'M' => Some(TypeChar::DateTime),
+            'S' | 'a' => Some(TypeChar::ByteStr),
+            'U' => Some(TypeChar::UnicodeStr),
+            'V' => Some(TypeChar::RawData),
             _ => None,
         }
     }
 
     fn to_str(self) -> &'static str {
         match self {
-            TypeKind::Bool => "b",
-            TypeKind::Int => "i",
-            TypeKind::Uint => "u",
-            TypeKind::Float => "f",
-            TypeKind::Complex => "c",
-            TypeKind::TimeDelta => "m",
-            TypeKind::DateTime => "M",
-            TypeKind::ByteStr => "S",
-            TypeKind::UnicodeStr => "U",
-            TypeKind::RawData => "V",
+            TypeChar::Bool => "b",
+            TypeChar::Int => "i",
+            TypeChar::Uint => "u",
+            TypeChar::Float => "f",
+            TypeChar::Complex => "c",
+            TypeChar::TimeDelta => "m",
+            TypeChar::DateTime => "M",
+            TypeChar::ByteStr => "S",
+            TypeChar::UnicodeStr => "U",
+            TypeChar::RawData => "V",
         }
     }
 }
 
-impl TypeKind {
+impl TypeChar {
     // `None` means all sizes are valid.
     fn valid_sizes(self) -> Option<&'static [u64]> {
         match self {
-            TypeKind::Bool => Some(&[1]),
+            TypeChar::Bool => Some(&[1]),
 
             // numpy doesn't actually support 128-bit ints
-            TypeKind::Int |
-            TypeKind::Uint => Some(&[1, 2, 4, 8]),
+            TypeChar::Int |
+            TypeChar::Uint => Some(&[1, 2, 4, 8]),
 
             // yes, 128-bit floats are supported by numpy
-            TypeKind::Float => Some(&[2, 4, 8, 16]),
+            TypeChar::Float => Some(&[2, 4, 8, 16]),
 
             // 4-byte complex numbers are mysteriously missing from numpy
-            TypeKind::Complex => Some(&[8, 16, 32]),
+            TypeChar::Complex => Some(&[8, 16, 32]),
 
-            TypeKind::TimeDelta |
-            TypeKind::DateTime => Some(&[8]),
+            TypeChar::TimeDelta |
+            TypeChar::DateTime => Some(&[8]),
 
             // (Note: numpy does support types `|S0` and `|U0`, though for some reason `numpy.save`
             //        changes them to `|S1` and `|U1`.)
-            TypeKind::ByteStr |
-            TypeKind::UnicodeStr |
-            TypeKind::RawData => None,
+            TypeChar::ByteStr |
+            TypeChar::UnicodeStr |
+            TypeChar::RawData => None,
         }
     }
 
     /// Returns `true` if `|` endianness is illegal.
     fn requires_endianness(self, size: u64) -> bool {
         match self {
-            TypeKind::Bool |
-            TypeKind::Int |
-            TypeKind::Uint |
-            TypeKind::Float |
-            TypeKind::TimeDelta |
-            TypeKind::DateTime |
-            TypeKind::Complex => size != 1,
+            TypeChar::Bool |
+            TypeChar::Int |
+            TypeChar::Uint |
+            TypeChar::Float |
+            TypeChar::TimeDelta |
+            TypeChar::DateTime |
+            TypeChar::Complex => size != 1,
 
-            TypeKind::UnicodeStr => true,
+            TypeChar::UnicodeStr => true,
 
-            TypeKind::ByteStr |
-            TypeKind::RawData => false,
+            TypeChar::ByteStr |
+            TypeChar::RawData => false,
         }
     }
 
     /// Returns `true` if `|` endianness is illegal.
     fn has_units(self) -> bool {
         match self {
-            TypeKind::TimeDelta |
-            TypeKind::DateTime => true,
+            TypeChar::TimeDelta |
+            TypeChar::DateTime => true,
 
             _ => false,
         }
@@ -260,28 +260,28 @@ impl TypeKind {
 }
 
 impl TypeStr {
-    pub(crate) fn with_auto_endianness(type_kind: TypeKind, size: u64, time_units: Option<TimeUnits>) -> Self {
-        let endianness = match type_kind.requires_endianness(size) {
+    pub(crate) fn with_auto_endianness(type_char: TypeChar, size: u64, time_units: Option<TimeUnits>) -> Self {
+        let endianness = match type_char.requires_endianness(size) {
             true => Endianness::of_machine(),
             false => Endianness::Irrelevant,
         };
-        TypeStr { endianness, type_kind, size, time_units }.validate().unwrap()
+        TypeStr { endianness, type_char, size, time_units }.validate().unwrap()
     }
 
     /// The number of bytes for a single scalar value.
     pub(crate) fn num_bytes(&self) -> usize {
-        match self.type_kind {
-            TypeKind::Bool |
-            TypeKind::Int |
-            TypeKind::Uint |
-            TypeKind::Float |
-            TypeKind::Complex |
-            TypeKind::TimeDelta |
-            TypeKind::DateTime |
-            TypeKind::ByteStr |
-            TypeKind::RawData => self.size as usize,
+        match self.type_char {
+            TypeChar::Bool |
+            TypeChar::Int |
+            TypeChar::Uint |
+            TypeChar::Float |
+            TypeChar::Complex |
+            TypeChar::TimeDelta |
+            TypeChar::DateTime |
+            TypeChar::ByteStr |
+            TypeChar::RawData => self.size as usize,
 
-            TypeKind::UnicodeStr => self.size as usize * 4,
+            TypeChar::UnicodeStr => self.size as usize * 4,
         }
     }
 }
@@ -364,7 +364,7 @@ impl fmt::Display for Endianness {
     }
 }
 
-impl fmt::Display for TypeKind {
+impl fmt::Display for TypeChar {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(self.to_str(), f)
     }
@@ -378,7 +378,7 @@ impl fmt::Display for TimeUnits {
 
 impl fmt::Display for TypeStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{}{}", self.endianness, self.type_kind, self.size)?;
+        write!(f, "{}{}{}", self.endianness, self.type_char, self.size)?;
         if let Some(time_units) = self.time_units {
             write!(f, "[{}]", time_units)?;
         }
@@ -412,11 +412,11 @@ mod parse {
                 InvalidEndianness(ty) => write!(f, "Type string '{}' has invalid endianness", ty),
                 InvalidSize(ty) => {
                     write!(f, "Type string '{}' has invalid size.", ty)?;
-                    write!(f, " Valid sizes are: {:?}", ty.type_kind.valid_sizes().unwrap())?;
+                    write!(f, " Valid sizes are: {:?}", ty.type_char.valid_sizes().unwrap())?;
                     Ok(())
                 },
                 MissingOrUnexpectedUnits(ty) => {
-                    if ty.type_kind.has_units() {
+                    if ty.type_char.has_units() {
                         write!(f, "Type string '{}' is missing time units.", ty)
                     } else {
                         write!(f, "Unexpected time units in type string '{}'.", ty)
@@ -454,7 +454,7 @@ mod parse {
             };
 
             let c = chars.next().unwrap();
-            let type_kind = match TypeKind::from_char(c) {
+            let type_char = match TypeChar::from_char(c) {
                 None => bail!(SyntaxError),
                 Some(v) => v,
             };
@@ -488,7 +488,7 @@ mod parse {
                 }
             };
 
-            TypeStr { endianness, type_kind, size, time_units }
+            TypeStr { endianness, type_char, size, time_units }
                 .validate()
         }
     }
@@ -497,19 +497,19 @@ mod parse {
         pub(crate) fn validate(self) -> Result<Self, ParseTypeStrError> {
             use self::ErrorKind::*;
 
-            let TypeStr { endianness, type_kind, size, time_units } = self;
+            let TypeStr { endianness, type_char, size, time_units } = self;
 
-            if type_kind.requires_endianness(size) && endianness == Endianness::Irrelevant {
+            if type_char.requires_endianness(size) && endianness == Endianness::Irrelevant {
                 bail!(InvalidEndianness(self));
             }
 
-            if let Some(valid_sizes) = type_kind.valid_sizes() {
+            if let Some(valid_sizes) = type_char.valid_sizes() {
                 if !valid_sizes.contains(&size) {
                     bail!(InvalidSize(self));
                 }
             }
 
-            if type_kind.has_units() != time_units.is_some() {
+            if type_char.has_units() != time_units.is_some() {
                 bail!(MissingOrUnexpectedUnits(self));
             }
 
@@ -617,7 +617,7 @@ mod tests {
         assert_eq!(
             TypeStr {
                 endianness: Endianness::Little,
-                type_kind: TypeKind::Int,
+                type_char: TypeChar::Int,
                 size: 8,
                 time_units: None,
             }.to_string(),
@@ -627,7 +627,7 @@ mod tests {
         assert_eq!(
             TypeStr {
                 endianness: Endianness::Irrelevant,
-                type_kind: TypeKind::ByteStr,
+                type_char: TypeChar::ByteStr,
                 size: 13,
                 time_units: None,
             }.to_string(),
@@ -637,7 +637,7 @@ mod tests {
         assert_eq!(
             TypeStr {
                 endianness: Endianness::Big,
-                type_kind: TypeKind::TimeDelta,
+                type_char: TypeChar::TimeDelta,
                 size: 8,
                 time_units: Some(TimeUnits::Nanosecond),
             }.to_string(),

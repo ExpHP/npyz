@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use num_complex::Complex;
 
 use crate::header::DType;
-use crate::type_str::{TypeStr, Endianness, TypeKind};
+use crate::type_str::{TypeStr, Endianness, TypeChar};
 use super::{DTypeError, TypeRead, TypeWrite, Serialize, Deserialize, AutoSerialize};
 use super::{expect_scalar_dtype};
 
@@ -168,7 +168,7 @@ macro_rules! impl_integer_serializable {
                     //
                     // DateTime is an unsigned integer and TimeDelta is a signed integer,
                     // so we support those too.
-                    &TypeStr { size: $size, endianness, type_kind: $SupportTy, .. } => {
+                    &TypeStr { size: $size, endianness, type_char: $SupportTy, .. } => {
                         Ok(PrimitiveReader::new(endianness))
                     },
                     type_str => Err(DTypeError::bad_scalar::<Self>("read", type_str)),
@@ -182,7 +182,7 @@ macro_rules! impl_integer_serializable {
             fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
                 match expect_scalar_dtype::<Self>(dtype)? {
                     // Write an integer of the correct size and signedness.
-                    &TypeStr { size: $size, endianness, type_kind: $SupportTy, .. } => {
+                    &TypeStr { size: $size, endianness, type_char: $SupportTy, .. } => {
                         Ok(PrimitiveWriter::new(endianness))
                     },
                     type_str => Err(DTypeError::bad_scalar::<Self>("write", type_str)),
@@ -199,17 +199,17 @@ macro_rules! impl_integer_serializable {
 }
 
 impl_integer_serializable! {
-    meta: [ (main_ty: TypeKind::Int) (support_ty: TypeKind::Int) ]
+    meta: [ (main_ty: TypeChar::Int) (support_ty: TypeChar::Int) ]
     ints: [ [1 i8] [2 i16] [4 i32] ]
 }
 
 impl_integer_serializable! {
-    meta: [ (main_ty: TypeKind::Int) (support_ty: TypeKind::Int | TypeKind::TimeDelta | TypeKind::DateTime) ]
+    meta: [ (main_ty: TypeChar::Int) (support_ty: TypeChar::Int | TypeChar::TimeDelta | TypeChar::DateTime) ]
     ints: [ [8 i64] ]
 }
 
 impl_integer_serializable! {
-    meta: [ (main_ty: TypeKind::Uint) (support_ty: TypeKind::Uint) ]
+    meta: [ (main_ty: TypeChar::Uint) (support_ty: TypeChar::Uint) ]
     ints: [ [1 u8] [2 u16] [4 u32] [8 u64] ]
 }
 
@@ -222,7 +222,7 @@ macro_rules! impl_float_serializable {
             fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
                 match expect_scalar_dtype::<Self>(dtype)? {
                     // Read a float of the correct size
-                    &TypeStr { size: $size, endianness, type_kind: TypeKind::Float, .. } => {
+                    &TypeStr { size: $size, endianness, type_char: TypeChar::Float, .. } => {
                         Ok(PrimitiveReader::new(endianness))
                     },
                     type_str => Err(DTypeError::bad_scalar::<Self>("read", type_str)),
@@ -236,7 +236,7 @@ macro_rules! impl_float_serializable {
             fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
                 match expect_scalar_dtype::<Self>(dtype)? {
                     // Write a float of the correct size
-                    &TypeStr { size: $size, endianness, type_kind: TypeKind::Float, .. } => {
+                    &TypeStr { size: $size, endianness, type_char: TypeChar::Float, .. } => {
                         Ok(PrimitiveWriter::new(endianness))
                     },
                     type_str => Err(DTypeError::bad_scalar::<Self>("write", type_str)),
@@ -246,7 +246,7 @@ macro_rules! impl_float_serializable {
 
         impl AutoSerialize for $float {
             fn default_dtype() -> DType {
-                DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::Float, $size, None))
+                DType::new_scalar(TypeStr::with_auto_endianness(TypeChar::Float, $size, None))
             }
         }
 
@@ -259,7 +259,7 @@ macro_rules! impl_float_serializable {
                 const SIZE: u64 = 2 * $size;
 
                 match expect_scalar_dtype::<Self>(dtype)? {
-                    &TypeStr { size: SIZE, endianness, type_kind: TypeKind::Complex, .. } => {
+                    &TypeStr { size: SIZE, endianness, type_char: TypeChar::Complex, .. } => {
                         Ok(ComplexReader { float: PrimitiveReader::new(endianness) })
                     },
                     type_str => Err(DTypeError::bad_scalar::<Self>("read", type_str)),
@@ -276,7 +276,7 @@ macro_rules! impl_float_serializable {
                 const SIZE: u64 = 2 * $size;
 
                 match expect_scalar_dtype::<Self>(dtype)? {
-                    &TypeStr { size: SIZE, endianness, type_kind: TypeKind::Complex, .. } => {
+                    &TypeStr { size: SIZE, endianness, type_char: TypeChar::Complex, .. } => {
                         Ok(ComplexWriter { float: PrimitiveWriter::new(endianness) })
                     },
                     type_str => Err(DTypeError::bad_scalar::<Self>("write", type_str)),
@@ -288,7 +288,7 @@ macro_rules! impl_float_serializable {
         /// _This impl is only available with the **`"complex"`** feature._
         impl AutoSerialize for Complex<$float> {
             fn default_dtype() -> DType {
-                DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::Complex, $size, None))
+                DType::new_scalar(TypeStr::with_auto_endianness(TypeChar::Complex, $size, None))
             }
         }
     )+};
