@@ -7,7 +7,7 @@ use std::convert::TryFrom;
 use arrayvec::{ArrayVec, ArrayString};
 
 use crate::header::DType;
-use crate::type_str::{TypeStr, TypeKind};
+use crate::type_str::{TypeStr, TypeChar};
 use super::{DTypeError, TypeRead, TypeWrite, Serialize, Deserialize};
 use super::primitive::{PrimitiveReader, PrimitiveWriter};
 use super::{invalid_data, expect_scalar_dtype};
@@ -144,8 +144,8 @@ fn check_byte_vec_dtype<T: ?Sized>(verb: &'static str, dtype: &DType) -> Result<
     let type_str = expect_scalar_dtype::<T>(dtype)?;
     let size = size_field_as_usize(type_str)?;
     let is_byte_str = match *type_str {
-        TypeStr { type_kind: TypeKind::ByteStr, .. } => true,
-        TypeStr { type_kind: TypeKind::RawData, .. } => false,
+        TypeStr { type_char: TypeChar::ByteStr, .. } => true,
+        TypeStr { type_char: TypeChar::RawData, .. } => false,
         _ => return Err(DTypeError::bad_scalar::<T>(verb, type_str)),
     };
     Ok(ByteVecDTypeInfo { type_str: type_str.clone(), size, is_byte_str })
@@ -232,7 +232,7 @@ impl<const N: usize> Deserialize for FixedSizeBytes<N> {
     fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
         let type_str = expect_scalar_dtype::<Self>(dtype)?;
         let size = size_field_as_usize(type_str)?;
-        if (type_str.type_kind, size) != (TypeKind::RawData, N) {
+        if (type_str.type_char, size) != (TypeChar::RawData, N) {
             return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
         Ok(FixedSizeBytesReader { })
@@ -257,7 +257,7 @@ impl<const N: usize> Serialize for FixedSizeBytes<N> {
     fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
         let type_str = expect_scalar_dtype::<Self>(dtype)?;
         let size = size_field_as_usize(type_str)?;
-        if (type_str.type_kind, size) != (TypeKind::RawData, N) {
+        if (type_str.type_char, size) != (TypeChar::RawData, N) {
             return Err(DTypeError::bad_scalar::<Self>("write", &type_str));
         };
         Ok(FixedSizeBytesWriter { })
@@ -471,7 +471,7 @@ impl Utf8StringReader {
 impl Utf32StringReader {
     fn try_from_dtype(dtype: &DType) -> Option<Result<Self, DTypeError>> {
         let type_str = expect_scalar_dtype::<Self>(dtype).ok()?;
-        if type_str.type_kind != TypeKind::UnicodeStr {
+        if type_str.type_char != TypeChar::UnicodeStr {
             return None;
         }
         let num_u32s = match size_field_as_usize(type_str) {
@@ -488,7 +488,7 @@ impl Deserialize for Vec<u32> {
 
     fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
         let type_str = expect_scalar_dtype::<Self>(dtype)?;
-        if type_str.type_kind != TypeKind::UnicodeStr {
+        if type_str.type_char != TypeChar::UnicodeStr {
             return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
 
@@ -503,7 +503,7 @@ impl Deserialize for Vec<char> {
 
     fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
         let type_str = expect_scalar_dtype::<Self>(dtype)?;
-        if type_str.type_kind != TypeKind::UnicodeStr {
+        if type_str.type_char != TypeChar::UnicodeStr {
             return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
 
@@ -538,7 +538,7 @@ impl<const N: usize> Deserialize for ArrayVec<u32, N> {
         let type_str = expect_scalar_dtype::<Self>(dtype)?;
         let num_u32s_in_dtype = size_field_as_usize(type_str)?;
 
-        if type_str.type_kind != TypeKind::UnicodeStr {
+        if type_str.type_char != TypeChar::UnicodeStr {
             return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
 
@@ -556,7 +556,7 @@ impl<const N: usize> Deserialize for ArrayVec<char, N> {
         let type_str = expect_scalar_dtype::<Self>(dtype)?;
         let num_u32s_in_dtype = size_field_as_usize(type_str)?;
 
-        if type_str.type_kind != TypeKind::UnicodeStr {
+        if type_str.type_char != TypeChar::UnicodeStr {
             return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
 
@@ -708,7 +708,7 @@ impl Serialize for [u32] {
 
     fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
         let type_str = expect_scalar_dtype::<Self>(dtype)?;
-        if type_str.type_kind != TypeKind::UnicodeStr {
+        if type_str.type_char != TypeChar::UnicodeStr {
             return Err(DTypeError::bad_scalar::<Self>("write", &type_str));
         };
 
@@ -724,7 +724,7 @@ impl Serialize for [char] {
 
     fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
         let type_str = expect_scalar_dtype::<Self>(dtype)?;
-        if type_str.type_kind != TypeKind::UnicodeStr {
+        if type_str.type_char != TypeChar::UnicodeStr {
             return Err(DTypeError::bad_scalar::<Self>("write", &type_str));
         };
 
@@ -740,14 +740,14 @@ impl Serialize for str {
 
     fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
         let type_str = expect_scalar_dtype::<Self>(dtype)?;
-        match type_str.type_kind {
-            TypeKind::UnicodeStr => {
+        match type_str.type_char {
+            TypeChar::UnicodeStr => {
                 let num_u32s = size_field_as_usize(type_str)?;
                 let type_str = type_str.clone();
                 let int_writer = PrimitiveWriter::new(type_str.endianness);
                 Ok(StrWriter::Utf32(Utf32StrWriter { int_writer, type_str, num_u32s }))
             },
-            TypeKind::ByteStr => {
+            TypeChar::ByteStr => {
                 let num_bytes = size_field_as_usize(type_str)?;
                 let type_str = type_str.clone();
                 Ok(StrWriter::Utf8(Utf8StrWriter { type_str, num_bytes }))
@@ -813,7 +813,7 @@ mod arrayvec_serialize_impls {
     impl<const N: usize> AutoSerialize for ArrayVec<u32, N> {
         fn default_dtype() -> DType {
             let size = u64::try_from(N).unwrap();
-            DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::UnicodeStr, size, None))
+            DType::new_scalar(TypeStr::with_auto_endianness(TypeChar::UnicodeStr, size, None))
         }
     }
 
@@ -821,7 +821,7 @@ mod arrayvec_serialize_impls {
     impl<const N: usize> AutoSerialize for ArrayVec<char, N> {
         fn default_dtype() -> DType {
             let size = u64::try_from(N).unwrap();
-            DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::UnicodeStr, size, None))
+            DType::new_scalar(TypeStr::with_auto_endianness(TypeChar::UnicodeStr, size, None))
         }
     }
 
@@ -829,7 +829,7 @@ mod arrayvec_serialize_impls {
     impl<const N: usize> AutoSerialize for ArrayString<N> {
         fn default_dtype() -> DType {
             let size = u64::try_from(N).unwrap();
-            DType::new_scalar(TypeStr::with_auto_endianness(TypeKind::ByteStr, size, None))
+            DType::new_scalar(TypeStr::with_auto_endianness(TypeChar::ByteStr, size, None))
         }
     }
 }
