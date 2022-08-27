@@ -237,7 +237,9 @@ impl<R: io::Read> NpyFile<R> {
         let dtype = DType::from_descr(descr)?;
 
         let n_records = shape.iter().product();
-        let item_size = dtype.num_bytes();
+        let item_size = dtype.num_bytes().ok_or_else(|| {
+            invalid_data(format_args!("dtype is larger than usize!"))
+        })?;
         let strides = strides(order, &shape);
         Ok(NpyHeader { dtype, shape, strides, order, n_records, item_size })
     }

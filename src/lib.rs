@@ -298,3 +298,4 @@ pub use serialize::FixedSizeBytes;
 pub use serialize::{Serialize, Deserialize, AutoSerialize};
 pub use serialize::{TypeRead, TypeWrite, TypeWriteDyn, TypeReadDyn, DTypeError};
 pub use type_str::{TypeStr, ParseTypeStrError};
+pub use type_str::{Endianness, TypeChar, TimeUnits};
