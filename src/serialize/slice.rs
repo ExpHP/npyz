@@ -151,6 +151,7 @@ fn check_byte_vec_dtype<T: ?Sized>(verb: &'static str, dtype: &DType) -> Result<
     Ok(ByteVecDTypeInfo { type_str: type_str.clone(), size, is_byte_str })
 }
 
+#[cfg(feature = "arrayvec")]
 fn check_array_byte_vec_dtype<T: ?Sized, const N: usize>(verb: &'static str, dtype: &DType) -> Result<ByteVecDTypeInfo, DTypeError> {
     let info = check_byte_vec_dtype::<T>(verb, dtype)?;
     // prevent large |VN types at dtype parsing time because they are impossible to fit
