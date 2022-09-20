@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No changes yet!
+- `NpyFile` now derives `Clone` for clonable `io::Read`s.
 
 ## [0.7.0] - 2022-08-27
 ### Added

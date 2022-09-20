@@ -92,11 +92,13 @@ use crate::serialize::{Deserialize, TypeRead, DTypeError};
 ///     // note:  0 <= i < reader.total_len()
 ///     reader.read_at(i)?
 /// ```
+#[derive(Clone)]
 pub struct NpyFile<R: io::Read> {
     header: NpyHeader,
     reader: R,
 }
 
+#[derive(Clone)]
 struct NpyHeader {
     dtype: DType,
     shape: Vec<u64>,
