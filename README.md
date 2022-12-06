@@ -56,13 +56,15 @@ The name `npyz` is actually an abbreviation.  Here is the full name of the crate
 
 > `npy` plus npz support, and a lot of other features that are frankly a lot more important than npz—not to mention the fact that npz support isn't even actually included in the first release—but I had to call it something, okay
 
-To clarify, `npyz` is a fork of Pavel Potoček's [`npy` crate](https://github.com/potocpav/npy-rs).  The original `npy` supported structured arrays with derives, but had many, many limitations:
+To clarify, `npyz` is a fork of Pavel Potoček's [`npy` crate](https://github.com/potocpav/npy-rs).  The original `npy` supported structured arrays with derives, but had many, many limitations.
 
-* 1D arrays only.
-* Little endian only.
-* No `Complex`, no bytestrings.
-* Reading API based on `&[u8]` instead of `Read`, with the expectation that a user can use a memmap for files too large to fit in memory.
-* No `io::Write`, only one writing API that writes directly to the filesystem.
+Compared to `npy`, `npyz` has:
+
+* Support for multidimensional arrays.
+* Support for big endian files.
+* Support for `Complex`, strings and bytestrings.
+* A more versatile reading API based on `std::io::Read`, so you can read directly from e.g. a [`zip::read::ZipFile`](https://docs.rs/zip/latest/zip/read/struct.ZipFile.html).  The original API required a `&[u8]`, with the expectation that a user can use a memmap for large files.
+* Writing APIs based on `std::io::Write`.
 
 Originally, ~~`nippy`~~ `npyz` was a place for me to protype new features with reckless abandon before finally making a PR to `npy`, but even my first few foundational PRs have yet to be merged upstream.  I believe Pavel has a good head on their shoulders and a great attention to detail, and I appreciated their initial response on my PRs, but nearly two years have passed since the last time I have heard from them. Therefore, I've decided to go forward and publish the fork.
 
