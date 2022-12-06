@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2022-12-06
+
+This is an extremely minor update that just updates the README.
+ 
 ## [0.7.1] - 2022-09-20
 
 - `NpyFile` now derives `Clone` for clonable `io::Read`s.
@@ -64,7 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adds `NpyReader` for reading from an `io::Read`
 - Adds `Builder` and `NpyWriter` for writing to an `io::Write`
 
-[Unreleased]: https://github.com/ExpHP/npyz/compare/0.7.1...HEAD
+[Unreleased]: https://github.com/ExpHP/npyz/compare/0.7.2...HEAD
+[0.7.2]: https://github.com/ExpHP/npyz/compare/0.7.1...0.7.2
 [0.7.1]: https://github.com/ExpHP/npyz/compare/0.7.0...0.7.1
 [0.7.0]: https://github.com/ExpHP/npyz/compare/0.6.0...0.7.0
 [0.6.0]: https://github.com/ExpHP/npyz/compare/0.5.0...0.6.0
