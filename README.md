@@ -11,6 +11,8 @@ read and write `*.npy` files. Files are handled using iterators, so they don't n
 
 `npyz` is a fork and successor of the seemingly-dead [`npy`](https://github.com/potocpav/npy-rs).
 
+[API Documentation on docs.rs](https://docs.rs/npyz)
+
 ## Usage
 
 ```toml
