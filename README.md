@@ -28,14 +28,12 @@ npyz = {version = "0.7", features = ["derive", "complex", "npz", "arrayvec"]}
 Data can now be read from a `*.npy` file:
 
 ```rust
-use npyz::NpyReader;
-
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bytes = std::fs::read("test-data/plain.npy")?;
 
     // Note: In addition to byte slices, this accepts any io::Read
-    let data: NpyReader<f64, _> = NpyReader::new(&bytes[..])?;
-    for number in data {
+    let npy = npyz::NpyFile::new(&bytes[..])?;
+    for number in npy.data::<f64>()? {
         let number = number?;
         eprintln!("{}", number);
     }
