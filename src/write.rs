@@ -442,6 +442,7 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
                 self.fw.seek(SeekFrom::Start(end_pos))?;
             },
         }
+        self.fw.flush()?;
         Ok(())
     }
 
