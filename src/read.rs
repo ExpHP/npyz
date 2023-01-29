@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io;
 
 use crate::header::{Value, DType, read_header, convert_value_to_shape};
@@ -220,7 +221,10 @@ impl<R: io::Read> NpyFile<R> {
         let header = read_header(&mut r)?;
 
         let dict = match header {
-            Value::Map(ref dict) => dict,
+            Value::Dict(dict) => dict
+                .into_iter()
+                .map(|(k, v)| Ok((k.as_string().ok_or(invalid_data("key is not string"))?.to_owned(), v)))
+                .collect::<io::Result<HashMap<String, Value>>>()?,
             _ => return Err(invalid_data("expected a python dict literal")),
         };
 
@@ -229,7 +233,7 @@ impl<R: io::Read> NpyFile<R> {
         };
 
         let order = match expect_key("fortran_order")? {
-            &Value::Bool(b) => Order::from_fortran_order(b),
+            &Value::Boolean(b) => Order::from_fortran_order(b),
             _ => return Err(invalid_data(format_args!("'fortran_order' value is not a bool"))),
         };
 
