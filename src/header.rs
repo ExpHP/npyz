@@ -167,18 +167,25 @@ fn convert_value_to_field_shape(field: &Value) -> io::Result<Vec<u64>> {
         .ok_or(invalid_data("shape must be list or tuple"))?
 }
 
-fn convert_value_to_positive_integer(number: &Value) -> io::Result<u64> {
+fn convert_value_to_nonnegative_integer(number: &Value) -> io::Result<u64> {
     if let Value::Integer(number) = number {
         let parts = number.to_u64_digits();
-        if parts.0 != Sign::Plus {
-            return Err(invalid_data("number must be positive"));
+        match parts {
+            (Sign::Minus, _) => Err(invalid_data("number cannot be negative")),
+            (Sign::NoSign, _) => Ok(0),
+            (_, parts) if parts.len() == 1 => Ok(parts[0]),
+            _ => Err(invalid_data("number cannot be larger than u64"))
         }
-        if parts.1.len() > 1 {
-            return Err(invalid_data("number cannot be larger than u64"));
-        }
-        Ok(parts.1[0])
     } else {
-        Err(invalid_data("must be a number"))
+        Err(invalid_data("value must be number"))
+    }
+}
+
+fn convert_value_to_positive_integer(number: &Value) -> io::Result<u64> {
+    match convert_value_to_nonnegative_integer(number) {
+        Ok(num) if num > 0 => Ok(num),
+        Ok(_) => Err(invalid_data("number must be positive")),
+        Err(e) => Err(e)
     }
 }
 
@@ -193,23 +200,8 @@ fn extract_full_array_shape(mut dtype: &DType) -> (Vec<u64>, &DType) {
 
 pub(crate) fn convert_value_to_shape(field: &Value) -> io::Result<Vec<u64>> {
     convert_value_to_sequence(field)
-        .map(|f| f.iter().map(convert_value_to_shape_integer).collect())
+        .map(|f| f.iter().map(convert_value_to_nonnegative_integer).collect())
         .ok_or(invalid_data("shape must be list or tuple"))?
-}
-
-pub fn convert_value_to_shape_integer(number: &Value) -> io::Result<u64> {
-    if let Value::Integer(number) = number {
-        let parts = number.to_u64_digits();
-        if parts.0 != Sign::Plus {
-            return Err(invalid_data("shape integer cannot be negative"));
-        }
-        if parts.1.len() > 1 {
-            return Err(invalid_data("shape integer cannot be larger than u64"));
-        }
-        Ok(parts.1[0])
-    } else {
-        Err(invalid_data("shape elements must be number"))
-    }
 }
 
 fn convert_string_to_type_str(string: &str) -> io::Result<TypeStr> {
