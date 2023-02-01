@@ -1,9 +1,10 @@
 
-use std::collections::HashMap;
 use std::io;
 
-use nom::IResult;
+use py_literal::ParseError;
+pub use py_literal::Value;
 use byteorder::{LittleEndian, ReadBytesExt};
+use num_bigint::Sign;
 
 use crate::type_str::TypeStr;
 
@@ -124,6 +125,7 @@ fn convert_list_to_record_fields(values: &[Value]) -> io::Result<Vec<Field>> {
     values.iter()
         .map(|value| match *value {
             Value::List(ref tuple) => convert_tuple_to_record_field(tuple),
+            Value::Tuple(ref tuple) => convert_tuple_to_record_field(tuple),
             _ => Err(invalid_data("list must contain list or tuple"))
         })
         .collect()
@@ -150,24 +152,40 @@ fn convert_tuple_to_record_field(tuple: &[Value]) -> io::Result<Field> {
     Ok(Field { name, dtype })
 }
 
+fn convert_value_to_sequence(field: &Value) -> Option<&[Value]> {
+    match field {
+        &Value::List(ref lengths) => Some(lengths),
+        &Value::Tuple(ref lengths) => Some(lengths),
+        _ => None
+    }
+}
+
 // FIXME: Remove; no reason to forbid size 0
 fn convert_value_to_field_shape(field: &Value) -> io::Result<Vec<u64>> {
-    if let Value::List(ref lengths) = *field {
-        lengths.iter().map(convert_value_to_positive_integer).collect()
+    convert_value_to_sequence(field)
+        .map(|f| f.iter().map(convert_value_to_positive_integer).collect())
+        .ok_or(invalid_data("shape must be list or tuple"))?
+}
+
+fn convert_value_to_nonnegative_integer(number: &Value) -> io::Result<u64> {
+    if let Value::Integer(number) = number {
+        let parts = number.to_u64_digits();
+        match parts {
+            (Sign::Minus, _) => Err(invalid_data("number cannot be negative")),
+            (Sign::NoSign, _) => Ok(0),
+            (_, parts) if parts.len() == 1 => Ok(parts[0]),
+            _ => Err(invalid_data("number cannot be larger than u64"))
+        }
     } else {
-        Err(invalid_data("shape must be list or tuple"))
+        Err(invalid_data("value must be number"))
     }
 }
 
 fn convert_value_to_positive_integer(number: &Value) -> io::Result<u64> {
-    if let Value::Integer(number) = *number {
-        if number > 0 {
-            Ok(number as u64)
-        } else {
-            Err(invalid_data("number must be positive"))
-        }
-    } else {
-        Err(invalid_data("must be a number"))
+    match convert_value_to_nonnegative_integer(number) {
+        Ok(num) if num > 0 => Ok(num),
+        Ok(_) => Err(invalid_data("number must be positive")),
+        Err(e) => Err(e)
     }
 }
 
@@ -181,23 +199,9 @@ fn extract_full_array_shape(mut dtype: &DType) -> (Vec<u64>, &DType) {
 }
 
 pub(crate) fn convert_value_to_shape(field: &Value) -> io::Result<Vec<u64>> {
-    if let Value::List(ref lengths) = *field {
-        lengths.iter().map(convert_value_to_shape_integer).collect()
-    } else {
-        Err(invalid_data("shape must be list or tuple"))
-    }
-}
-
-pub fn convert_value_to_shape_integer(number: &Value) -> io::Result<u64> {
-    if let Value::Integer(number) = *number {
-        if number >= 0 {
-            Ok(number as u64)
-        } else {
-            Err(invalid_data("shape integer cannot be negative"))
-        }
-    } else {
-        Err(invalid_data("shape elements must be number"))
-    }
+    convert_value_to_sequence(field)
+        .map(|f| f.iter().map(convert_value_to_nonnegative_integer).collect())
+        .ok_or(invalid_data("shape must be list or tuple"))?
 }
 
 fn convert_string_to_type_str(string: &str) -> io::Result<TypeStr> {
@@ -209,15 +213,6 @@ fn convert_string_to_type_str(string: &str) -> io::Result<TypeStr> {
 
 fn invalid_data(message: impl ToString) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.to_string())
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Value {
-    String(String),
-    Integer(i64),
-    Bool(bool),
-    List(Vec<Value>),
-    Map(HashMap<String, Value>),
 }
 
 pub(crate) fn read_header(r: &mut dyn io::Read) -> io::Result<Value> {
@@ -232,20 +227,14 @@ pub(crate) fn read_header(r: &mut dyn io::Read) -> io::Result<Value> {
 }
 
 fn parse_header_text_to_io_result(bytes: &[u8]) -> io::Result<Value> {
-    match parser::value(bytes) {
-        IResult::Done(remainder, header) => {
-            if !remainder.iter().all(|b| b" \t\n\r\0".contains(b)) {
-                return Err(invalid_data(format_args!("unexpected trailing data in header: {:?}", remainder)));
-            }
-            Ok(header)
-        },
-        IResult::Incomplete(needed) => {
-            Err(invalid_data(format_args!("could not parse Python expression: {:?}", needed)))
-        },
-        IResult::Error(err) => {
-            Err(invalid_data(format_args!("could not parse Python expression: {:?}", err)))
-        },
-    }
+    let without_newline = match bytes.split_last() {
+        Some((&b'\n', rest)) => rest,
+        _ => bytes,
+    };
+    std::str::from_utf8(without_newline)
+        .map_err(|_| invalid_data("could not parse utf-8"))?
+        .parse()
+        .map_err(|e: ParseError| invalid_data(format_args!("could not parse Python expression: {}", e.to_string())))
 }
 
 struct PreHeader {
@@ -326,80 +315,6 @@ pub(crate) fn get_minimal_version(required_props: VersionProps) -> (u8, u8) {
     } else {
         (1, 0)
     }
-}
-
-mod parser {
-    use super::Value;
-    use nom::*;
-
-    named!(pub value<Value>, alt!(integer | boolean | string | list | map));
-
-    named!(pub integer<Value>,
-        map!(
-            map_res!(
-                map_res!(
-                    ws!(digit),
-                    ::std::str::from_utf8
-                ),
-                ::std::str::FromStr::from_str
-            ),
-            Value::Integer
-        )
-    );
-
-    named!(pub boolean<Value>,
-        ws!(alt!(
-            tag!("True") => { |_| Value::Bool(true) } |
-            tag!("False") => { |_| Value::Bool(false) }
-        ))
-    );
-
-    named!(pub string<Value>,
-        map!(
-            map!(
-                map_res!(
-                    ws!(alt!(
-                        delimited!(tag!("\""),
-                            is_not_s!("\""),
-                            tag!("\"")) |
-                        delimited!(tag!("\'"),
-                            is_not_s!("\'"),
-                            tag!("\'"))
-                        )),
-                    ::std::str::from_utf8
-                ),
-                |s: &str| s.to_string()
-            ),
-            Value::String
-        )
-    );
-
-    named!(pub list<Value>,
-        map!(
-            ws!(alt!(
-                delimited!(tag!("["),
-                    terminated!(separated_list!(tag!(","), value), alt!(tag!(",") | tag!(""))),
-                    tag!("]")) |
-                delimited!(tag!("("),
-                    terminated!(separated_list!(tag!(","), value), alt!(tag!(",") | tag!(""))),
-                    tag!(")"))
-            )),
-            Value::List
-        )
-    );
-
-    named!(pub map<Value>,
-        map!(
-            ws!(
-                delimited!(tag!("{"),
-                    terminated!(separated_list!(tag!(","),
-                        separated_pair!(map_opt!(string, |it| match it { Value::String(s) => Some(s), _ => None }), tag!(":"), value)
-                    ), alt!(tag!(",") | tag!(""))),
-                    tag!("}"))
-            ),
-            |v: Vec<_>| Value::Map(v.into_iter().collect())
-        )
-    );
 }
 
 
@@ -539,7 +454,7 @@ mod tests {
 
     #[test]
     fn errors_on_value_variants_that_cannot_be_converted() {
-        let no_dtype = Value::Bool(false);
+        let no_dtype = Value::Boolean(false);
         assert!(DType::from_descr(&no_dtype).is_err());
     }
 
@@ -551,7 +466,7 @@ mod tests {
 
     #[test]
     fn errors_when_record_list_entry_contains_too_few_items() {
-        let faulty_list = parse("[('a')]");
+        let faulty_list = parse("[('a',)]");
         assert!(DType::from_descr(&faulty_list).is_err());
     }
 
@@ -584,9 +499,17 @@ mod tests {
         assert!(convert_value_to_positive_integer(&parse("0")).is_err());
     }
 
+    #[test]
+    fn errors_when_shape_number_is_negative() {
+        assert!(convert_value_to_positive_integer(&parse("-1")).is_err());
+    }
+
+    #[test]
+    fn errors_when_shape_number_is_larger_than_u64() {
+        assert!(convert_value_to_positive_integer(&parse("18446744073709551616")).is_err());
+    }
+
     fn parse(source: &str) -> Value {
-        parser::value(source.as_bytes())
-            .to_result()
-            .expect("could not parse Python expression")
+        source.parse().expect("could not parse Python expression")
     }
 }
