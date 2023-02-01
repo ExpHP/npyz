@@ -1,5 +1,6 @@
 
 use std::io;
+use core::fmt;
 
 use py_literal::ParseError;
 pub use py_literal::Value;
@@ -61,7 +62,7 @@ impl DType {
             Record(fields) => {
                 fields.iter()
                     .map(|Field { name, dtype }| {
-                        let name = Value::String(name.to_string()); // for proper escape syntax
+                        let name = PyUtf8StringLiteral(name);
                         match dtype {
                             ty@Plain(_) |
                             ty@Record(_) => format!("({}, {}), ", name, ty.descr()),
@@ -310,6 +311,24 @@ pub(crate) fn get_version_props(version: (u8, u8)) -> io::Result<VersionProps> {
     }
 }
 
+/// Formats a python string literal.
+///
+/// Unlike the [`Display`] impl for [`py_literal`], the string is encoded in
+/// UTF-8 (supported by NPY version 3), resulting in fewer escapes.
+struct PyUtf8StringLiteral<'a>(&'a str);
+
+impl fmt::Display for PyUtf8StringLiteral<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let replaced = {
+            self.0.replace("\\", "\\\\")
+                .replace("'", "\\'")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n")
+        };
+        write!(f, "'{}'", replaced)
+    }
+}
+
 pub(crate) fn get_minimal_version(required_props: VersionProps) -> (u8, u8) {
     if required_props.encoding == HeaderEncoding::Utf8 {
         (3, 0)
@@ -410,7 +429,7 @@ mod tests {
     fn funny_member_name_roundtrips() -> TestResult {
         let original_dtype = DType::Record(vec![
             Field {
-                name: r#" '" "#.to_string(),
+                name: " \'\"\r\n\\ ".to_string(),
                 dtype: DType::Plain("<u2".parse()?),
             },
         ]);
@@ -526,6 +545,6 @@ mod tests {
     }
 
     fn parse(source: &str) -> Value {
-        source.parse().expect("could not parse Python expression")
+        source.parse().unwrap_or_else(|e| panic!("could not parse Python expression:\n{}", e))
     }
 }
