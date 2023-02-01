@@ -441,6 +441,62 @@ fn nested_array_of_struct() {
     assert_eq!(data.into_vec::<Outer>().unwrap(), vec![row]);
 }
 
+#[test]
+fn roundtrip_zero_length_array_member() {
+    // Similar to:
+    //
+    // ```
+    // import numpy as np
+    //
+    // arr = np.array([
+    //     (3, np.zeros((3, 0, 7))),
+    //     (4, np.zeros((3, 0, 7))),
+    // ], dtype=[
+    //     ('a', '<i4'),
+    //     ('b', '<i4', [3, 0, 7]),
+    // ])
+    // ```
+    #[derive(npyz::Serialize, npyz::Deserialize)]
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    struct Row {
+        a: i32,
+        b: [[[i32; 7]; 0]; 3],
+    }
+
+    let dtype = DType::Record(vec![
+        Field { name: "a".into(), dtype: DType::Plain("<i4".parse().unwrap()) },
+        Field { name: "b".into(), dtype: DType::Array(3, Box::new(
+            DType::Array(0, Box::new(
+                DType::Array(7, Box::new(
+                    DType::Plain("<i4".parse().unwrap())
+                )),
+            )),
+        ))},
+    ]);
+
+    let row_0 = Row { a: 3, b: [[], [], []] };
+    let row_1 = Row { a: 4, b: [[], [], []] };
+
+    let expected_data_bytes = {
+        let mut buf = vec![];
+        buf.extend_from_slice(&i32::to_le_bytes(3));
+        buf.extend_from_slice(&i32::to_le_bytes(4));
+        buf
+    };
+
+    let mut writer = io::Cursor::new(vec![]);
+    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
+    out_file.extend(vec![row_0, row_1]).unwrap();
+    out_file.finish().unwrap();
+
+    let buffer = writer.into_inner();
+    assert!(buffer.ends_with(&expected_data_bytes));
+
+    let data = npyz::NpyFile::new(&buffer[..]).unwrap();
+    assert_eq!(data.dtype(), dtype);
+    assert_eq!(data.into_vec::<Row>().unwrap(), vec![row_0, row_1]);
+}
+
 // Try ndim == 0
 #[test]
 fn roundtrip_scalar() {

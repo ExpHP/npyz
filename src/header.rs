@@ -147,7 +147,7 @@ fn convert_tuple_to_record_field(tuple: &[Value]) -> io::Result<Field> {
 
     let mut dtype = DType::from_descr(&tuple[1])?;
     if let Some(s) = tuple.get(2) {
-        let mut shape = convert_value_to_field_shape(s)?;
+        let mut shape = convert_value_to_shape(s)?;
         while let Some(dim) = shape.pop() {
             dtype = DType::Array(dim, Box::new(dtype));
         }
@@ -164,32 +164,17 @@ fn convert_value_to_sequence(field: &Value) -> Option<&[Value]> {
     }
 }
 
-// FIXME: Remove; no reason to forbid size 0
-fn convert_value_to_field_shape(field: &Value) -> io::Result<Vec<u64>> {
-    convert_value_to_sequence(field)
-        .map(|f| f.iter().map(convert_value_to_positive_integer).collect())
-        .ok_or(invalid_data("shape must be list or tuple"))?
-}
-
-fn convert_value_to_nonnegative_integer(number: &Value) -> io::Result<u64> {
+fn convert_value_to_shape_integer(number: &Value) -> io::Result<u64> {
     if let Value::Integer(number) = number {
         let parts = number.to_u64_digits();
         match parts {
-            (Sign::Minus, _) => Err(invalid_data("number cannot be negative")),
+            (Sign::Minus, _) => Err(invalid_data("dimension cannot be negative")),
             (Sign::NoSign, _) => Ok(0),
             (_, parts) if parts.len() == 1 => Ok(parts[0]),
-            _ => Err(invalid_data("number cannot be larger than u64"))
+            _ => Err(invalid_data("dimension cannot be larger than u64"))
         }
     } else {
-        Err(invalid_data("value must be number"))
-    }
-}
-
-fn convert_value_to_positive_integer(number: &Value) -> io::Result<u64> {
-    match convert_value_to_nonnegative_integer(number) {
-        Ok(num) if num > 0 => Ok(num),
-        Ok(_) => Err(invalid_data("number must be positive")),
-        Err(e) => Err(e)
+        Err(invalid_data("dimension must be an integer"))
     }
 }
 
@@ -204,7 +189,7 @@ fn extract_full_array_shape(mut dtype: &DType) -> (Vec<u64>, &DType) {
 
 pub(crate) fn convert_value_to_shape(field: &Value) -> io::Result<Vec<u64>> {
     convert_value_to_sequence(field)
-        .map(|f| f.iter().map(convert_value_to_nonnegative_integer).collect())
+        .map(|f| f.iter().map(convert_value_to_shape_integer).collect())
         .ok_or(invalid_data("shape must be list or tuple"))?
 }
 
@@ -520,28 +505,23 @@ mod tests {
     #[test]
     fn errors_when_shape_is_not_a_list() {
         let no_shape = parse("1");
-        assert!(convert_value_to_field_shape(&no_shape).is_err());
+        assert!(convert_value_to_shape(&no_shape).is_err());
     }
 
     #[test]
     fn errors_when_shape_number_is_not_a_number() {
         let no_number = parse("[]");
-        assert!(convert_value_to_positive_integer(&no_number).is_err());
-    }
-
-    #[test]
-    fn errors_when_shape_number_is_not_positive() {
-        assert!(convert_value_to_positive_integer(&parse("0")).is_err());
+        assert!(convert_value_to_shape_integer(&no_number).is_err());
     }
 
     #[test]
     fn errors_when_shape_number_is_negative() {
-        assert!(convert_value_to_positive_integer(&parse("-1")).is_err());
+        assert!(convert_value_to_shape_integer(&parse("-1")).is_err());
     }
 
     #[test]
     fn errors_when_shape_number_is_larger_than_u64() {
-        assert!(convert_value_to_positive_integer(&parse("18446744073709551616")).is_err());
+        assert!(convert_value_to_shape_integer(&parse("18446744073709551616")).is_err());
     }
 
     fn parse(source: &str) -> Value {
