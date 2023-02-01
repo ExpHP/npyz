@@ -23,7 +23,6 @@ No features are enabled by default.  Here is the list of existing features:
   * **`"arrayvec"`** enables the use of [`arrayvec::ArrayVec`] and [`arrayvec::ArrayString`]
     as alternatives to `Vec` and `String` for some string types.
 * **`"derive"`** enables derives of traits for working with structured arrays.
-  This will add a build-time dependency on common proc macro utilities (`syn`, `quote`).
 * **`"npz"`** enables adapters for working with NPZ files
   (including scipy sparse matrices),
   adding a public dependency on the `zip` crate.

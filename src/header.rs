@@ -1,8 +1,10 @@
 
 use std::io;
 
+use py_literal::ParseError;
 pub use py_literal::Value;
 use byteorder::{LittleEndian, ReadBytesExt};
+use num_bigint::Sign;
 
 use crate::type_str::TypeStr;
 
@@ -87,7 +89,7 @@ impl DType {
     // not part of stable API, but needed by the serialize_array test
     #[doc(hidden)]
     pub fn parse(source: &str) -> io::Result<Self> {
-        let descr = parse_header_text_to_io_result(&[source.as_bytes(), b"\n"].concat())?;
+        let descr = parse_header_text_to_io_result(source.as_bytes())?;
         Self::from_descr(&descr)
     }
 
@@ -150,25 +152,31 @@ fn convert_tuple_to_record_field(tuple: &[Value]) -> io::Result<Field> {
     Ok(Field { name, dtype })
 }
 
+fn convert_value_to_sequence(field: &Value) -> Option<&[Value]> {
+    match field {
+        &Value::List(ref lengths) => Some(lengths),
+        &Value::Tuple(ref lengths) => Some(lengths),
+        _ => None
+    }
+}
+
 // FIXME: Remove; no reason to forbid size 0
 fn convert_value_to_field_shape(field: &Value) -> io::Result<Vec<u64>> {
-    if let Value::List(ref lengths) = *field {
-        lengths.iter().map(convert_value_to_positive_integer).collect()
-    } else if let Value::Tuple(ref lengths) = *field {
-        lengths.iter().map(convert_value_to_positive_integer).collect()
-    } else {
-        Err(invalid_data("shape must be list or tuple"))
-    }
+    convert_value_to_sequence(field)
+        .map(|f| f.iter().map(convert_value_to_positive_integer).collect())
+        .ok_or(invalid_data("shape must be list or tuple"))?
 }
 
 fn convert_value_to_positive_integer(number: &Value) -> io::Result<u64> {
     if let Value::Integer(number) = number {
-        let parts = number.to_u64_digits().1;
-        if !parts.is_empty() && parts[0] > 0 {
-            Ok(parts[0])
-        } else {
-            Err(invalid_data("number must be positive"))
+        let parts = number.to_u64_digits();
+        if parts.0 != Sign::Plus {
+            return Err(invalid_data("number must be positive"));
         }
+        if parts.1.len() > 1 {
+            return Err(invalid_data("number cannot be larger than u64"));
+        }
+        Ok(parts.1[0])
     } else {
         Err(invalid_data("must be a number"))
     }
@@ -184,23 +192,21 @@ fn extract_full_array_shape(mut dtype: &DType) -> (Vec<u64>, &DType) {
 }
 
 pub(crate) fn convert_value_to_shape(field: &Value) -> io::Result<Vec<u64>> {
-    if let Value::List(ref lengths) = *field {
-        lengths.iter().map(convert_value_to_shape_integer).collect()
-    } else if let Value::Tuple(ref lengths) = *field {
-        lengths.iter().map(convert_value_to_shape_integer).collect()
-    } else {
-        Err(invalid_data("shape must be list or tuple"))
-    }
+    convert_value_to_sequence(field)
+        .map(|f| f.iter().map(convert_value_to_shape_integer).collect())
+        .ok_or(invalid_data("shape must be list or tuple"))?
 }
 
 pub fn convert_value_to_shape_integer(number: &Value) -> io::Result<u64> {
     if let Value::Integer(number) = number {
-        let parts = number.to_u64_digits().1;
-        if !parts.is_empty() && parts[0] > 0 {
-            Ok(parts[0])
-        } else {
-            Err(invalid_data("shape integer cannot be negative"))
+        let parts = number.to_u64_digits();
+        if parts.0 != Sign::Plus {
+            return Err(invalid_data("shape integer cannot be negative"));
         }
+        if parts.1.len() > 1 {
+            return Err(invalid_data("shape integer cannot be larger than u64"));
+        }
+        Ok(parts.1[0])
     } else {
         Err(invalid_data("shape elements must be number"))
     }
@@ -231,17 +237,12 @@ pub(crate) fn read_header(r: &mut dyn io::Read) -> io::Result<Value> {
 fn parse_header_text_to_io_result(bytes: &[u8]) -> io::Result<Value> {
     let without_newline = match bytes.split_last() {
         Some((&b'\n', rest)) => rest,
-        Some(_) | None => return Err(invalid_data("missing newline")),
+        _ => bytes,
     };
-    let as_str = std::str::from_utf8(without_newline).map_err(|_| invalid_data("could not parse utf-8"))?;
-    match as_str.parse() {
-        Ok(value) => {
-            Ok(value)
-        },
-        Err(err) => {
-            Err(invalid_data(format_args!("could not parse Python expression: {:?}", err.to_string())))
-        },
-    }
+    std::str::from_utf8(without_newline)
+        .map_err(|_| invalid_data("could not parse utf-8"))?
+        .parse()
+        .map_err(|e: ParseError| invalid_data(format_args!("could not parse Python expression: {}", e.to_string())))
 }
 
 struct PreHeader {
@@ -504,6 +505,16 @@ mod tests {
     #[test]
     fn errors_when_shape_number_is_not_positive() {
         assert!(convert_value_to_positive_integer(&parse("0")).is_err());
+    }
+
+    #[test]
+    fn errors_when_shape_number_is_negative() {
+        assert!(convert_value_to_positive_integer(&parse("-1")).is_err());
+    }
+
+    #[test]
+    fn errors_when_shape_number_is_larger_than_u64() {
+        assert!(convert_value_to_positive_integer(&parse("18446744073709551616")).is_err());
     }
 
     fn parse(source: &str) -> Value {
