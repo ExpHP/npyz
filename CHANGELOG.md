@@ -6,9 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+### Added
 - `npyz` now uses [`py_literal`](https://crates.io/crates/py_literal) to parse the NPY header, allowing it to support a far greater amount of syntax than before.
 - String metacharacters like `'` in structured array member names are now properly escaped when writing files.
+- Dimensions of length 0 in an array member of a structured array are now permitted. (e.g. `dtype=[('a', '>i4', (4,0,4))]`).
 
 ## [0.7.3] - 2022-12-06
 
