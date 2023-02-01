@@ -60,15 +60,18 @@ impl DType {
             Plain(ty) => format!("'{}'", ty),
             Record(fields) => {
                 fields.iter()
-                    .map(|Field { name, dtype }| match dtype {
-                        ty@Plain(_) |
-                        ty@Record(_) => format!("('{}', {}), ", name, ty.descr()),
+                    .map(|Field { name, dtype }| {
+                        let name = Value::String(name.to_string()); // for proper escape syntax
+                        match dtype {
+                            ty@Plain(_) |
+                            ty@Record(_) => format!("({}, {}), ", name, ty.descr()),
 
-                        array@Array(..) => {
-                            let (shape, elem_ty) = extract_full_array_shape(array);
-                            let shape_str = shape.iter().fold(String::new(), |o, n| o + &format!("{},", n));
-                            format!("('{}', {}, ({})), ", name, elem_ty.descr(), shape_str)
-                        },
+                            array@Array(..) => {
+                                let (shape, elem_ty) = extract_full_array_shape(array);
+                                let shape_str = shape.iter().fold(String::new(), |o, n| o + &format!("{},", n));
+                                format!("({}, {}, ({})), ", name, elem_ty.descr(), shape_str)
+                            },
+                        }
                     }).fold("[".to_string(), |o, n| o + &n) + "]"
             },
 
@@ -400,6 +403,19 @@ mod tests {
             }
         ]);
         assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
+        Ok(())
+    }
+
+    #[test]
+    fn funny_member_name_roundtrips() -> TestResult {
+        let original_dtype = DType::Record(vec![
+            Field {
+                name: r#" '" "#.to_string(),
+                dtype: DType::Plain("<u2".parse()?),
+            },
+        ]);
+        let descr = parse(&original_dtype.descr());
+        assert_eq!(DType::from_descr(&descr).unwrap(), original_dtype);
         Ok(())
     }
 
