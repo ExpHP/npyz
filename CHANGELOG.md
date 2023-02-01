@@ -6,8 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+No changes since the latest release!
+
+## [0.7.4] - 2023-02-01
+
 ### Added
-- `npyz` now uses [`py_literal`](https://crates.io/crates/py_literal) to parse the NPY header, allowing it to support a far greater amount of syntax than before.
+- `npyz` now uses [`py_literal`](https://crates.io/crates/py_literal) to parse the NPY header, allowing it to support a far greater amount of syntax than before.  Thanks @sudo-carson!
 - String metacharacters like `'` in structured array member names are now properly escaped when writing files.
 - Dimensions of length 0 in an array member of a structured array are now permitted. (e.g. `dtype=[('a', '>i4', (4,0,4))]`).
 
@@ -79,8 +83,9 @@ This is an extremely minor update that just updates the README.
 - Adds `NpyReader` for reading from an `io::Read`
 - Adds `Builder` and `NpyWriter` for writing to an `io::Write`
 
-[Unreleased]: https://github.com/ExpHP/npyz/compare/0.7.3...HEAD
-[0.7.3]: https://github.com/ExpHP/npyz/compare/0.7.1...0.7.3
+[Unreleased]: https://github.com/ExpHP/npyz/compare/0.7.4...HEAD
+[0.7.4]: https://github.com/ExpHP/npyz/compare/0.7.3...0.7.4
+[0.7.3]: https://github.com/ExpHP/npyz/compare/0.7.2...0.7.3
 [0.7.2]: https://github.com/ExpHP/npyz/compare/0.7.1...0.7.2
 [0.7.1]: https://github.com/ExpHP/npyz/compare/0.7.0...0.7.1
 [0.7.0]: https://github.com/ExpHP/npyz/compare/0.6.0...0.7.0
