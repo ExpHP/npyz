@@ -6,7 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No changes since the latest release!
+### Added
+- `NpyHeader` is now `pub`.
 
 ## [0.7.4] - 2023-02-01
 
