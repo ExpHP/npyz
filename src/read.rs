@@ -99,9 +99,9 @@ pub struct NpyFile<R: io::Read> {
     reader: R,
 }
 
-/// Object for reading an `npy` file header.
+/// Represents the header portion of an `npy` file.
 ///
-/// Use this if you only want to just parse `npy` metadata.
+/// The header describes the datatype, dimensions, and axis ordering of the data.
 #[derive(Clone)]
 pub struct NpyHeader {
     /// Describes how the bytes in the fixed-size block of memory corresponding to an array item should be interpreted.
@@ -120,37 +120,11 @@ pub struct NpyHeader {
 
 impl NpyHeader {
     /// Parses header from the specified reader.
-    pub fn new(mut r: impl io::Read) -> io::Result<NpyHeader> {
-        let header = read_header(&mut r)?;
-
-        let dict = match header {
-            Value::Dict(dict) => dict
-                .into_iter()
-                .map(|(k, v)| Ok((k.as_string().ok_or(invalid_data("key is not string"))?.to_owned(), v)))
-                .collect::<io::Result<HashMap<String, Value>>>()?,
-            _ => return Err(invalid_data("expected a python dict literal")),
-        };
-
-        let expect_key = |key: &str| {
-            dict.get(key).ok_or_else(|| invalid_data(format_args!("dict is missing key '{}'", key)))
-        };
-
-        let order = match expect_key("fortran_order")? {
-            &Value::Boolean(b) => Order::from_fortran_order(b),
-            _ => return Err(invalid_data(format_args!("'fortran_order' value is not a bool"))),
-        };
-
-        let shape = convert_value_to_shape(expect_key("shape")?)?;
-
-        let descr: &Value = expect_key("descr")?;
-        let dtype = DType::from_descr(descr)?;
-
-        let n_records = shape.iter().product();
-        let item_size = dtype.num_bytes().ok_or_else(|| {
-            invalid_data(format_args!("dtype is larger than usize!"))
-        })?;
-        let strides = strides(order, &shape);
-        Ok(NpyHeader { dtype, shape, strides, order, n_records, item_size })
+    ///
+    /// When called on a reader for a NPY file, this will parse the header and
+    /// advance the reader to the beginning of the raw data stream.
+    pub fn from_reader(r: impl io::Read) -> io::Result<NpyHeader> {
+        NpyHeader::read_and_interpret(r)
     }
 }
 
@@ -195,9 +169,9 @@ impl Order {
 }
 
 impl<R: io::Read> NpyFile<R> {
-    /// Read the header of an `npy` file and construct an `NpyReader` for reading the data.
+    /// Read the header of an `npy` file and construct an `NpyFile` for reading the data.
     pub fn new(mut reader: R) -> io::Result<Self> {
-        let header = NpyHeader::new(&mut reader)?;
+        let header = NpyHeader::read_and_interpret(&mut reader)?;
         Ok(NpyFile { header, reader })
     }
 
@@ -260,6 +234,41 @@ impl<R: io::Read> NpyFile<R> {
         };
         let NpyFile { reader, header } = self;
         Ok(NpyReader { type_reader, header, reader_and_current_index: (reader, 0) })
+    }
+}
+
+impl NpyHeader {
+    fn read_and_interpret(mut r: impl io::Read) -> io::Result<NpyHeader> {
+        let header = read_header(&mut r)?;
+
+        let dict = match header {
+            Value::Dict(dict) => dict
+                .into_iter()
+                .map(|(k, v)| Ok((k.as_string().ok_or(invalid_data("key is not string"))?.to_owned(), v)))
+                .collect::<io::Result<HashMap<String, Value>>>()?,
+            _ => return Err(invalid_data("expected a python dict literal")),
+        };
+
+        let expect_key = |key: &str| {
+            dict.get(key).ok_or_else(|| invalid_data(format_args!("dict is missing key '{}'", key)))
+        };
+
+        let order = match expect_key("fortran_order")? {
+            &Value::Boolean(b) => Order::from_fortran_order(b),
+            _ => return Err(invalid_data(format_args!("'fortran_order' value is not a bool"))),
+        };
+
+        let shape = convert_value_to_shape(expect_key("shape")?)?;
+
+        let descr: &Value = expect_key("descr")?;
+        let dtype = DType::from_descr(descr)?;
+
+        let n_records = shape.iter().product();
+        let item_size = dtype.num_bytes().ok_or_else(|| {
+            invalid_data(format_args!("dtype is larger than usize!"))
+        })?;
+        let strides = strides(order, &shape);
+        Ok(NpyHeader { dtype, shape, strides, order, n_records, item_size })
     }
 }
 
