@@ -44,12 +44,38 @@ use crate::serialize::{Deserialize, TypeRead, DTypeError};
 /// for x in npy.data::<i64>()? {
 ///     sum += x?;  // items are Result
 /// }
-/// println!("{}", sum);
+/// assert_eq!(sum, 84);
 /// # Ok(()) }
 /// ```
 ///
-/// # Migrating from `NpyData`
+/// # Related types
 ///
+/// Is a read adaptor too heavy for you?  [`NpyFile`] is ultimately just a
+/// [`NpyHeader`] paired with its input stream, so you may consider parsing
+/// [`NpyHeader`] instead if you need something easier to clone or send.
+///
+/// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use std::fs::File;
+/// # use std::io;
+/// #
+/// let mut file = io::BufReader::new(File::open("./test-data/c-order.npy")?);
+/// let header = npyz::NpyHeader::from_reader(&mut file)?;
+/// assert_eq!(header.shape(), &[2, 3, 4]);
+///
+/// // now you can store `header` somewhere
+/// // ...
+/// // and later in your program you can construct an NpyFile to read the data
+///
+/// let npy = npyz::NpyFile::with_header(header, file);
+/// let data: Vec<i64> = npy.into_vec()?;
+/// assert_eq!(data.len(), 24);
+/// # Ok(()) }
+/// ```
+///
+/// # Migrating from `npy-rs 0.4.0`
+///
+/// [`NpyData`] is still provided, but it is deprecated in favor of [`NpyFile`].
 /// At construction, since `&[u8]` impls `Read`, you can still use them as input.
 ///
 /// ```text
@@ -99,30 +125,49 @@ pub struct NpyFile<R: io::Read> {
     reader: R,
 }
 
-/// Represents the header portion of an `npy` file.
+/// Represents the parsed header portion of an `npy` file.
 ///
-/// The header describes the datatype, dimensions, and axis ordering of the data.
+/// The header contains all of the information necessary to interpret the raw
+/// data stream.  It provides the datatype, dimensions, and axis ordering of
+/// the data.
+///
+/// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use std::fs::File;
+/// # use std::io;
+/// #
+/// let mut file = io::BufReader::new(File::open("./test-data/c-order.npy")?);
+/// let header = npyz::NpyHeader::from_reader(&mut file)?;
+/// assert_eq!(header.shape(), &[2, 3, 4]);
+///
+/// // now you can store `header` somewhere
+/// // ...
+/// // and later in your program you can construct an NpyFile to read the data
+///
+/// let npy = npyz::NpyFile::with_header(header, file);
+/// let data: Vec<i64> = npy.into_vec()?;
+/// assert_eq!(data.len(), 24);
+/// # Ok(()) }
+/// ```
 #[derive(Clone)]
 pub struct NpyHeader {
-    /// Describes how the bytes in the fixed-size block of memory corresponding to an array item should be interpreted.
-    pub dtype: DType,
-    /// Array shape.
-    pub shape: Vec<u64>,
-    /// Strides for each of the dimensions.
-    pub strides: Vec<u64>,
-    /// Whether the data is in C order or fortran order.
-    pub order: Order,
-    /// Total number of elements.
-    pub n_records: u64,
-    /// Size of each element in bytes.
-    pub item_size: usize,
+    dtype: DType,
+    shape: Vec<u64>,
+    /// Strides of each axis, pre-computed from the shape/order.
+    strides: Vec<u64>,
+    order: Order,
+    /// Total number of elements, pre-computed from the shape.
+    n_records: u64,
+    /// Item size in bytes.
+    item_size: usize,
 }
 
 impl NpyHeader {
-    /// Parses header from the specified reader.
+    /// Parse a header from the reader for an NPY file.
     ///
-    /// When called on a reader for a NPY file, this will parse the header and
-    /// advance the reader to the beginning of the raw data stream.
+    /// The reader must initially be at the beginning of an NPY file. After this
+    /// function returns `Ok(_)`, the reader will have been advanced to the
+    /// beginning of the raw data bytes.
     pub fn from_reader(r: impl io::Read) -> io::Result<NpyHeader> {
         NpyHeader::read_and_interpret(r)
     }
@@ -175,14 +220,35 @@ impl<R: io::Read> NpyFile<R> {
         Ok(NpyFile { header, reader })
     }
 
+    /// Construct from a previously parsed header and a reader for the raw data bytes.
+    pub fn with_header(header: NpyHeader, data_reader: R) -> Self {
+        NpyFile { header, reader: data_reader }
+    }
+
+    /// Access the underlying [`NpyHeader`] object.
+    pub fn header(&self) -> &NpyHeader {
+        &self.header
+    }
+}
+
+// Provided for backwards compatibility.
+impl<R: io::Read> std::ops::Deref for NpyFile<R> {
+    type Target = NpyHeader;
+
+    fn deref(&self) -> &NpyHeader {
+        &self.header
+    }
+}
+
+impl NpyHeader {
     /// Get the dtype as written in the file.
     pub fn dtype(&self) -> DType {
-        self.header.dtype.clone()
+        self.dtype.clone()
     }
 
     /// Get the shape as written in the file.
     pub fn shape(&self) -> &[u64] {
-        &self.header.shape
+        &self.shape
     }
 
     /// Get strides for each of the dimensions.
@@ -191,19 +257,21 @@ impl<R: io::Read> NpyFile<R> {
     /// It is a function of both [`Self::order`] and [`Self::shape`],
     /// provided for your convenience.
     pub fn strides(&self) -> &[u64] {
-        &self.header.strides
+        &self.strides
     }
 
     /// Get whether the data is in C order or fortran order.
     pub fn order(&self) -> Order {
-        self.header.order
+        self.order
     }
 
     /// Get the total number of elements in the file. (This is the product of [`Self::shape`])
     pub fn len(&self) -> u64 {
-        self.header.n_records
+        self.n_records
     }
+}
 
+impl<R: io::Read> NpyFile<R> {
     /// Read all elements into a flat `Vec`, in the order they are stored as.
     ///
     /// This is a convenience wrapper around [`Self::data`] and [`Iterator::collect`].
@@ -263,6 +331,10 @@ impl NpyHeader {
         let descr: &Value = expect_key("descr")?;
         let dtype = DType::from_descr(descr)?;
 
+        Self::from_parts(dtype, shape, order)
+    }
+
+    fn from_parts(dtype: DType, shape: Vec<u64>, order: Order) -> io::Result<NpyHeader> {
         let n_records = shape.iter().product();
         let item_size = dtype.num_bytes().ok_or_else(|| {
             invalid_data(format_args!("dtype is larger than usize!"))
@@ -575,4 +647,19 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_read_boundary_ng() { check_read_panic_boundary(&[1, 2, 3], 3) }
+
+    #[test]
+    fn test_reusing_header() {
+        let bytes = to_bytes_1d(&[100, 101, 102, 103, 104, 105, 106]).unwrap();
+        let mut reader = io::Cursor::new(&bytes[..]);
+
+        let header = NpyHeader::from_reader(&mut reader).unwrap();
+        let npy_1 = NpyFile::with_header(header.clone(), reader.clone());
+        let npy_2 = NpyFile::with_header(header.clone(), reader.clone());
+
+        assert_eq!(
+            npy_1.into_vec::<i32>().unwrap(),
+            npy_2.into_vec::<i32>().unwrap(),
+        );
+    }
 }

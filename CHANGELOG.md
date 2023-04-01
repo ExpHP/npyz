@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `NpyHeader` is now `pub`.
+- Added `NpyHeader` which is a more lightweight form of `NpyFile` that isn't a read adapter.  You could use this for instance to parse multiple raw data streams using the same header.
 
 ## [0.7.4] - 2023-02-01
 
@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7.2] - 2022-12-06
 
 This is an extremely minor update that just updates the README.
- 
+
 ## [0.7.1] - 2022-09-20
 
 ### Added
@@ -37,7 +37,7 @@ This is an extremely minor update that just updates the README.
   (and, of course, `[char]`, `[u32]`, and `str` for serialization).
 - Added support for the `a` type, which is just an alias of `S`.
 - Added the `FixedSizeBytes` wrapper type around `[u8; N]`, which enables
-  deserialization of type `V` without individual allocations per element. 
+  deserialization of type `V` without individual allocations per element.
 - Added the `arrayvec` feature.  This enables deserialization of
   types `U` and `S` without individual allocations per element.
   (thanks to @m-dupont for the initial implementation)
