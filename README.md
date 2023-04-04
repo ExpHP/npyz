@@ -17,7 +17,7 @@ read and write `*.npy` files. Files are handled using iterators, so they don't n
 
 ```toml
 [dependencies]
-npyz = "0.7"
+npyz = "0.8"
 ```
 
 You also may be interested in enabling some features:

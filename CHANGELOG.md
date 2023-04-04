@@ -6,8 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+No unreleased changes yet!
+
+## [0.8.0] - 2023-04-04
+
 ### Added
 - Added `NpyHeader` which is a more lightweight form of `NpyFile` that isn't a read adapter.  You could use this for instance to parse multiple raw data streams using the same header.
+
+### Changed
+- Some of the methods on `NpyFile` have been moved to `NpyHeader`, and are now accessed via `Deref`. If you have been using UFCS to call these methods, you may need to update those callsites.
 
 ## [0.7.4] - 2023-02-01
 
@@ -84,7 +91,8 @@ This is an extremely minor update that just updates the README.
 - Adds `NpyReader` for reading from an `io::Read`
 - Adds `Builder` and `NpyWriter` for writing to an `io::Write`
 
-[Unreleased]: https://github.com/ExpHP/npyz/compare/0.7.4...HEAD
+[Unreleased]: https://github.com/ExpHP/npyz/compare/0.8.0...HEAD
+[0.8.0]: https://github.com/ExpHP/npyz/compare/0.7.4...0.8.0
 [0.7.4]: https://github.com/ExpHP/npyz/compare/0.7.3...0.7.4
 [0.7.3]: https://github.com/ExpHP/npyz/compare/0.7.2...0.7.3
 [0.7.2]: https://github.com/ExpHP/npyz/compare/0.7.1...0.7.2
