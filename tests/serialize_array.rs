@@ -4,6 +4,9 @@ use npyz::{TypeRead, TypeWrite};
 // These tests ideally would be in npyz::serialize::tests, but they require "derive"
 // because fixed-size array types can only exist as record fields.
 
+#[cfg(target_arch="wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 fn reader_output<T: Deserialize>(dtype: &DType, bytes: &[u8]) -> T {
     T::reader(dtype).unwrap_or_else(|e| panic!("{}", e)).read_one(bytes).expect("reader_output failed")
 }
@@ -132,8 +135,11 @@ fn default_dtype() {
     ]));
 }
 
-mod zero_len {
+pub mod zero_len {
     use super::*;
+
+    #[cfg(target_arch="wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
     #[derive(Debug, PartialEq)]

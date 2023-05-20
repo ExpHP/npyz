@@ -511,7 +511,7 @@ fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u
     //
     // Unfortunately testing this edge case is not easy, so to be safe we'll give ourselves more wiggle
     // room than could possibly ever be affected by padding and/or pre-header bytes.   - ExpHP
-    const SAFE_U16_CUTOFF: usize = 0xffff_fc00; // = 0x1_0000_0000 - 0x400 (which doesn't compile WASM)
+    const SAFE_U16_CUTOFF: usize = 0xffff_fc00; // = 0x1_0000_0000 - 0x400 (which doesn't compile on WASM)
 
     let required_props = VersionProps {
         header_size_type: if header_utf8.len() >= SAFE_U16_CUTOFF { U32 } else { U16 },
