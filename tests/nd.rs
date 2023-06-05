@@ -2,12 +2,15 @@ use std::io::Cursor;
 
 use npyz::{Order, WriterBuilder};
 
+#[cfg(target_arch="wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 fn c_order_vec() -> Vec<i64> { vec![1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,6,6,6,6] }
 fn fortran_order_vec() -> Vec<i64> { vec![1,4,2,5,3,6,1,4,2,5,3,6,1,4,2,5,3,6,1,4,2,5,3,6] }
 
 #[test]
 fn read_c_order() {
-    let bytes = std::fs::read("test-data/c-order.npy").unwrap();
+    let bytes = include_bytes!("../test-data/c-order.npy");
     let arr = npyz::NpyFile::new(&bytes[..]).unwrap();
     assert_eq!(arr.shape(), &[2, 3, 4][..]);
     assert_eq!(arr.order(), Order::C);
@@ -18,7 +21,7 @@ fn read_c_order() {
 
 #[test]
 fn read_fortran_order() {
-    let bytes = std::fs::read("test-data/f-order.npy").unwrap();
+    let bytes = include_bytes!("../test-data/f-order.npy");
     let arr = npyz::NpyFile::new(&bytes[..]).unwrap();
     assert_eq!(arr.shape(), &[2, 3, 4][..]);
     assert_eq!(arr.order(), Order::Fortran);

@@ -8,6 +8,10 @@ use std::io::{self, Read, Write, Cursor};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 use npyz::{DType, Field, Serialize, Deserialize, AutoSerialize, WriterBuilder};
 
+// Allows to use the `#[test]` on WASM.
+#[cfg(target_arch="wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 #[derive(Serialize, Deserialize, AutoSerialize)]
 #[derive(Debug, PartialEq, Clone)]
 struct Nested {

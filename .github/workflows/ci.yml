@@ -48,3 +48,8 @@ jobs:
         with:
           command: bench
           args: --workspace --all-features
+      - name: WASM
+        run: >
+          # Get wasm pack
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          ./run_wasm_tests.sh
