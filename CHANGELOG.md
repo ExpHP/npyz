@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 No unreleased changes yet!
 
+## [0.8.1] - 2023-06-05
+
+### Added
+- npyz now has experimental support for WASM.  Thanks, @bluenote10!  Not all cargo features are supported/tested yet; please see [this issue](https://github.com/ExpHP/npyz/issues/65#issuecomment-1577409055).
+
 ## [0.8.0] - 2023-04-04
 
 ### Added
@@ -91,7 +96,8 @@ This is an extremely minor update that just updates the README.
 - Adds `NpyReader` for reading from an `io::Read`
 - Adds `Builder` and `NpyWriter` for writing to an `io::Write`
 
-[Unreleased]: https://github.com/ExpHP/npyz/compare/0.8.0...HEAD
+[Unreleased]: https://github.com/ExpHP/npyz/compare/0.8.1...HEAD
+[0.8.1]: https://github.com/ExpHP/npyz/compare/0.8.0...0.8.1
 [0.8.0]: https://github.com/ExpHP/npyz/compare/0.7.4...0.8.0
 [0.7.4]: https://github.com/ExpHP/npyz/compare/0.7.3...0.7.4
 [0.7.3]: https://github.com/ExpHP/npyz/compare/0.7.2...0.7.3
