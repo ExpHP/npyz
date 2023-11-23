@@ -1,5 +1,7 @@
 //! Integers, floats, complex.
 
+#[cfg(feature = "half")]
+use half::f16;
 use std::io;
 use std::marker::PhantomData;
 
@@ -74,6 +76,8 @@ macro_rules! derive_float_primitive_read_write {
 
 derive_int_primitive_read_write! { u8 u16 u32 u64 }
 derive_int_primitive_read_write! { i8 i16 i32 i64 }
+#[cfg(feature = "half")]
+derive_float_primitive_read_write! { f16 as u16 }
 derive_float_primitive_read_write! { f32 as u32 }
 derive_float_primitive_read_write! { f64 as u64 }
 
@@ -249,6 +253,11 @@ impl_primitive_serializable! {
     npy: [ (main_ty: TypeChar::Float) (support_ty: TypeChar::Float) ]
 }
 
+#[cfg(feature = "half")]
+impl_primitive_serializable! {
+    rust: [ [2 f16] ]
+    npy: [ (main_ty: TypeChar::Float) (support_ty: TypeChar::Float) ]
+}
 impl_primitive_serializable! {
     rust: [ [1 bool] ]
     npy: [ (main_ty: TypeChar::Bool) (support_ty: TypeChar::Bool) ]
@@ -374,6 +383,36 @@ mod tests {
 
         assert_eq!(writer_output::<bool>(&dtype, &false), &[0]);
         assert_eq!(writer_output::<bool>(&dtype, &true), &[1]);
+    }
+
+    #[test]
+    #[cfg(feature = "half")]
+    fn native_half_types() {
+        use half::f16;
+
+        let c = f16::from_f32_const(42.69);
+        let be_bytes = blob![be(c.to_bits())];
+        let le_bytes = blob![le(c.to_bits())];
+
+        let be = DType::parse(&format!("'>f2'")).unwrap();
+        let le = DType::parse(&format!("'<f2'")).unwrap();
+
+        assert_eq!(reader_output::<f16>(&be, &be_bytes), c);
+        assert_eq!(reader_output::<f16>(&le, &le_bytes), c);
+        assert_eq!(writer_output::<f16>(&be, &c), be_bytes);
+        assert_eq!(writer_output::<f16>(&le, &c), le_bytes);
+
+        let c = f16::from_f32_const(42.69);
+        let be_bytes = blob![be(c.to_bits())];
+        let le_bytes = blob![le(c.to_bits())];
+
+        let be = DType::parse(&format!("'>f2'")).unwrap();
+        let le = DType::parse(&format!("'<f2'")).unwrap();
+
+        assert_eq!(reader_output::<f16>(&be, &be_bytes), c);
+        assert_eq!(reader_output::<f16>(&le, &le_bytes), c);
+        assert_eq!(writer_output::<f16>(&be, &c), be_bytes);
+        assert_eq!(writer_output::<f16>(&le, &c), le_bytes);
     }
 
     #[test]

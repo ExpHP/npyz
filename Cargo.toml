@@ -19,17 +19,21 @@ readme = "README.md"
 all-features = true
 
 [workspace]
-members = [ "derive" ]
+members = ["derive"]
 
 [dependencies]
 byteorder = "1"
 py_literal = "0.4"
-zip = { version = "0.6", optional = true }  # NOTICE: also in dev-dependencies
+zip = { version = "0.6", optional = true } # NOTICE: also in dev-dependencies
 num-bigint = "0.4"
+
+# required for f16 support
+half = { version = "2.3.1", optional = true }
 
 # NOTE: public dependencies, so make sure the doc links in lib.rs are kept in sync
 num-complex = { version = "0.4", optional = true }
 arrayvec = { version = "0.7.2", optional = true }
+
 
 [dependencies.npyz-derive]
 path = "derive"
@@ -47,7 +51,7 @@ sprs = { version = "0.11", default-features = false }
 bencher = { version = "0.1" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-zip = { version = "0.6" }  # NOTICE: also in dependencies
+zip = { version = "0.6" } # NOTICE: also in dependencies
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen = "0.2"
@@ -60,6 +64,7 @@ default = []
 derive = ["dep:npyz-derive"]
 arrayvec = ["dep:arrayvec"]
 complex = ["dep:num-complex"]
+half = ["dep:half"]
 npz = ["dep:zip"]
 
 [[bench]]
