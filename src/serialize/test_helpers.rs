@@ -1,5 +1,5 @@
+use super::{Deserialize, Serialize, TypeRead, TypeWrite};
 use crate::header::DType;
-use super::{TypeRead, TypeWrite, Serialize, Deserialize};
 
 /// Helper to generate a blob of bytes.
 macro_rules! blob {
@@ -38,7 +38,9 @@ mod helper_funcs {
         let type_reader = T::reader(dtype).unwrap_or_else(|e| panic!("{}", e));
 
         let mut reader = bytes;
-        let value = type_reader.read_one(&mut reader).expect("reader_output failed");
+        let value = type_reader
+            .read_one(&mut reader)
+            .expect("reader_output failed");
         assert_eq!(reader.len(), 0, "reader did not read all bytes");
         value
     }
@@ -51,21 +53,27 @@ mod helper_funcs {
     }
     pub fn reader_expect_read_ok<T: Deserialize>(dtype: &DType, bytes: &[u8]) {
         let mut reader = bytes;
-        T::reader(dtype).unwrap_or_else(|e| panic!("{}", e))
+        T::reader(dtype)
+            .unwrap_or_else(|e| panic!("{}", e))
             .read_one(&mut reader)
-            .ok().expect("reader_expect_read_ok failed!");
+            .ok()
+            .expect("reader_expect_read_ok failed!");
         assert_eq!(reader.len(), 0, "reader did not read all bytes");
     }
     pub fn reader_expect_read_err<T: Deserialize>(dtype: &DType, bytes: &[u8]) {
-        T::reader(dtype).unwrap_or_else(|e| panic!("{}", e))
+        T::reader(dtype)
+            .unwrap_or_else(|e| panic!("{}", e))
             .read_one(bytes)
-            .err().expect("reader_expect_read_err failed!");
+            .err()
+            .expect("reader_expect_read_err failed!");
     }
 
     pub fn writer_output<T: Serialize + ?Sized>(dtype: &DType, value: &T) -> Vec<u8> {
         let mut vec = vec![];
-        T::writer(dtype).unwrap_or_else(|e| panic!("{}", e))
-            .write_one(&mut vec, value).unwrap();
+        T::writer(dtype)
+            .unwrap_or_else(|e| panic!("{}", e))
+            .write_one(&mut vec, value)
+            .unwrap();
         vec
     }
 
@@ -77,15 +85,18 @@ mod helper_funcs {
     }
     pub fn writer_expect_write_ok<T: Serialize + ?Sized>(dtype: &DType, value: &T) {
         let mut vec = vec![];
-        T::writer(dtype).unwrap_or_else(|e| panic!("{}", e))
+        T::writer(dtype)
+            .unwrap_or_else(|e| panic!("{}", e))
             .write_one(&mut vec, value)
-            .ok().expect("writer_expect_write_ok failed!");
+            .ok()
+            .expect("writer_expect_write_ok failed!");
     }
     pub fn writer_expect_write_err<T: Serialize + ?Sized>(dtype: &DType, value: &T) {
         let mut vec = vec![];
-        T::writer(dtype).unwrap_or_else(|e| panic!("{}", e))
+        T::writer(dtype)
+            .unwrap_or_else(|e| panic!("{}", e))
             .write_one(&mut vec, value)
-            .err().expect("writer_expect_write_err failed!");
+            .err()
+            .expect("writer_expect_write_err failed!");
     }
 }
-

@@ -2,11 +2,19 @@ use std::io::Cursor;
 
 use npyz::{Order, WriterBuilder};
 
-#[cfg(target_arch="wasm32")]
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
-fn c_order_vec() -> Vec<i64> { vec![1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,6,6,6,6] }
-fn fortran_order_vec() -> Vec<i64> { vec![1,4,2,5,3,6,1,4,2,5,3,6,1,4,2,5,3,6,1,4,2,5,3,6] }
+fn c_order_vec() -> Vec<i64> {
+    vec![
+        1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6,
+    ]
+}
+fn fortran_order_vec() -> Vec<i64> {
+    vec![
+        1, 4, 2, 5, 3, 6, 1, 4, 2, 5, 3, 6, 1, 4, 2, 5, 3, 6, 1, 4, 2, 5, 3, 6,
+    ]
+}
 
 #[test]
 fn read_c_order() {
@@ -39,7 +47,8 @@ fn write_c_order() {
                 .default_dtype()
                 .shape(&[2, 3, 4])
                 .writer(&mut buf)
-                .begin_nd().unwrap()
+                .begin_nd()
+                .unwrap()
         };
         npy.extend(c_order_vec()).unwrap();
         npy.finish().unwrap();
@@ -61,7 +70,8 @@ fn write_fortran_order() {
                 .order(Order::Fortran)
                 .shape(&[2, 3, 4])
                 .writer(&mut buf)
-                .begin_nd().unwrap()
+                .begin_nd()
+                .unwrap()
         };
         npy.extend(fortran_order_vec()).unwrap();
         npy.finish().unwrap();

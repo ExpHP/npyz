@@ -9,7 +9,7 @@ and [`Deserialize`](../npyz/trait.Deserialize.html) respectively.
 
 */
 
-use proc_macro::{TokenStream as TokenStream1};
+use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
@@ -62,148 +62,177 @@ impl FieldData {
             _ => panic!("npyz derive macros can only be used with structs"),
         };
 
-        let idents: Vec<syn::Ident> = fields.iter().map(|f| {
-            f.ident.clone().expect("Tuple structs not supported")
-        }).collect();
+        let idents: Vec<syn::Ident> = fields
+            .iter()
+            .map(|f| f.ident.clone().expect("Tuple structs not supported"))
+            .collect();
         let idents_str = idents.iter().map(|t| unraw(t)).collect::<Vec<_>>();
 
-        let types: Vec<TokenStream> = fields.iter().map(|f| {
-            let ty = &f.ty;
-            quote!( #ty )
-        }).collect::<Vec<_>>();
+        let types: Vec<TokenStream> = fields
+            .iter()
+            .map(|f| {
+                let ty = &f.ty;
+                quote!( #ty )
+            })
+            .collect::<Vec<_>>();
 
-        FieldData { idents, idents_str, types }
+        FieldData {
+            idents,
+            idents_str,
+            types,
+        }
     }
 }
 
 fn impl_npy_serialize(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let vis = &ast.vis;
-    let FieldData { ref idents, ref idents_str, ref types } = FieldData::extract(ast);
+    let FieldData {
+        ref idents,
+        ref idents_str,
+        ref types,
+    } = FieldData::extract(ast);
 
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
     let field_dtypes_struct = gen_field_dtypes_struct(idents, idents_str);
 
     let idents_1 = idents;
 
-    wrap_in_const("Serialize", &name, quote! {
-        use ::std::io;
+    wrap_in_const(
+        "Serialize",
+        &name,
+        quote! {
+            use ::std::io;
 
-        #vis struct GeneratedWriter #ty_generics #where_clause {
-            writers: FieldWriters #ty_generics,
-        }
-
-        struct FieldWriters #ty_generics #where_clause {
-            #( #idents: <#types as _npyz::Serialize>::TypeWriter ,)*
-        }
-
-        #field_dtypes_struct
-
-        impl #impl_generics _npyz::TypeWrite for GeneratedWriter #ty_generics #where_clause {
-            type Value = #name #ty_generics;
-
-            #[allow(unused_mut)]
-            fn write_one<W: io::Write>(&self, mut w: W, value: &Self::Value) -> io::Result<()> {
-                #({ // braces for pre-NLL
-                    let method = <<#types as _npyz::Serialize>::TypeWriter as _npyz::TypeWrite>::write_one;
-                    method(&self.writers.#idents, &mut w, &value.#idents_1)?;
-                })*
-                p::Ok(())
+            #vis struct GeneratedWriter #ty_generics #where_clause {
+                writers: FieldWriters #ty_generics,
             }
-        }
 
-        impl #impl_generics _npyz::Serialize for #name #ty_generics #where_clause {
-            type TypeWriter = GeneratedWriter #ty_generics;
-
-            fn writer(dtype: &_npyz::DType) -> p::Result<GeneratedWriter, _npyz::DTypeError> {
-                let dtypes = FieldDTypes::extract(dtype)?;
-                let writers = FieldWriters {
-                    #( #idents: <#types as _npyz::Serialize>::writer(&dtypes.#idents_1)? ,)*
-                };
-
-                p::Ok(GeneratedWriter { writers })
+            struct FieldWriters #ty_generics #where_clause {
+                #( #idents: <#types as _npyz::Serialize>::TypeWriter ,)*
             }
-        }
-    })
+
+            #field_dtypes_struct
+
+            impl #impl_generics _npyz::TypeWrite for GeneratedWriter #ty_generics #where_clause {
+                type Value = #name #ty_generics;
+
+                #[allow(unused_mut)]
+                fn write_one<W: io::Write>(&self, mut w: W, value: &Self::Value) -> io::Result<()> {
+                    #({ // braces for pre-NLL
+                        let method = <<#types as _npyz::Serialize>::TypeWriter as _npyz::TypeWrite>::write_one;
+                        method(&self.writers.#idents, &mut w, &value.#idents_1)?;
+                    })*
+                    p::Ok(())
+                }
+            }
+
+            impl #impl_generics _npyz::Serialize for #name #ty_generics #where_clause {
+                type TypeWriter = GeneratedWriter #ty_generics;
+
+                fn writer(dtype: &_npyz::DType) -> p::Result<GeneratedWriter, _npyz::DTypeError> {
+                    let dtypes = FieldDTypes::extract(dtype)?;
+                    let writers = FieldWriters {
+                        #( #idents: <#types as _npyz::Serialize>::writer(&dtypes.#idents_1)? ,)*
+                    };
+
+                    p::Ok(GeneratedWriter { writers })
+                }
+            }
+        },
+    )
 }
 
 fn impl_npy_deserialize(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let vis = &ast.vis;
-    let FieldData { ref idents, ref idents_str, ref types } = FieldData::extract(ast);
+    let FieldData {
+        ref idents,
+        ref idents_str,
+        ref types,
+    } = FieldData::extract(ast);
 
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
     let field_dtypes_struct = gen_field_dtypes_struct(idents, idents_str);
 
     let idents_1 = idents;
 
-    wrap_in_const("Deserialize", &name, quote! {
-        use ::std::io;
+    wrap_in_const(
+        "Deserialize",
+        &name,
+        quote! {
+            use ::std::io;
 
-        #vis struct GeneratedReader #ty_generics #where_clause {
-            readers: FieldReaders #ty_generics,
-        }
-
-        struct FieldReaders #ty_generics #where_clause {
-            #( #idents: <#types as _npyz::Deserialize>::TypeReader ,)*
-        }
-
-        #field_dtypes_struct
-
-        impl #impl_generics _npyz::TypeRead for GeneratedReader #ty_generics #where_clause {
-            type Value = #name #ty_generics;
-
-            #[allow(unused_mut)]
-            fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Self::Value> {
-                #(
-                    let func = <<#types as _npyz::Deserialize>::TypeReader as _npyz::TypeRead>::read_one;
-                    let #idents = func(&self.readers.#idents_1, &mut reader)?;
-                )*
-                io::Result::Ok(#name { #( #idents ),* })
+            #vis struct GeneratedReader #ty_generics #where_clause {
+                readers: FieldReaders #ty_generics,
             }
-        }
 
-        impl #impl_generics _npyz::Deserialize for #name #ty_generics #where_clause {
-            type TypeReader = GeneratedReader #ty_generics;
-
-            fn reader(dtype: &_npyz::DType) -> p::Result<GeneratedReader, _npyz::DTypeError> {
-                let dtypes = FieldDTypes::extract(dtype)?;
-                let readers = FieldReaders {
-                    #( #idents: <#types as _npyz::Deserialize>::reader(&dtypes.#idents_1)? ,)*
-                };
-
-                p::Ok(GeneratedReader { readers })
+            struct FieldReaders #ty_generics #where_clause {
+                #( #idents: <#types as _npyz::Deserialize>::TypeReader ,)*
             }
-        }
-    })
+
+            #field_dtypes_struct
+
+            impl #impl_generics _npyz::TypeRead for GeneratedReader #ty_generics #where_clause {
+                type Value = #name #ty_generics;
+
+                #[allow(unused_mut)]
+                fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<Self::Value> {
+                    #(
+                        let func = <<#types as _npyz::Deserialize>::TypeReader as _npyz::TypeRead>::read_one;
+                        let #idents = func(&self.readers.#idents_1, &mut reader)?;
+                    )*
+                    io::Result::Ok(#name { #( #idents ),* })
+                }
+            }
+
+            impl #impl_generics _npyz::Deserialize for #name #ty_generics #where_clause {
+                type TypeReader = GeneratedReader #ty_generics;
+
+                fn reader(dtype: &_npyz::DType) -> p::Result<GeneratedReader, _npyz::DTypeError> {
+                    let dtypes = FieldDTypes::extract(dtype)?;
+                    let readers = FieldReaders {
+                        #( #idents: <#types as _npyz::Deserialize>::reader(&dtypes.#idents_1)? ,)*
+                    };
+
+                    p::Ok(GeneratedReader { readers })
+                }
+            }
+        },
+    )
 }
 
 fn impl_npy_auto_serialize(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
-    let FieldData { idents: _, ref idents_str, ref types } = FieldData::extract(ast);
+    let FieldData {
+        idents: _,
+        ref idents_str,
+        ref types,
+    } = FieldData::extract(ast);
 
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
-    wrap_in_const("AutoSerialize", &name, quote! {
-        impl #impl_generics _npyz::AutoSerialize for #name #ty_generics #where_clause {
-            fn default_dtype() -> _npyz::DType {
-                _npyz::DType::Record(::std::vec![#(
-                    _npyz::Field {
-                        name: p::ToString::to_string(#idents_str),
-                        dtype: <#types as _npyz::AutoSerialize>::default_dtype()
-                    }
-                ),*])
+    wrap_in_const(
+        "AutoSerialize",
+        &name,
+        quote! {
+            impl #impl_generics _npyz::AutoSerialize for #name #ty_generics #where_clause {
+                fn default_dtype() -> _npyz::DType {
+                    _npyz::DType::Record(::std::vec![#(
+                        _npyz::Field {
+                            name: p::ToString::to_string(#idents_str),
+                            dtype: <#types as _npyz::AutoSerialize>::default_dtype()
+                        }
+                    ),*])
+                }
             }
-        }
-    })
+        },
+    )
 }
 
-fn gen_field_dtypes_struct(
-    idents: &[syn::Ident],
-    idents_str: &[String],
-) -> TokenStream {
+fn gen_field_dtypes_struct(idents: &[syn::Ident], idents_str: &[String]) -> TokenStream {
     assert_eq!(idents.len(), idents_str.len());
-    quote!{
+    quote! {
         struct FieldDTypes {
             #( #idents : _npyz::DType ,)*
         }
@@ -239,11 +268,7 @@ fn gen_field_dtypes_struct(
 }
 
 // from the wonderful folks working on serde
-fn wrap_in_const(
-    trait_: &str,
-    ty: &syn::Ident,
-    code: TokenStream,
-) -> TokenStream {
+fn wrap_in_const(trait_: &str, ty: &syn::Ident, code: TokenStream) -> TokenStream {
     let dummy_const = syn::Ident::new(
         &format!("__IMPL_npy_{}_FOR_{}", trait_, unraw(ty)),
         Span::call_site(),

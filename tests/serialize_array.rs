@@ -1,14 +1,17 @@
-use npyz::{Deserialize, Serialize, AutoSerialize, DType, TypeStr, Field};
+use npyz::{AutoSerialize, DType, Deserialize, Field, Serialize, TypeStr};
 use npyz::{TypeRead, TypeWrite};
 
 // These tests ideally would be in npyz::serialize::tests, but they require "derive"
 // because fixed-size array types can only exist as record fields.
 
-#[cfg(target_arch="wasm32")]
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
 fn reader_output<T: Deserialize>(dtype: &DType, bytes: &[u8]) -> T {
-    T::reader(dtype).unwrap_or_else(|e| panic!("{}", e)).read_one(bytes).expect("reader_output failed")
+    T::reader(dtype)
+        .unwrap_or_else(|e| panic!("{}", e))
+        .read_one(bytes)
+        .expect("reader_output failed")
 }
 
 fn reader_expect_err<T: Deserialize>(dtype: &DType) {
@@ -17,8 +20,10 @@ fn reader_expect_err<T: Deserialize>(dtype: &DType) {
 
 fn writer_output<T: Serialize + ?Sized>(dtype: &DType, value: &T) -> Vec<u8> {
     let mut vec = vec![];
-    T::writer(dtype).unwrap_or_else(|e| panic!("{}", e))
-        .write_one(&mut vec, value).unwrap();
+    T::writer(dtype)
+        .unwrap_or_else(|e| panic!("{}", e))
+        .write_one(&mut vec, value)
+        .unwrap();
     vec
 }
 
@@ -26,14 +31,12 @@ fn writer_expect_err<T: Serialize + ?Sized>(dtype: &DType) {
     T::writer(dtype).err().expect("writer_expect_err failed!");
 }
 
-#[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
-#[derive(Debug, PartialEq)]
+#[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize, Debug, PartialEq)]
 struct Array3 {
     field: [i32; 3],
 }
 
-#[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
-#[derive(Debug, PartialEq)]
+#[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize, Debug, PartialEq)]
 struct Array23 {
     field: [[i32; 3]; 2],
 }
@@ -80,7 +83,9 @@ fn read_write_explicit_dtype() {
 #[test]
 fn read_write_nested() {
     let dtype = DType::parse(ARRAY23_DESCR_LE).unwrap();
-    let value = Array23 { field: [[1, 3, 5], [7, 9, 11]] };
+    let value = Array23 {
+        field: [[1, 3, 5], [7, 9, 11]],
+    };
     let mut bytes = vec![];
     for n in vec![1, 3, 5, 7, 9, 11] {
         bytes.extend_from_slice(&i32::to_le_bytes(n));
@@ -120,40 +125,47 @@ fn default_dtype() {
         }
     };
 
-    assert_eq!(Array3::default_dtype(), DType::Record(vec![
-        Field {
+    assert_eq!(
+        Array3::default_dtype(),
+        DType::Record(vec![Field {
             name: "field".to_string(),
             dtype: DType::Array(3, Box::new(DType::Plain(int_ty.clone()))),
-        },
-    ]));
+        },])
+    );
 
-    assert_eq!(Array23::default_dtype(), DType::Record(vec![
-        Field {
+    assert_eq!(
+        Array23::default_dtype(),
+        DType::Record(vec![Field {
             name: "field".to_string(),
-            dtype: DType::Array(2, Box::new(DType::Array(3, Box::new(DType::Plain(int_ty.clone()))))),
-        },
-    ]));
+            dtype: DType::Array(
+                2,
+                Box::new(DType::Array(3, Box::new(DType::Plain(int_ty.clone()))))
+            ),
+        },])
+    );
 }
 
 pub mod zero_len {
     use super::*;
 
-    #[cfg(target_arch="wasm32")]
+    #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
-    #[derive(Debug, PartialEq)]
+    #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize, Debug, PartialEq)]
     struct CloseTheGap {
         left: i64,
         middle: [[[i32; 3]; 0]; 2],
         right: i32,
     }
 
-
     #[test]
     fn read_write() {
         let dtype = <CloseTheGap as npyz::AutoSerialize>::default_dtype();
-        let value = CloseTheGap { left: 12, middle: [[], []], right: 5 };
+        let value = CloseTheGap {
+            left: 12,
+            middle: [[], []],
+            right: 5,
+        };
         let mut bytes = vec![];
         bytes.extend_from_slice(&i64::to_le_bytes(12));
         bytes.extend_from_slice(&[]); // 'middle' should serialize to no bytes

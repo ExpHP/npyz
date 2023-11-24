@@ -58,4 +58,3 @@ pub fn file_name_from_array_name(name: &str) -> String {
 pub fn file_name_from_index(index: i32) -> String {
     format!("arr_{}.npy", index)
 }
-

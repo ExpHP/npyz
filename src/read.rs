@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::io;
 
-use crate::header::{Value, DType, read_header, convert_value_to_shape};
-use crate::serialize::{Deserialize, TypeRead, DTypeError};
+use crate::header::{convert_value_to_shape, read_header, DType, Value};
+use crate::serialize::{DTypeError, Deserialize, TypeRead};
 
 /// Object for reading an `npy` file.
 ///
@@ -209,7 +209,11 @@ pub enum Order {
 
 impl Order {
     pub(crate) fn from_fortran_order(fortran_order: bool) -> Order {
-        if fortran_order { Order::Fortran } else { Order::C }
+        if fortran_order {
+            Order::Fortran
+        } else {
+            Order::C
+        }
     }
 }
 
@@ -222,7 +226,10 @@ impl<R: io::Read> NpyFile<R> {
 
     /// Construct from a previously parsed header and a reader for the raw data bytes.
     pub fn with_header(header: NpyHeader, data_reader: R) -> Self {
-        NpyFile { header, reader: data_reader }
+        NpyFile {
+            header,
+            reader: data_reader,
+        }
     }
 
     /// Access the underlying [`NpyHeader`] object.
@@ -289,7 +296,11 @@ impl<R: io::Read> NpyFile<R> {
     pub fn data<T: Deserialize>(self) -> Result<NpyReader<T, R>, DTypeError> {
         let NpyFile { reader, header } = self;
         let type_reader = T::reader(&header.dtype)?;
-        Ok(NpyReader { type_reader, header, reader_and_current_index: (reader, 0) })
+        Ok(NpyReader {
+            type_reader,
+            header,
+            reader_and_current_index: (reader, 0),
+        })
     }
 
     /// Produce an [`NpyReader`] to begin reading elements, if `T` can be deserialized from the file's dtype.
@@ -301,7 +312,11 @@ impl<R: io::Read> NpyFile<R> {
             Err(_) => return Err(self),
         };
         let NpyFile { reader, header } = self;
-        Ok(NpyReader { type_reader, header, reader_and_current_index: (reader, 0) })
+        Ok(NpyReader {
+            type_reader,
+            header,
+            reader_and_current_index: (reader, 0),
+        })
     }
 }
 
@@ -312,18 +327,30 @@ impl NpyHeader {
         let dict = match header {
             Value::Dict(dict) => dict
                 .into_iter()
-                .map(|(k, v)| Ok((k.as_string().ok_or(invalid_data("key is not string"))?.to_owned(), v)))
+                .map(|(k, v)| {
+                    Ok((
+                        k.as_string()
+                            .ok_or(invalid_data("key is not string"))?
+                            .to_owned(),
+                        v,
+                    ))
+                })
                 .collect::<io::Result<HashMap<String, Value>>>()?,
             _ => return Err(invalid_data("expected a python dict literal")),
         };
 
         let expect_key = |key: &str| {
-            dict.get(key).ok_or_else(|| invalid_data(format_args!("dict is missing key '{}'", key)))
+            dict.get(key)
+                .ok_or_else(|| invalid_data(format_args!("dict is missing key '{}'", key)))
         };
 
         let order = match expect_key("fortran_order")? {
             &Value::Boolean(b) => Order::from_fortran_order(b),
-            _ => return Err(invalid_data(format_args!("'fortran_order' value is not a bool"))),
+            _ => {
+                return Err(invalid_data(format_args!(
+                    "'fortran_order' value is not a bool"
+                )))
+            }
         };
 
         let shape = convert_value_to_shape(expect_key("shape")?)?;
@@ -336,11 +363,18 @@ impl NpyHeader {
 
     fn from_parts(dtype: DType, shape: Vec<u64>, order: Order) -> io::Result<NpyHeader> {
         let n_records = shape.iter().product();
-        let item_size = dtype.num_bytes().ok_or_else(|| {
-            invalid_data(format_args!("dtype is larger than usize!"))
-        })?;
+        let item_size = dtype
+            .num_bytes()
+            .ok_or_else(|| invalid_data(format_args!("dtype is larger than usize!")))?;
         let strides = strides(order, &shape);
-        Ok(NpyHeader { dtype, shape, strides, order, n_records, item_size })
+        Ok(NpyHeader {
+            dtype,
+            shape,
+            strides,
+            order,
+            n_records,
+            item_size,
+        })
     }
 }
 
@@ -373,7 +407,10 @@ impl<T: Deserialize, R: io::Read> NpyReader<T, R> {
 }
 
 /// # Random access methods
-impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
+impl<R: io::Read, T: Deserialize> NpyReader<T, R>
+where
+    R: io::Seek,
+{
     /// Move the read cursor to the item at the given index.
     ///
     /// Be aware that this will affect [`Self::len`], which is always computed
@@ -385,7 +422,12 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
     /// Panics if the index is greater than [`Self::total_len`].
     pub fn seek_to(&mut self, index: u64) -> io::Result<()> {
         let len = self.total_len();
-        assert!(index <= len, "index out of bounds for seeking (the index is {} but the len is {})", index, len);
+        assert!(
+            index <= len,
+            "index out of bounds for seeking (the index is {} but the len is {})",
+            index,
+            len
+        );
 
         let (reader, current_index) = &mut self.reader_and_current_index;
         let delta = index as i64 - *current_index as i64;
@@ -403,7 +445,12 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
     /// Panics if the index is out of bounds. (`>=` to [`Self::total_len`]).
     pub fn read_at(&mut self, index: u64) -> io::Result<T> {
         let len = self.total_len();
-        assert!(index < len, "index out of bounds for reading (the index is {} but the len is {})", index, len);
+        assert!(
+            index < len,
+            "index out of bounds for reading (the index is {} but the len is {})",
+            index,
+            len
+        );
 
         self.seek_to(index)?;
         self.next().unwrap()
@@ -416,7 +463,10 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     pub fn from_bytes(bytes: &'a [u8]) -> io::Result<NpyData<'a, T>> {
         let inner = NpyFile::new(bytes)?.data().map_err(invalid_data)?;
 
-        assert_eq!(inner.header.item_size as u64 * inner.header.n_records, inner.reader().len() as u64);
+        assert_eq!(
+            inner.header.item_size as u64 * inner.header.n_records,
+            inner.reader().len() as u64
+        );
         Ok(NpyData { inner })
     }
 
@@ -433,7 +483,9 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     }
 
     /// Returns whether there are zero records in this NpyData structure.
-    pub fn is_empty(&self) -> bool { self.len() == 0 }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     /// Gets a single data-record with the specified flat index.
     ///
@@ -469,7 +521,9 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     /// switch to [`NpyFile`].
     pub fn to_vec(&self) -> Vec<T> {
         let mut reader = self.inner.reader().clone();
-        (0..self.len()).map(|_| self.inner.type_reader.read_one(&mut reader).unwrap()).collect()
+        (0..self.len())
+            .map(|_| self.inner.type_reader.read_one(&mut reader).unwrap())
+            .collect()
     }
 }
 
@@ -479,20 +533,28 @@ fn strides(order: Order, shape: &[u64]) -> Vec<u64> {
             let mut strides = prefix_products(shape.iter().rev().copied()).collect::<Vec<_>>();
             strides.reverse();
             strides
-        },
+        }
         Order::Fortran => prefix_products(shape.iter().copied()).collect(),
     }
 }
 
-fn prefix_products<I: IntoIterator<Item=u64>>(iter: I) -> impl Iterator<Item=u64> {
-    iter.into_iter().scan(1, |acc, x| { let old = *acc; *acc *= x; Some(old) })
+fn prefix_products<I: IntoIterator<Item = u64>>(iter: I) -> impl Iterator<Item = u64> {
+    iter.into_iter().scan(1, |acc, x| {
+        let old = *acc;
+        *acc *= x;
+        Some(old)
+    })
 }
 
 fn invalid_data<S: ToString>(s: S) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, s.to_string())
 }
 
-impl<R, T> Iterator for NpyReader<T, R> where T: Deserialize, R: io::Read {
+impl<R, T> Iterator for NpyReader<T, R>
+where
+    T: Deserialize,
+    R: io::Read,
+{
     type Item = io::Result<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -525,14 +587,20 @@ pub struct IntoIter<'a, T: 'a + Deserialize> {
 }
 
 #[allow(deprecated)]
-impl<'a, T> IntoIter<'a, T> where T: Deserialize {
+impl<'a, T> IntoIter<'a, T>
+where
+    T: Deserialize,
+{
     fn new(data: NpyData<'a, T>) -> Self {
         IntoIter { data, i: 0 }
     }
 }
 
 #[allow(deprecated)]
-impl<'a, T: 'a> IntoIterator for NpyData<'a, T> where T: Deserialize {
+impl<'a, T: 'a> IntoIterator for NpyData<'a, T>
+where
+    T: Deserialize,
+{
     type Item = T;
     type IntoIter = IntoIter<'a, T>;
 
@@ -542,7 +610,10 @@ impl<'a, T: 'a> IntoIterator for NpyData<'a, T> where T: Deserialize {
 }
 
 #[allow(deprecated)]
-impl<'a, T> Iterator for IntoIter<'a, T> where T: Deserialize {
+impl<'a, T> Iterator for IntoIter<'a, T>
+where
+    T: Deserialize,
+{
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -594,19 +665,22 @@ mod tests {
         assert_eq!(reader.total_len(), 7);
         assert_eq!(reader.len(), 7);
 
-        assert_eq!(reader.by_ref().count(), 7);  // run iterator to completion
+        assert_eq!(reader.by_ref().count(), 7); // run iterator to completion
 
         assert!(reader.next().is_none());
         assert!(reader.next().is_none());
 
         assert_eq!(reader.total_len(), 7);
-        assert_eq!(reader.len(), 0);  // make sure this didn't underflow...
+        assert_eq!(reader.len(), 0); // make sure this didn't underflow...
     }
 
     #[test]
     fn test_methods_after_seek() {
         let bytes = to_bytes_1d(&[100, 101, 102, 103, 104, 105, 106]).unwrap();
-        let mut reader = NpyFile::new(io::Cursor::new(&bytes[..])).unwrap().data().unwrap();
+        let mut reader = NpyFile::new(io::Cursor::new(&bytes[..]))
+            .unwrap()
+            .data()
+            .unwrap();
 
         assert_eq!(reader.total_len(), 7);
         assert_eq!(reader.len(), 7);
@@ -626,27 +700,41 @@ mod tests {
 
     fn check_seek_panic_boundary(items: &[i32], index: u64) {
         let bytes = to_bytes_1d(items).unwrap();
-        let mut reader = NpyFile::new(io::Cursor::new(&bytes[..])).unwrap().data::<i32>().unwrap();
+        let mut reader = NpyFile::new(io::Cursor::new(&bytes[..]))
+            .unwrap()
+            .data::<i32>()
+            .unwrap();
         let _ = reader.seek_to(index);
     }
 
     fn check_read_panic_boundary(items: &[i32], index: u64) {
         let bytes = to_bytes_1d(items).unwrap();
-        let mut reader = NpyFile::new(io::Cursor::new(&bytes[..])).unwrap().data::<i32>().unwrap();
+        let mut reader = NpyFile::new(io::Cursor::new(&bytes[..]))
+            .unwrap()
+            .data::<i32>()
+            .unwrap();
         let _ = reader.read_at(index);
     }
 
     #[test]
-    fn test_seek_boundary_ok() { check_seek_panic_boundary(&[1, 2, 3], 3) }
+    fn test_seek_boundary_ok() {
+        check_seek_panic_boundary(&[1, 2, 3], 3)
+    }
     #[test]
     #[should_panic]
-    fn test_seek_boundary_ng() { check_seek_panic_boundary(&[1, 2, 3], 4) }
+    fn test_seek_boundary_ng() {
+        check_seek_panic_boundary(&[1, 2, 3], 4)
+    }
 
     #[test]
-    fn test_read_boundary_ok() { check_read_panic_boundary(&[1, 2, 3], 2) }
+    fn test_read_boundary_ok() {
+        check_read_panic_boundary(&[1, 2, 3], 2)
+    }
     #[test]
     #[should_panic]
-    fn test_read_boundary_ng() { check_read_panic_boundary(&[1, 2, 3], 3) }
+    fn test_read_boundary_ng() {
+        check_read_panic_boundary(&[1, 2, 3], 3)
+    }
 
     #[test]
     fn test_reusing_header() {

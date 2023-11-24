@@ -1,7 +1,7 @@
 use std::io;
 
+use super::{AutoSerialize, DTypeError, Deserialize, ErrorKind, Serialize, TypeRead, TypeWrite};
 use crate::header::DType;
-use super::{DTypeError, ErrorKind, TypeRead, TypeWrite, Serialize, Deserialize, AutoSerialize};
 
 impl DType {
     /// Expect an array dtype, get the inner dtype.
@@ -18,16 +18,21 @@ impl DType {
                 }
 
                 Ok(ty)
-            },
+            }
         }
     }
 }
 
-pub struct ArrayReader<I, const N: usize>{ inner: I }
-pub struct ArrayWriter<I, const N: usize>{ inner: I }
+pub struct ArrayReader<I, const N: usize> {
+    inner: I,
+}
+pub struct ArrayWriter<I, const N: usize> {
+    inner: I,
+}
 
 impl<I: TypeRead, const N: usize> TypeRead for ArrayReader<I, N>
-where I::Value: Copy + Default,
+where
+    I::Value: Copy + Default,
 {
     type Value = [I::Value; N];
 
@@ -43,13 +48,15 @@ where I::Value: Copy + Default,
 }
 
 impl<I: TypeWrite, const N: usize> TypeWrite for ArrayWriter<I, N>
-where I::Value: Sized,
+where
+    I::Value: Sized,
 {
     type Value = [I::Value; N];
 
     #[inline]
     fn write_one<W: io::Write>(&self, mut writer: W, value: &Self::Value) -> io::Result<()>
-    where Self: Sized,
+    where
+        Self: Sized,
     {
         for item in value {
             self.inner.write_one(&mut writer, item)?;

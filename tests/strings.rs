@@ -1,6 +1,6 @@
-use std::io::{self, Cursor};
-use std::fs::File;
 use npyz::WriterBuilder;
+use std::fs::File;
+use std::io::{self, Cursor};
 
 #[test]
 fn unicode_files() {
@@ -67,15 +67,20 @@ fn writing_strings() {
 
     let utf32_strings: Vec<Vec<char>> = strings.iter().map(|str| str.chars().collect()).collect();
 
-    fn check_writing<T: npyz::Serialize>(
-        strings_to_write: &[T],
-        expected_utf32s: &[Vec<char>],
-    ) {
-        let max_len = expected_utf32s.iter().map(|utf32| utf32.len()).max().unwrap();
+    fn check_writing<T: npyz::Serialize>(strings_to_write: &[T], expected_utf32s: &[Vec<char>]) {
+        let max_len = expected_utf32s
+            .iter()
+            .map(|utf32| utf32.len())
+            .max()
+            .unwrap();
         let dtype = npyz::DType::new_scalar(format!("<U{}", max_len).parse().unwrap());
 
         let mut buffer = Cursor::new(vec![]);
-        let mut npy_writer = npyz::WriteOptions::new().dtype(dtype).writer(&mut buffer).begin_1d().unwrap();
+        let mut npy_writer = npyz::WriteOptions::new()
+            .dtype(dtype)
+            .writer(&mut buffer)
+            .begin_1d()
+            .unwrap();
         npy_writer.extend(strings_to_write).unwrap();
         npy_writer.finish().unwrap();
 

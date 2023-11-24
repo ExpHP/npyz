@@ -16,9 +16,9 @@ fn main() -> std::io::Result<()> {
 
     let reader = npyz::NpyFile::new(&bytes[..])?;
     let vec = reader.into_vec::<Struct>()?;
-    assert_eq!(vec, vec![
-        Struct { a: 1, b: 2.5, c: 4 },
-        Struct { a: 2, b: 3.1, c: 5 },
-    ]);
+    assert_eq!(
+        vec,
+        vec![Struct { a: 1, b: 2.5, c: 4 }, Struct { a: 2, b: 3.1, c: 5 },]
+    );
     Ok(())
 }

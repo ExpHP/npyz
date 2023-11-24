@@ -38,11 +38,11 @@ use std::ops::Deref;
 
 use zip::read::ZipFile;
 
-use crate::serialize::{Deserialize, AutoSerialize};
-use crate::read::{Order, NpyFile};
-use crate::write::{WriterBuilder};
-use crate::npz::{NpzArchive, NpzWriter};
 use crate::header::DType;
+use crate::npz::{NpzArchive, NpzWriter};
+use crate::read::{NpyFile, Order};
+use crate::serialize::{AutoSerialize, Deserialize};
+use crate::write::WriterBuilder;
 
 // =============================================================================
 // Types
@@ -50,8 +50,9 @@ use crate::header::DType;
 /// Raw representation of a scipy sparse matrix whose exact format is known at runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SparseBase<T, Data, Indices, Indptr, Offsets>
-where  // note: explicit 'where' makes rustdoc less intimidating
-    Data: Deref<Target=[T]>,
+where
+    // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target = [T]>,
     Indices: AsRef<[u64]>,
     Indptr: AsRef<[usize]>,
     Offsets: AsRef<[i64]>,
@@ -79,8 +80,9 @@ pub type Sparse<T> = SparseBase<T, Vec<T>, Vec<u64>, Vec<usize>, Vec<i64>>;
 /// This generic base class exists in order to allow you to use slices when writing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CooBase<T, Data, Indices>
-where  // note: explicit 'where' makes rustdoc less intimidating
-    Data: Deref<Target=[T]>,
+where
+    // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target = [T]>,
     Indices: AsRef<[u64]>,
 {
     /// Dimensions of the matrix `[nrow, ncol]`.
@@ -104,8 +106,9 @@ pub type Coo<T> = CooBase<T, Vec<T>, Vec<u64>>;
 /// This generic base class exists in order to allow you to use slices when writing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CsrBase<T, Data, Indices, Indptr>
-where  // note: explicit 'where' makes rustdoc less intimidating
-    Data: Deref<Target=[T]>,
+where
+    // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target = [T]>,
     Indices: AsRef<[u64]>,
     Indptr: AsRef<[usize]>,
 {
@@ -137,8 +140,9 @@ pub type Csr<T> = CsrBase<T, Vec<T>, Vec<u64>, Vec<usize>>;
 /// This generic base class exists in order to allow you to use slices when writing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CscBase<T, Data, Indices, Indptr>
-where  // note: explicit 'where' makes rustdoc less intimidating
-    Data: Deref<Target=[T]>,
+where
+    // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target = [T]>,
     Indices: AsRef<[u64]>,
     Indptr: AsRef<[usize]>,
 {
@@ -170,8 +174,9 @@ pub type Csc<T> = CscBase<T, Vec<T>, Vec<u64>, Vec<usize>>;
 /// This generic base class exists in order to allow you to use slices when writing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiaBase<T, Data, Offsets>
-where  // note: explicit 'where' makes rustdoc less intimidating
-    Data: Deref<Target=[T]>,
+where
+    // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target = [T]>,
     Offsets: AsRef<[i64]>,
 {
     /// Dimensions of the matrix `[nrow, ncol]`.
@@ -200,8 +205,9 @@ pub type Dia<T> = DiaBase<T, Vec<T>, Vec<i64>>;
 /// This generic base class exists in order to allow you to use slices when writing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BsrBase<T, Data, Indices, Indptr>
-where  // note: explicit 'where' makes rustdoc less intimidating
-    Data: Deref<Target=[T]>,
+where
+    // note: explicit 'where' makes rustdoc less intimidating
+    Data: Deref<Target = [T]>,
     Indices: AsRef<[u64]>,
     Indptr: AsRef<[usize]>,
 {
@@ -248,7 +254,10 @@ impl<T: Deserialize> Sparse<T> {
             b"csr" => Ok(Sparse::Csr(Csr::from_npz(npz)?)),
             b"dia" => Ok(Sparse::Dia(Dia::from_npz(npz)?)),
             b"bsr" => Ok(Sparse::Bsr(Bsr::from_npz(npz)?)),
-            _ => Err(invalid_data(format_args!("bad format: {}", show_format(&format[..])))),
+            _ => Err(invalid_data(format_args!(
+                "bad format: {}",
+                show_format(&format[..])
+            ))),
         }
     }
 }
@@ -261,7 +270,12 @@ impl<T: Deserialize> Coo<T> {
         let row = extract_indices(npz, "row")?;
         let col = extract_indices(npz, "col")?;
         let data = extract_1d::<T, _>(npz, "data")?;
-        Ok(Coo { data, shape, row, col })
+        Ok(Coo {
+            data,
+            shape,
+            row,
+            col,
+        })
     }
 }
 
@@ -273,7 +287,12 @@ impl<T: Deserialize> Csr<T> {
         let indices = extract_indices(npz, "indices")?;
         let indptr = extract_usize_indices(npz, "indptr")?;
         let data = extract_1d::<T, _>(npz, "data")?;
-        Ok(Csr { data, shape, indices, indptr })
+        Ok(Csr {
+            data,
+            shape,
+            indices,
+            indptr,
+        })
     }
 }
 
@@ -285,7 +304,12 @@ impl<T: Deserialize> Csc<T> {
         let indices = extract_indices(npz, "indices")?;
         let indptr = extract_usize_indices(npz, "indptr")?;
         let data = extract_1d::<T, _>(npz, "data")?;
-        Ok(Csc { data, shape, indices, indptr })
+        Ok(Csc {
+            data,
+            shape,
+            indices,
+            indptr,
+        })
     }
 }
 
@@ -296,7 +320,11 @@ impl<T: Deserialize> Dia<T> {
         let shape = extract_shape(npz, "shape")?;
         let offsets = extract_signed_indices(npz, "offsets")?;
         let (data, _) = extract_nd::<T, _>(npz, "data", 2)?;
-        Ok(Dia { data, shape, offsets })
+        Ok(Dia {
+            data,
+            shape,
+            offsets,
+        })
     }
 }
 
@@ -309,57 +337,101 @@ impl<T: Deserialize> Bsr<T> {
         let indptr = extract_usize_indices(npz, "indptr")?;
         let (data, data_shape) = extract_nd::<T, _>(npz, "data", 3)?;
         let blocksize = [data_shape[1], data_shape[2]];
-        Ok(Bsr { data, shape, indices, indptr, blocksize })
+        Ok(Bsr {
+            data,
+            shape,
+            indices,
+            indptr,
+            blocksize,
+        })
     }
 }
 
 // -----
 
 fn show_format(format: &[u8]) -> String {
-    let str = format.iter().map(|&b| match b {
-        // ASCII printable
-        0x20..=0x7f => std::str::from_utf8(&[b]).unwrap().to_string(),
-        _ => format!("\\x{:02X}", b),
-    }).collect::<Vec<_>>().join("");
+    let str = format
+        .iter()
+        .map(|&b| match b {
+            // ASCII printable
+            0x20..=0x7f => std::str::from_utf8(&[b]).unwrap().to_string(),
+            _ => format!("\\x{:02X}", b),
+        })
+        .collect::<Vec<_>>()
+        .join("");
 
     format!("'{}'", str)
 }
 
-fn expect_format<R: io::Read + io::Seek>(npz: &mut NpzArchive<R>, expected: &str) -> io::Result<()> {
+fn expect_format<R: io::Read + io::Seek>(
+    npz: &mut NpzArchive<R>,
+    expected: &str,
+) -> io::Result<()> {
     let format: Vec<u8> = extract_scalar(npz, "format")?;
     if format != expected.as_bytes() {
-        return Err(invalid_data(format_args!("wrong format: expected '{}', got {}", expected, show_format(&format))))
+        return Err(invalid_data(format_args!(
+            "wrong format: expected '{}', got {}",
+            expected,
+            show_format(&format)
+        )));
     }
     Ok(())
 }
 
-fn extract_scalar<T: Deserialize, R: io::Read + io::Seek>(npz: &mut NpzArchive<R>, name: &str) -> io::Result<T> {
+fn extract_scalar<T: Deserialize, R: io::Read + io::Seek>(
+    npz: &mut NpzArchive<R>,
+    name: &str,
+) -> io::Result<T> {
     let npy = extract_and_check_ndim(npz, name, 0)?;
-    Ok(npy.into_vec::<T>()?.into_iter().next().expect("scalar so must have 1 elem"))
+    Ok(npy
+        .into_vec::<T>()?
+        .into_iter()
+        .next()
+        .expect("scalar so must have 1 elem"))
 }
 
-fn extract_shape<R: io::Read + io::Seek>(npz: &mut NpzArchive<R>, name: &str) -> io::Result<[u64; 2]> {
+fn extract_shape<R: io::Read + io::Seek>(
+    npz: &mut NpzArchive<R>,
+    name: &str,
+) -> io::Result<[u64; 2]> {
     let shape = extract_indices(npz, name)?;
     if shape.len() != 2 {
-        return Err(invalid_data(format_args!("invalid length for '{}' (got {}, expected 2)", name, shape.len())))
+        return Err(invalid_data(format_args!(
+            "invalid length for '{}' (got {}, expected 2)",
+            name,
+            shape.len()
+        )));
     }
     Ok([shape[0], shape[1]])
 }
 
-fn extract_usize_indices<R: io::Read + io::Seek>(npz: &mut NpzArchive<R>, name: &str) -> io::Result<Vec<usize>> {
-    Ok(extract_indices(npz, name)?.into_iter().map(|x| x as usize).collect())
+fn extract_usize_indices<R: io::Read + io::Seek>(
+    npz: &mut NpzArchive<R>,
+    name: &str,
+) -> io::Result<Vec<usize>> {
+    Ok(extract_indices(npz, name)?
+        .into_iter()
+        .map(|x| x as usize)
+        .collect())
 }
 
 // Read indices from npz which may be i32 or i64, but are nonnegative.
 // FIXME: in the future we may allow automatic widening during deserialization, in which case
 //        this can be simplified extract_1d::<u64>
-fn extract_indices<R: io::Read + io::Seek>(npz: &mut NpzArchive<R, >, name: &str) -> io::Result<Vec<u64>> {
+fn extract_indices<R: io::Read + io::Seek>(
+    npz: &mut NpzArchive<R>,
+    name: &str,
+) -> io::Result<Vec<u64>> {
     let npy = extract_and_check_ndim(npz, name, 1)?;
     match npy.try_data::<i32>() {
         Ok(data) => data.map(|result| result.map(|x| x as u64)).collect(),
         Err(npy) => match npy.try_data::<i64>() {
             Ok(data) => data.map(|result| result.map(|x| x as u64)).collect(),
-            Err(npy) => Err(invalid_data(format_args!("invalid dtype for '{}' in sparse matrix: {}", name, npy.dtype().descr()))),
+            Err(npy) => Err(invalid_data(format_args!(
+                "invalid dtype for '{}' in sparse matrix: {}",
+                name,
+                npy.dtype().descr()
+            ))),
         },
     }
 }
@@ -367,37 +439,63 @@ fn extract_indices<R: io::Read + io::Seek>(npz: &mut NpzArchive<R, >, name: &str
 // Read indices from npz which may be i32 or i64.
 // FIXME: in the future we may allow automatic widening during deserialization, in which case
 //        this can be replaced with extract_1d::<i64>
-fn extract_signed_indices<R: io::Read + io::Seek>(npz: &mut NpzArchive<R>, name: &str) -> io::Result<Vec<i64>> {
+fn extract_signed_indices<R: io::Read + io::Seek>(
+    npz: &mut NpzArchive<R>,
+    name: &str,
+) -> io::Result<Vec<i64>> {
     let npy = extract_and_check_ndim(npz, name, 1)?;
     match npy.try_data::<i32>() {
         Ok(data) => data.map(|result| result.map(|x| x as i64)).collect(),
         Err(npy) => match npy.try_data::<i64>() {
             Ok(data) => data.collect(),
-            Err(npy) => Err(invalid_data(format_args!("invalid dtype for '{}' in sparse matrix: {}", name, npy.dtype().descr()))),
+            Err(npy) => Err(invalid_data(format_args!(
+                "invalid dtype for '{}' in sparse matrix: {}",
+                name,
+                npy.dtype().descr()
+            ))),
         },
     }
 }
 
-fn extract_1d<T: Deserialize, R: io::Read + io::Seek>(npz: &mut NpzArchive<R>, name: &str) -> io::Result<Vec<T>> {
+fn extract_1d<T: Deserialize, R: io::Read + io::Seek>(
+    npz: &mut NpzArchive<R>,
+    name: &str,
+) -> io::Result<Vec<T>> {
     let npy = extract_and_check_ndim(npz, name, 1)?;
     npy.into_vec::<T>()
 }
 
-fn extract_nd<T: Deserialize, R: io::Read + io::Seek>(npz: &mut NpzArchive<R>, name: &str, expected_ndim: usize) -> io::Result<(Vec<T>, Vec<usize>)> {
+fn extract_nd<T: Deserialize, R: io::Read + io::Seek>(
+    npz: &mut NpzArchive<R>,
+    name: &str,
+    expected_ndim: usize,
+) -> io::Result<(Vec<T>, Vec<usize>)> {
     let npy = extract_and_check_ndim(npz, name, expected_ndim)?;
     if npy.order() != Order::C {
-        return Err(invalid_data(format_args!("fortran order is not currently supported for array '{}' in sparse NPZ file", name)));
+        return Err(invalid_data(format_args!(
+            "fortran order is not currently supported for array '{}' in sparse NPZ file",
+            name
+        )));
     }
     let shape = npy.shape().iter().map(|&x| x as usize).collect();
     let data = npy.into_vec::<T>()?;
     Ok((data, shape))
 }
 
-fn extract_and_check_ndim<'a, R: io::Read + io::Seek>(npz: &'a mut NpzArchive<R>, name: &str, expected_ndim: usize) -> io::Result<NpyFile<ZipFile<'a>>> {
-    let npy = npz.by_name(name)?.ok_or_else(|| invalid_data(format_args!("missing array '{}' from sparse array", name)))?;
+fn extract_and_check_ndim<'a, R: io::Read + io::Seek>(
+    npz: &'a mut NpzArchive<R>,
+    name: &str,
+    expected_ndim: usize,
+) -> io::Result<NpyFile<ZipFile<'a>>> {
+    let npy = npz
+        .by_name(name)?
+        .ok_or_else(|| invalid_data(format_args!("missing array '{}' from sparse array", name)))?;
     let ndim = npy.shape().len();
     if ndim != expected_ndim {
-        return Err(invalid_data(format_args!("invalid ndim for {}: {} (expected {})", name, ndim, expected_ndim)));
+        return Err(invalid_data(format_args!(
+            "invalid ndim for {}: {} (expected {})",
+            name, ndim, expected_ndim
+        )));
     }
     Ok(npy)
 }
@@ -412,10 +510,10 @@ fn invalid_data<S: ToString>(s: S) -> io::Error {
 impl<T, Data, Indices, Indptr, Offsets> SparseBase<T, Data, Indices, Indptr, Offsets>
 where
     T: AutoSerialize,
-    Data: Deref<Target=[T]>,
+    Data: Deref<Target = [T]>,
     Indices: AsRef<[u64]>,
     Indptr: AsRef<[usize]>,
-    Offsets: AsRef<[i64]>
+    Offsets: AsRef<[i64]>,
 {
     /// Write a sparse matrix, like `scipy.sparse.save_npz`.
     pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
@@ -432,7 +530,7 @@ where
 impl<T, Data, Indices> CooBase<T, Data, Indices>
 where
     T: AutoSerialize,
-    Data: Deref<Target=[T]>,
+    Data: Deref<Target = [T]>,
     Indices: AsRef<[u64]>,
 {
     /// Write a sparse `coo_matrix` matrix, like `scipy.sparse.save_npz`.
@@ -442,7 +540,12 @@ where
     /// This method does not currently perform any significant validation of input,
     /// but validation (with panics) may be added later in a future semver major bump.
     pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
-        let CooBase { data, shape, row, col } = self;
+        let CooBase {
+            data,
+            shape,
+            row,
+            col,
+        } = self;
         write_format(npz, "coo")?;
         write_shape(npz, shape)?;
         write_indices(npz, "row", row.as_ref().iter().map(|&x| x as i64))?;
@@ -455,7 +558,7 @@ where
 impl<T, Data, Indices, Indptr> CsrBase<T, Data, Indices, Indptr>
 where
     T: AutoSerialize,
-    Data: Deref<Target=[T]>,
+    Data: Deref<Target = [T]>,
     Indices: AsRef<[u64]>,
     Indptr: AsRef<[usize]>,
 {
@@ -466,7 +569,12 @@ where
     /// This method does not currently perform any significant validation of input,
     /// but validation (with panics) may be added later in a future semver major bump.
     pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
-        let CsrBase { data, shape, indices, indptr } = self;
+        let CsrBase {
+            data,
+            shape,
+            indices,
+            indptr,
+        } = self;
         write_format(npz, "csr")?;
         write_shape(npz, shape)?;
         write_indices(npz, "indices", indices.as_ref().iter().map(|&x| x as i64))?;
@@ -479,7 +587,7 @@ where
 impl<T, Data, Indices, Indptr> CscBase<T, Data, Indices, Indptr>
 where
     T: AutoSerialize,
-    Data: Deref<Target=[T]>,
+    Data: Deref<Target = [T]>,
     Indices: AsRef<[u64]>,
     Indptr: AsRef<[usize]>,
 {
@@ -490,7 +598,12 @@ where
     /// This method does not currently perform any significant validation of input,
     /// but validation (with panics) may be added later in a future semver major bump.
     pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
-        let CscBase { data, shape, indices, indptr } = self;
+        let CscBase {
+            data,
+            shape,
+            indices,
+            indptr,
+        } = self;
         write_format(npz, "csc")?;
         write_shape(npz, shape)?;
         write_indices(npz, "indices", indices.as_ref().iter().map(|&x| x as i64))?;
@@ -503,7 +616,7 @@ where
 impl<T, Data, Offsets> DiaBase<T, Data, Offsets>
 where
     T: AutoSerialize,
-    Data: Deref<Target=[T]>,
+    Data: Deref<Target = [T]>,
     Offsets: AsRef<[i64]>,
 {
     /// Write a sparse `dia_matrix` matrix, like `scipy.sparse.save_npz`.
@@ -512,7 +625,11 @@ where
     ///
     /// Panics if `data.len()` is not a multiple of `offsets.len()`.
     pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
-        let DiaBase { data, shape, offsets } = self;
+        let DiaBase {
+            data,
+            shape,
+            offsets,
+        } = self;
         write_format(npz, "dia")?;
         write_shape(npz, shape)?;
         write_indices(npz, "offsets", offsets.as_ref().iter().copied())?;
@@ -528,7 +645,7 @@ where
 impl<T, Data, Indices, Indptr> BsrBase<T, Data, Indices, Indptr>
 where
     T: AutoSerialize,
-    Data: Deref<Target=[T]>,
+    Data: Deref<Target = [T]>,
     Indices: AsRef<[u64]>,
     Indptr: AsRef<[usize]>,
 {
@@ -538,14 +655,31 @@ where
     ///
     /// Panics if `data.len()` is not equal to `indices.len() * blocksize[0] * blocksize[1]`.
     pub fn write_npz<W: io::Write + io::Seek>(&self, npz: &mut NpzWriter<W>) -> io::Result<()> {
-        let BsrBase { data, shape, indices, indptr, blocksize } = self;
+        let BsrBase {
+            data,
+            shape,
+            indices,
+            indptr,
+            blocksize,
+        } = self;
         write_format(npz, "bsr")?;
         write_shape(npz, shape)?;
         write_indices(npz, "indices", indices.as_ref().iter().map(|&x| x as i64))?;
         write_indices(npz, "indptr", indptr.as_ref().iter().map(|&x| x as i64))?;
 
-        assert_eq!(data.len(), indices.as_ref().len() * blocksize[0] * blocksize[1]);
-        write_data(npz, &data, &[indices.as_ref().len() as u64, blocksize[0] as u64, blocksize[1] as u64])?;
+        assert_eq!(
+            data.len(),
+            indices.as_ref().len() * blocksize[0] * blocksize[1]
+        );
+        write_data(
+            npz,
+            &data,
+            &[
+                indices.as_ref().len() as u64,
+                blocksize[0] as u64,
+                blocksize[1] as u64,
+            ],
+        )?;
         Ok(())
     }
 }
@@ -574,7 +708,11 @@ fn write_shape<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, shape: &[u64]) -
 }
 
 // Write signed ints as either i32 or i64 depending on their max value.
-fn write_indices<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, name: &str, data: impl ExactSizeIterator<Item=i64> + Clone) -> io::Result<()> {
+fn write_indices<W: io::Write + io::Seek>(
+    npz: &mut NpzWriter<W>,
+    name: &str,
+    data: impl ExactSizeIterator<Item = i64> + Clone,
+) -> io::Result<()> {
     let (min, max) = most_negative_and_positive(data.clone());
     if (i32::MIN as i64) <= min && max <= (i32::MAX as i64) {
         // small indices
@@ -593,7 +731,7 @@ fn write_indices<W: io::Write + io::Seek>(npz: &mut NpzWriter<W>, name: &str, da
     }
 }
 
-fn most_negative_and_positive(data: impl ExactSizeIterator<Item=i64>) -> (i64, i64) {
+fn most_negative_and_positive(data: impl ExactSizeIterator<Item = i64>) -> (i64, i64) {
     let mut best_negative = 0;
     let mut best_positive = 0;
     // single pass for better memory characteristics
@@ -604,7 +742,11 @@ fn most_negative_and_positive(data: impl ExactSizeIterator<Item=i64>) -> (i64, i
     (best_negative, best_positive)
 }
 
-fn write_data<W: io::Write + io::Seek, T: AutoSerialize>(npz: &mut NpzWriter<W>, data: &[T], shape: &[u64]) -> io::Result<()> {
+fn write_data<W: io::Write + io::Seek, T: AutoSerialize>(
+    npz: &mut NpzWriter<W>,
+    data: &[T],
+    shape: &[u64],
+) -> io::Result<()> {
     npz.array("data", zip_file_options())?
         .default_dtype()
         .shape(shape)

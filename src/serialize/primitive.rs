@@ -6,10 +6,10 @@ use std::marker::PhantomData;
 #[cfg(feature = "complex")]
 use num_complex::Complex;
 
-use crate::header::DType;
-use crate::type_str::{TypeStr, Endianness, TypeChar};
-use super::{DTypeError, TypeRead, TypeWrite, Serialize, Deserialize, AutoSerialize};
 use super::{expect_scalar_dtype, invalid_data};
+use super::{AutoSerialize, DTypeError, Deserialize, Serialize, TypeRead, TypeWrite};
+use crate::header::DType;
+use crate::type_str::{Endianness, TypeChar, TypeStr};
 
 /// Implementation detail of reading and writing for primitive types.
 pub trait PrimitiveReadWrite: Sized {
@@ -61,29 +61,40 @@ macro_rules! derive_float_primitive_read_write {
             }
 
             #[inline]
-            fn primitive_write_one<W: io::Write>(&self, writer: W, swap_bytes: bool) -> io::Result<()> {
+            fn primitive_write_one<W: io::Write>(
+                &self,
+                writer: W,
+                swap_bytes: bool,
+            ) -> io::Result<()> {
                 self.to_bits().primitive_write_one(writer, swap_bytes)
             }
         }
     };
 }
 
-derive_int_primitive_read_write!{ u8 u16 u32 u64 }
-derive_int_primitive_read_write!{ i8 i16 i32 i64 }
-derive_float_primitive_read_write!{ f32 as u32 }
-derive_float_primitive_read_write!{ f64 as u64 }
+derive_int_primitive_read_write! { u8 u16 u32 u64 }
+derive_int_primitive_read_write! { i8 i16 i32 i64 }
+derive_float_primitive_read_write! { f32 as u32 }
+derive_float_primitive_read_write! { f64 as u64 }
 
 impl PrimitiveReadWrite for bool {
     fn primitive_read_one<R: io::Read>(mut reader: R, _swap_bytes: bool) -> io::Result<bool> {
         let mut buf = [0; 1];
         reader.read_exact(&mut buf)?;
         if buf[0] >= 2 {
-            return Err(invalid_data(format_args!("invalid value for bool: {}", buf[0])))
+            return Err(invalid_data(format_args!(
+                "invalid value for bool: {}",
+                buf[0]
+            )));
         }
         Ok(buf[0] != 0)
     }
 
-    fn primitive_write_one<W: io::Write>(&self, mut writer: W, _swap_bytes: bool) -> io::Result<()> {
+    fn primitive_write_one<W: io::Write>(
+        &self,
+        mut writer: W,
+        _swap_bytes: bool,
+    ) -> io::Result<()> {
         writer.write_all(&[*self as u8])
     }
 }
@@ -92,14 +103,14 @@ impl PrimitiveReadWrite for bool {
 #[doc(hidden)]
 pub struct PrimitiveReader<T> {
     swap_bytes: bool,
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 /// Implementation of [`TypeWrite`] using [`PrimitiveReadWrite`].
 #[doc(hidden)]
 pub struct PrimitiveWriter<T> {
     swap_bytes: bool,
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<T> PrimitiveReader<T> {
@@ -140,10 +151,14 @@ impl<T: PrimitiveReadWrite> TypeWrite for PrimitiveWriter<T> {
 
 #[cfg(feature = "complex")]
 #[doc(hidden)]
-pub struct ComplexReader<F> { pub(super) float: PrimitiveReader<F> }
+pub struct ComplexReader<F> {
+    pub(super) float: PrimitiveReader<F>,
+}
 #[cfg(feature = "complex")]
 #[doc(hidden)]
-pub struct ComplexWriter<F> { pub(super) float: PrimitiveWriter<F> }
+pub struct ComplexWriter<F> {
+    pub(super) float: PrimitiveWriter<F>,
+}
 
 #[cfg(feature = "complex")]
 impl<F: PrimitiveReadWrite> TypeRead for ComplexReader<F> {
@@ -286,7 +301,6 @@ macro_rules! impl_complex_serializable {
 }
 
 impl_complex_serializable! { [ 4 f32 ] [ 8 f64 ] }
-
 
 #[cfg(test)]
 #[deny(unused)]

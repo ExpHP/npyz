@@ -4,23 +4,21 @@
 //   which the warning is generated.
 #![allow(mixed_script_confusables)]
 
-use std::io::{self, Read, Write, Cursor};
-use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
-use npyz::{DType, Field, Serialize, Deserialize, AutoSerialize, WriterBuilder};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use npyz::{AutoSerialize, DType, Deserialize, Field, Serialize, WriterBuilder};
+use std::io::{self, Cursor, Read, Write};
 
 // Allows to use the `#[test]` on WASM.
-#[cfg(target_arch="wasm32")]
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
-#[derive(Serialize, Deserialize, AutoSerialize)]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, AutoSerialize, Debug, PartialEq, Clone)]
 struct Nested {
     v1: f32,
     v2: f32,
 }
 
-#[derive(Serialize, Deserialize, AutoSerialize)]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, AutoSerialize, Debug, PartialEq, Clone)]
 struct Array {
     v_i8: i8,
     v_i16: i16,
@@ -32,14 +30,13 @@ struct Array {
     v_u64: u64,
     v_f32: f32,
     v_f64: f64,
-    v_arr_u32: [u32;7],
+    v_arr_u32: [u32; 7],
     v_mat_u64: [[u64; 3]; 5],
     vec: Vector5,
     nested: Nested,
 }
 
-#[derive(Serialize, Deserialize, AutoSerialize)]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, AutoSerialize, Debug, PartialEq, Clone)]
 struct Version3 {
     v1: f32,
     v2: f32,
@@ -62,7 +59,9 @@ impl Serialize for Vector5 {
         if dtype == &Self::default_dtype() {
             Ok(Vector5Writer)
         } else {
-            Err(npyz::DTypeError::custom("Vector5 only supports '<i4' format!"))
+            Err(npyz::DTypeError::custom(
+                "Vector5 only supports '<i4' format!",
+            ))
         }
     }
 }
@@ -74,7 +73,9 @@ impl Deserialize for Vector5 {
         if dtype == &Self::default_dtype() {
             Ok(Vector5Reader)
         } else {
-            Err(npyz::DTypeError::custom("Vector5 only supports '<i4' format!"))
+            Err(npyz::DTypeError::custom(
+                "Vector5 only supports '<i4' format!",
+            ))
         }
     }
 }
@@ -126,16 +127,29 @@ fn roundtrip() {
             v_u64: i as u64,
             v_f32: i as f32,
             v_f64: i as f64,
-            v_arr_u32: [j,1+j,2+j,3+j,4+j,5+j,6+j],
-            v_mat_u64: [[k,1+k,2+k],[3+k,4+k,5+k],[6+k,7+k,8+k],[9+k,10+k,11+k],[12+k,13+k,14+k]],
-            vec: Vector5(vec![1,2,3,4,5]),
-            nested: Nested { v1: 10.0 * i as f32, v2: i as f32 },
+            v_arr_u32: [j, 1 + j, 2 + j, 3 + j, 4 + j, 5 + j, 6 + j],
+            v_mat_u64: [
+                [k, 1 + k, 2 + k],
+                [3 + k, 4 + k, 5 + k],
+                [6 + k, 7 + k, 8 + k],
+                [9 + k, 10 + k, 11 + k],
+                [12 + k, 13 + k, 14 + k],
+            ],
+            vec: Vector5(vec![1, 2, 3, 4, 5]),
+            nested: Nested {
+                v1: 10.0 * i as f32,
+                v2: i as f32,
+            },
         };
         arrays.push(a);
     }
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::WriteOptions::new().default_dtype().writer(&mut writer).begin_1d().unwrap();
+    let mut out_file = npyz::WriteOptions::new()
+        .default_dtype()
+        .writer(&mut writer)
+        .begin_1d()
+        .unwrap();
     out_file.extend(arrays.iter()).unwrap();
     out_file.finish().unwrap();
 
@@ -159,7 +173,11 @@ fn roundtrip_with_plain_dtype() {
     let array_written = vec![2., 3., 4., 5.];
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::WriteOptions::new().default_dtype().writer(&mut writer).begin_1d().unwrap();
+    let mut out_file = npyz::WriteOptions::new()
+        .default_dtype()
+        .writer(&mut writer)
+        .begin_1d()
+        .unwrap();
     out_file.extend(array_written.iter()).unwrap();
     out_file.finish().unwrap();
 
@@ -171,8 +189,7 @@ fn roundtrip_with_plain_dtype() {
 
 #[test]
 fn roundtrip_byteorder() {
-    #[derive(npyz::Serialize, npyz::Deserialize)]
-    #[derive(Debug, PartialEq, Clone)]
+    #[derive(npyz::Serialize, npyz::Deserialize, Debug, PartialEq, Clone)]
     struct Row {
         be_u32: u32,
         le_u32: u32,
@@ -213,7 +230,11 @@ fn roundtrip_byteorder() {
     };
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
+    let mut out_file = npyz::WriteOptions::new()
+        .dtype(dtype.clone())
+        .writer(&mut writer)
+        .begin_1d()
+        .unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
@@ -244,8 +265,7 @@ fn roundtrip_datetime() {
     //     ('timedelta_be', '>m8[D]'),
     // ])
     // ```
-    #[derive(npyz::Serialize, npyz::Deserialize)]
-    #[derive(Debug, PartialEq, Clone)]
+    #[derive(npyz::Serialize, npyz::Deserialize, Debug, PartialEq, Clone)]
     struct Row {
         datetime: i64,
         timedelta_le: i64,
@@ -273,7 +293,11 @@ fn roundtrip_datetime() {
     };
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
+    let mut out_file = npyz::WriteOptions::new()
+        .dtype(dtype.clone())
+        .writer(&mut writer)
+        .begin_1d()
+        .unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
@@ -300,8 +324,7 @@ fn roundtrip_bytes() {
     //     ('raw', '|V12'),
     // ])
     // ```
-    #[derive(npyz::Serialize, npyz::Deserialize)]
-    #[derive(Debug, PartialEq, Clone)]
+    #[derive(npyz::Serialize, npyz::Deserialize, Debug, PartialEq, Clone)]
     struct Row {
         bytestr: Vec<u8>,
         raw: Vec<u8>,
@@ -330,7 +353,11 @@ fn roundtrip_bytes() {
     };
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
+    let mut out_file = npyz::WriteOptions::new()
+        .dtype(dtype.clone())
+        .writer(&mut writer)
+        .begin_1d()
+        .unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
@@ -346,8 +373,7 @@ fn roundtrip_bytes() {
 // (i.e. don't accidentally reverse the bytestrings)
 #[test]
 fn roundtrip_bytes_byteorder() {
-    #[derive(npyz::Serialize, npyz::Deserialize)]
-    #[derive(Debug, PartialEq, Clone)]
+    #[derive(npyz::Serialize, npyz::Deserialize, Debug, PartialEq, Clone)]
     struct Row {
         s_le: Vec<u8>,
         s_be: Vec<u8>,
@@ -384,7 +410,11 @@ fn roundtrip_bytes_byteorder() {
     };
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
+    let mut out_file = npyz::WriteOptions::new()
+        .dtype(dtype.clone())
+        .writer(&mut writer)
+        .begin_1d()
+        .unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
@@ -398,30 +428,41 @@ fn roundtrip_bytes_byteorder() {
 
 #[test]
 fn nested_array_of_struct() {
-    #[derive(npyz::Deserialize, npyz::Serialize, npyz::AutoSerialize)]
-    #[derive(Debug, PartialEq, Clone, Copy, Default)]
+    #[derive(
+        npyz::Deserialize,
+        npyz::Serialize,
+        npyz::AutoSerialize,
+        Debug,
+        PartialEq,
+        Clone,
+        Copy,
+        Default,
+    )]
     struct Outer {
         foo: [Inner; 3],
     }
 
-    #[derive(npyz::Deserialize, npyz::Serialize, npyz::AutoSerialize)]
-    #[derive(Debug, PartialEq, Clone, Copy, Default)]
+    #[derive(
+        npyz::Deserialize,
+        npyz::Serialize,
+        npyz::AutoSerialize,
+        Debug,
+        PartialEq,
+        Clone,
+        Copy,
+        Default,
+    )]
     struct Inner {
         bar: f64,
     }
 
-    let dtype = DType::Record(vec![
-        Field { name: "foo".into(), dtype: DType::Array(3, Box::new(DType::Record(vec![
-            plain_field("bar", "<f8"),
-        ])))},
-    ]);
+    let dtype = DType::Record(vec![Field {
+        name: "foo".into(),
+        dtype: DType::Array(3, Box::new(DType::Record(vec![plain_field("bar", "<f8")]))),
+    }]);
 
     let row = Outer {
-        foo: [
-            Inner { bar: 1.0 },
-            Inner { bar: 2.0 },
-            Inner { bar: 3.0 },
-        ],
+        foo: [Inner { bar: 1.0 }, Inner { bar: 2.0 }, Inner { bar: 3.0 }],
     };
 
     let expected_data_bytes = {
@@ -433,7 +474,11 @@ fn nested_array_of_struct() {
     };
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
+    let mut out_file = npyz::WriteOptions::new()
+        .dtype(dtype.clone())
+        .writer(&mut writer)
+        .begin_1d()
+        .unwrap();
     out_file.push(&row).unwrap();
     out_file.finish().unwrap();
 
@@ -460,26 +505,40 @@ fn roundtrip_zero_length_array_member() {
     //     ('b', '<i4', [3, 0, 7]),
     // ])
     // ```
-    #[derive(npyz::Serialize, npyz::Deserialize)]
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(npyz::Serialize, npyz::Deserialize, Debug, PartialEq, Clone, Copy)]
     struct Row {
         a: i32,
         b: [[[i32; 7]; 0]; 3],
     }
 
     let dtype = DType::Record(vec![
-        Field { name: "a".into(), dtype: DType::Plain("<i4".parse().unwrap()) },
-        Field { name: "b".into(), dtype: DType::Array(3, Box::new(
-            DType::Array(0, Box::new(
-                DType::Array(7, Box::new(
-                    DType::Plain("<i4".parse().unwrap())
+        Field {
+            name: "a".into(),
+            dtype: DType::Plain("<i4".parse().unwrap()),
+        },
+        Field {
+            name: "b".into(),
+            dtype: DType::Array(
+                3,
+                Box::new(DType::Array(
+                    0,
+                    Box::new(DType::Array(
+                        7,
+                        Box::new(DType::Plain("<i4".parse().unwrap())),
+                    )),
                 )),
-            )),
-        ))},
+            ),
+        },
     ]);
 
-    let row_0 = Row { a: 3, b: [[], [], []] };
-    let row_1 = Row { a: 4, b: [[], [], []] };
+    let row_0 = Row {
+        a: 3,
+        b: [[], [], []],
+    };
+    let row_1 = Row {
+        a: 4,
+        b: [[], [], []],
+    };
 
     let expected_data_bytes = {
         let mut buf = vec![];
@@ -489,7 +548,11 @@ fn roundtrip_zero_length_array_member() {
     };
 
     let mut writer = io::Cursor::new(vec![]);
-    let mut out_file = npyz::WriteOptions::new().dtype(dtype.clone()).writer(&mut writer).begin_1d().unwrap();
+    let mut out_file = npyz::WriteOptions::new()
+        .dtype(dtype.clone())
+        .writer(&mut writer)
+        .begin_1d()
+        .unwrap();
     out_file.extend(vec![row_0, row_1]).unwrap();
     out_file.finish().unwrap();
 
@@ -517,7 +580,8 @@ fn roundtrip_scalar() {
             .dtype(dtype.clone())
             .shape(&[])
             .writer(&mut cursor)
-            .begin_nd().unwrap()
+            .begin_nd()
+            .unwrap()
     };
     writer.push(&row).unwrap();
     writer.finish().unwrap();
@@ -533,17 +597,13 @@ fn roundtrip_scalar() {
 // try a unicode field name, which forces version 3
 #[test]
 fn roundtrip_version3() {
-    #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
-    #[derive(Debug, PartialEq, Clone)]
+    #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize, Debug, PartialEq, Clone)]
     struct Row {
         num: i32,
         αβ: i32,
     }
 
-    let dtype = DType::Record(vec![
-        plain_field("num", "<i4"),
-        plain_field("αβ", "<i4"),
-    ]);
+    let dtype = DType::Record(vec![plain_field("num", "<i4"), plain_field("αβ", "<i4")]);
 
     let row = Row { num: 1, αβ: 2 };
     let expected_data_bytes = b"\x01\x00\x00\x00\x02\x00\x00\x00".to_vec();
@@ -554,7 +614,8 @@ fn roundtrip_version3() {
             .dtype(dtype.clone())
             .writer(&mut cursor)
             .shape(&[1])
-            .begin_nd().unwrap()
+            .begin_nd()
+            .unwrap()
     };
     writer.push(&row).unwrap();
     writer.finish().unwrap();

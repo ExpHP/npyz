@@ -5,7 +5,7 @@ mod read_example {
 
         let shape = match shape[..] {
             [i1, i2, i3] => [i1 as usize, i2 as usize, i3 as usize],
-            _  => panic!("expected 3D array"),
+            _ => panic!("expected 3D array"),
         };
         let true_shape = shape.set_f(order == npyz::Order::Fortran);
 
@@ -86,29 +86,38 @@ mod read_example {
 }
 
 mod write_example {
-    use std::io;
     use std::fs::File;
+    use std::io;
 
     use ndarray::Array;
     use npyz::WriterBuilder;
 
     // Example of writing an array with unknown shape.  The output is always C-order.
-    fn write_array<T, S, D>(writer: impl io::Write, array: &ndarray::ArrayBase<S, D>) -> io::Result<()>
+    fn write_array<T, S, D>(
+        writer: impl io::Write,
+        array: &ndarray::ArrayBase<S, D>,
+    ) -> io::Result<()>
     where
         T: Clone + npyz::AutoSerialize,
-        S: ndarray::Data<Elem=T>,
+        S: ndarray::Data<Elem = T>,
         D: ndarray::Dimension,
     {
         let shape = array.shape().iter().map(|&x| x as u64).collect::<Vec<_>>();
         let c_order_items = array.iter();
 
-        let mut writer = npyz::WriteOptions::new().default_dtype().shape(&shape).writer(writer).begin_nd()?;
+        let mut writer = npyz::WriteOptions::new()
+            .default_dtype()
+            .shape(&shape)
+            .writer(writer)
+            .begin_nd()?;
         writer.extend(c_order_items)?;
         writer.finish()
     }
 
     pub fn main() -> io::Result<()> {
-        let array = Array::from_shape_fn((6, 7, 8), |(i, j, k)| 100*i as i32 + 10*j as i32 + k as i32);
+        let array = Array::from_shape_fn((6, 7, 8), |(i, j, k)| {
+            100 * i as i32 + 10 * j as i32 + k as i32
+        });
         // even weirdly-ordered axes and non-contiguous arrays are fine
         let view = array.view(); // shape (6, 7, 8), C-order
         let view = view.reversed_axes(); // shape (8, 7, 6), fortran order
@@ -121,7 +130,9 @@ mod write_example {
 
     #[test]
     fn test() -> io::Result<()> {
-        let array = Array::from_shape_fn((6, 7, 8), |(i, j, k)| 100*i as i32 + 10*j as i32 + k as i32);
+        let array = Array::from_shape_fn((6, 7, 8), |(i, j, k)| {
+            100 * i as i32 + 10 * j as i32 + k as i32
+        });
         let view = array.view();
         let view = view.reversed_axes();
         let view = view.slice(ndarray::s![.., .., ..;2]);

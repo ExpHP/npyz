@@ -1,16 +1,16 @@
 //! Vec, String, slice, str.
 
-use std::io;
 use std::convert::TryFrom;
+use std::io;
 
 #[cfg(feature = "arrayvec")]
-use arrayvec::{ArrayVec, ArrayString};
+use arrayvec::{ArrayString, ArrayVec};
 
-use crate::header::DType;
-use crate::type_str::{TypeStr, TypeChar};
-use super::{DTypeError, TypeRead, TypeWrite, Serialize, Deserialize};
 use super::primitive::{PrimitiveReader, PrimitiveWriter};
-use super::{invalid_data, expect_scalar_dtype};
+use super::{expect_scalar_dtype, invalid_data};
+use super::{DTypeError, Deserialize, Serialize, TypeRead, TypeWrite};
+use crate::header::DType;
+use crate::type_str::{TypeChar, TypeStr};
 
 #[doc(hidden)]
 pub struct BytesReader {
@@ -53,9 +53,10 @@ impl TypeWrite for BytesWriter {
         use std::cmp::Ordering;
 
         match (bytes.len().cmp(&self.info.size), self.info.is_byte_str) {
-            (Ordering::Greater, _) |
-            (Ordering::Less, false) => return Err(bad_length(bytes, &self.info.type_str)),
-            _ => {},
+            (Ordering::Greater, _) | (Ordering::Less, false) => {
+                return Err(bad_length(bytes, &self.info.type_str))
+            }
+            _ => {}
         }
 
         w.write_all(bytes)?;
@@ -135,24 +136,46 @@ impl<const N: usize> Serialize for ArrayVec<u8, N> {
 
     fn writer(dtype: &DType) -> Result<Self::TypeWriter, DTypeError> {
         let info = check_array_byte_vec_dtype::<Self, N>("write", dtype)?;
-        Ok(ArrayVecBytesWriter { bytes_writer: BytesWriter { info } })
+        Ok(ArrayVecBytesWriter {
+            bytes_writer: BytesWriter { info },
+        })
     }
 }
 
-struct ByteVecDTypeInfo { type_str: TypeStr, size: usize, is_byte_str: bool }
-fn check_byte_vec_dtype<T: ?Sized>(verb: &'static str, dtype: &DType) -> Result<ByteVecDTypeInfo, DTypeError> {
+struct ByteVecDTypeInfo {
+    type_str: TypeStr,
+    size: usize,
+    is_byte_str: bool,
+}
+fn check_byte_vec_dtype<T: ?Sized>(
+    verb: &'static str,
+    dtype: &DType,
+) -> Result<ByteVecDTypeInfo, DTypeError> {
     let type_str = expect_scalar_dtype::<T>(dtype)?;
     let size = size_field_as_usize(type_str)?;
     let is_byte_str = match *type_str {
-        TypeStr { type_char: TypeChar::ByteStr, .. } => true,
-        TypeStr { type_char: TypeChar::RawData, .. } => false,
+        TypeStr {
+            type_char: TypeChar::ByteStr,
+            ..
+        } => true,
+        TypeStr {
+            type_char: TypeChar::RawData,
+            ..
+        } => false,
         _ => return Err(DTypeError::bad_scalar::<T>(verb, type_str)),
     };
-    Ok(ByteVecDTypeInfo { type_str: type_str.clone(), size, is_byte_str })
+    Ok(ByteVecDTypeInfo {
+        type_str: type_str.clone(),
+        size,
+        is_byte_str,
+    })
 }
 
 #[cfg(feature = "arrayvec")]
-fn check_array_byte_vec_dtype<T: ?Sized, const N: usize>(verb: &'static str, dtype: &DType) -> Result<ByteVecDTypeInfo, DTypeError> {
+fn check_array_byte_vec_dtype<T: ?Sized, const N: usize>(
+    verb: &'static str,
+    dtype: &DType,
+) -> Result<ByteVecDTypeInfo, DTypeError> {
     let info = check_byte_vec_dtype::<T>(verb, dtype)?;
     // prevent large |VN types at dtype parsing time because they are impossible to fit
     if !info.is_byte_str && N < info.size {
@@ -161,8 +184,8 @@ fn check_array_byte_vec_dtype<T: ?Sized, const N: usize>(verb: &'static str, dty
     Ok(info)
 }
 
-pub use fixed_size::FixedSizeBytes;
 use crate::serialize::traits::ErrorKind;
+pub use fixed_size::FixedSizeBytes;
 
 mod fixed_size {
     /// Wrapper around `[u8; N]` that can serialize as `|VN`.  The size must match exactly.
@@ -214,7 +237,7 @@ mod fixed_size {
 
 #[doc(hidden)]
 #[non_exhaustive]
-pub struct FixedSizeBytesReader<const N: usize> { }
+pub struct FixedSizeBytesReader<const N: usize> {}
 
 impl<const N: usize> TypeRead for FixedSizeBytesReader<N> {
     type Value = FixedSizeBytes<N>;
@@ -235,7 +258,7 @@ impl<const N: usize> Deserialize for FixedSizeBytes<N> {
         if (type_str.type_char, size) != (TypeChar::RawData, N) {
             return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
-        Ok(FixedSizeBytesReader { })
+        Ok(FixedSizeBytesReader {})
     }
 }
 
@@ -260,7 +283,7 @@ impl<const N: usize> Serialize for FixedSizeBytes<N> {
         if (type_str.type_char, size) != (TypeChar::RawData, N) {
             return Err(DTypeError::bad_scalar::<Self>("write", &type_str));
         };
-        Ok(FixedSizeBytesWriter { })
+        Ok(FixedSizeBytesWriter {})
     }
 }
 
@@ -325,7 +348,8 @@ impl TypeRead for CodePointReader {
     type Value = u32;
 
     fn read_one<R: io::Read>(&self, reader: R) -> io::Result<u32> {
-        self.int_reader.read_one(reader)
+        self.int_reader
+            .read_one(reader)
             .and_then(validate_type_u_code_unit)
     }
 }
@@ -335,9 +359,8 @@ impl TypeRead for CharReader {
 
     fn read_one<R: io::Read>(&self, reader: R) -> io::Result<char> {
         let u32 = self.int_reader.read_one(reader)?;
-        char::try_from(u32).map_err(|_| {
-            invalid_data(format_args!("invalid UTF-32 code unit: {:x}", u32))
-        })
+        char::try_from(u32)
+            .map_err(|_| invalid_data(format_args!("invalid UTF-32 code unit: {:x}", u32)))
     }
 }
 
@@ -423,9 +446,7 @@ impl TypeRead for Utf8StringReader {
 
     fn read_one<R: io::Read>(&self, reader: R) -> io::Result<Self::Value> {
         let vec = self.bytes_reader.read_one(reader)?;
-        String::from_utf8(vec).map_err(|e| {
-            invalid_data(format_args!("invalid utf-8: {}", e))
-        })
+        String::from_utf8(vec).map_err(|e| invalid_data(format_args!("invalid utf-8: {}", e)))
     }
 }
 
@@ -463,7 +484,7 @@ impl Utf8StringReader {
                     return None;
                 }
                 Some(Ok(Utf8StringReader { bytes_reader }))
-            },
+            }
         }
     }
 }
@@ -478,8 +499,13 @@ impl Utf32StringReader {
             Err(e) => return Some(Err(e)),
             Ok(val) => val,
         };
-        let char_reader = CharReader { int_reader: PrimitiveReader::new(type_str.endianness) };
-        Some(Ok(Utf32StringReader { num_u32s, char_reader }))
+        let char_reader = CharReader {
+            int_reader: PrimitiveReader::new(type_str.endianness),
+        };
+        Some(Ok(Utf32StringReader {
+            num_u32s,
+            char_reader,
+        }))
     }
 }
 
@@ -493,8 +519,13 @@ impl Deserialize for Vec<u32> {
         };
 
         let num_u32s = size_field_as_usize(type_str)?;
-        let codepoint_reader = CodePointReader { int_reader: PrimitiveReader::new(type_str.endianness) };
-        Ok(Utf32WithSurrogatesReader { num_u32s, codepoint_reader })
+        let codepoint_reader = CodePointReader {
+            int_reader: PrimitiveReader::new(type_str.endianness),
+        };
+        Ok(Utf32WithSurrogatesReader {
+            num_u32s,
+            codepoint_reader,
+        })
     }
 }
 
@@ -508,8 +539,13 @@ impl Deserialize for Vec<char> {
         };
 
         let num_u32s = size_field_as_usize(type_str)?;
-        let char_reader = CharReader { int_reader: PrimitiveReader::new(type_str.endianness) };
-        Ok(Utf32Reader { num_u32s, char_reader })
+        let char_reader = CharReader {
+            int_reader: PrimitiveReader::new(type_str.endianness),
+        };
+        Ok(Utf32Reader {
+            num_u32s,
+            char_reader,
+        })
     }
 }
 
@@ -542,8 +578,13 @@ impl<const N: usize> Deserialize for ArrayVec<u32, N> {
             return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
 
-        let codepoint_reader = CodePointReader { int_reader: PrimitiveReader::new(type_str.endianness) };
-        Ok(Utf32WithSurrogatesArrayVecReader { num_u32s_in_dtype, codepoint_reader })
+        let codepoint_reader = CodePointReader {
+            int_reader: PrimitiveReader::new(type_str.endianness),
+        };
+        Ok(Utf32WithSurrogatesArrayVecReader {
+            num_u32s_in_dtype,
+            codepoint_reader,
+        })
     }
 }
 
@@ -560,8 +601,13 @@ impl<const N: usize> Deserialize for ArrayVec<char, N> {
             return Err(DTypeError::bad_scalar::<Self>("read", &type_str));
         };
 
-        let char_reader = CharReader { int_reader: PrimitiveReader::new(type_str.endianness) };
-        Ok(Utf32ArrayVecReader { num_u32s_in_dtype, char_reader })
+        let char_reader = CharReader {
+            int_reader: PrimitiveReader::new(type_str.endianness),
+        };
+        Ok(Utf32ArrayVecReader {
+            num_u32s_in_dtype,
+            char_reader,
+        })
     }
 }
 
@@ -572,11 +618,13 @@ impl<const N: usize> Deserialize for ArrayString<N> {
 
     fn reader(dtype: &DType) -> Result<Self::TypeReader, DTypeError> {
         match Utf8StringReader::try_from_dtype(dtype) {
-            Some(string_reader) => Ok(Utf8ArrayStringReader { string_reader: string_reader? }),
+            Some(string_reader) => Ok(Utf8ArrayStringReader {
+                string_reader: string_reader?,
+            }),
             None => {
                 let type_str = expect_scalar_dtype::<Self>(dtype)?;
                 Err(DTypeError::bad_scalar::<Self>("read", &type_str))
-            },
+            }
         }
     }
 }
@@ -662,7 +710,8 @@ impl TypeWrite for Utf32StrWriter {
             if str_len > self.num_u32s {
                 return Err(invalid_data(format_args!(
                     "string has too many code units ({}) for type-string '{}'",
-                    str.chars().count(), &self.type_str,
+                    str.chars().count(),
+                    &self.type_str,
                 )));
             }
             self.int_writer.write_one(&mut w, &(char as u32))?;
@@ -681,7 +730,8 @@ impl TypeWrite for Utf8StrWriter {
         if str.len() > self.num_bytes {
             return Err(invalid_data(format_args!(
                 "string has too many code units ({}) for type-string '{}'",
-                str.chars().count(), &self.type_str,
+                str.chars().count(),
+                &self.type_str,
             )));
         }
         w.write_all(str.as_bytes())?;
@@ -715,7 +765,11 @@ impl Serialize for [u32] {
         let num_u32s = size_field_as_usize(type_str)?;
         let type_str = type_str.clone();
         let int_writer = PrimitiveWriter::new(type_str.endianness);
-        Ok(Utf32WithSurrogatesWriter { int_writer, type_str, num_u32s })
+        Ok(Utf32WithSurrogatesWriter {
+            int_writer,
+            type_str,
+            num_u32s,
+        })
     }
 }
 
@@ -731,7 +785,11 @@ impl Serialize for [char] {
         let num_u32s = size_field_as_usize(type_str)?;
         let type_str = type_str.clone();
         let int_writer = PrimitiveWriter::new(type_str.endianness);
-        Ok(Utf32Writer { int_writer, type_str, num_u32s })
+        Ok(Utf32Writer {
+            int_writer,
+            type_str,
+            num_u32s,
+        })
     }
 }
 
@@ -745,13 +803,20 @@ impl Serialize for str {
                 let num_u32s = size_field_as_usize(type_str)?;
                 let type_str = type_str.clone();
                 let int_writer = PrimitiveWriter::new(type_str.endianness);
-                Ok(StrWriter::Utf32(Utf32StrWriter { int_writer, type_str, num_u32s }))
-            },
+                Ok(StrWriter::Utf32(Utf32StrWriter {
+                    int_writer,
+                    type_str,
+                    num_u32s,
+                }))
+            }
             TypeChar::ByteStr => {
                 let num_bytes = size_field_as_usize(type_str)?;
                 let type_str = type_str.clone();
-                Ok(StrWriter::Utf8(Utf8StrWriter { type_str, num_bytes }))
-            },
+                Ok(StrWriter::Utf8(Utf8StrWriter {
+                    type_str,
+                    num_bytes,
+                }))
+            }
             _ => Err(DTypeError::bad_scalar::<Self>("write", &type_str)),
         }
     }
@@ -763,7 +828,10 @@ fn validate_type_u_code_unit(value: u32) -> Result<u32, io::Error> {
     if value < 0x110000 {
         Ok(value)
     } else {
-        Err(invalid_data(format_args!("codepoint {:#x} is out of range", value)))
+        Err(invalid_data(format_args!(
+            "codepoint {:#x} is out of range",
+            value
+        )))
     }
 }
 
@@ -772,39 +840,52 @@ fn size_field_as_usize(type_str: &TypeStr) -> Result<usize, DTypeError> {
 }
 
 fn truncate_trailing_nuls<T>(vec: &mut Vec<T>, mut is_null: impl FnMut(&T) -> bool) {
-    let end = vec.iter().rposition(|x| !is_null(x)).map_or(0, |ind| ind + 1);
+    let end = vec
+        .iter()
+        .rposition(|x| !is_null(x))
+        .map_or(0, |ind| ind + 1);
     vec.truncate(end);
 }
 
 #[cfg(feature = "arrayvec")]
-fn arrayvec_truncate_trailing_nuls<T, const N: usize>(vec: &mut ArrayVec<T, N>, mut is_null: impl FnMut(&T) -> bool) {
-    let end = vec.iter().rposition(|x| !is_null(x)).map_or(0, |ind| ind + 1);
+fn arrayvec_truncate_trailing_nuls<T, const N: usize>(
+    vec: &mut ArrayVec<T, N>,
+    mut is_null: impl FnMut(&T) -> bool,
+) {
+    let end = vec
+        .iter()
+        .rposition(|x| !is_null(x))
+        .map_or(0, |ind| ind + 1);
     vec.truncate(end);
 }
 
 fn bad_length<T>(slice: &[T], type_str: &TypeStr) -> io::Error {
-    invalid_data(format_args!("bad item length {} for type-string '{}'", slice.len(), type_str))
+    invalid_data(format_args!(
+        "bad item length {} for type-string '{}'",
+        slice.len(),
+        type_str
+    ))
 }
 
-impl_serialize_by_deref!{[] Vec<u8> => [u8]}
-impl_serialize_by_deref!{[] Vec<u32> => [u32]}
-impl_serialize_by_deref!{[] Vec<char> => [char]}
-impl_serialize_by_deref!{[] String => str}
+impl_serialize_by_deref! {[] Vec<u8> => [u8]}
+impl_serialize_by_deref! {[] Vec<u32> => [u32]}
+impl_serialize_by_deref! {[] Vec<char> => [char]}
+impl_serialize_by_deref! {[] String => str}
 
 #[cfg(feature = "arrayvec")]
 mod arrayvec_serialize_impls {
     use super::*;
     use crate::serialize::AutoSerialize;
 
-    impl_serialize_by_deref!{
+    impl_serialize_by_deref! {
         /// _This impl is only available with the **`arrayvec`** feature._
         [const N: usize] ArrayVec<u32, N> => [u32]
     }
-    impl_serialize_by_deref!{
+    impl_serialize_by_deref! {
         /// _This impl is only available with the **`arrayvec`** feature._
         [const N: usize] ArrayVec<char, N> => [char]
     }
-    impl_serialize_by_deref!{
+    impl_serialize_by_deref! {
         /// _This impl is only available with the **`arrayvec`** feature._
         [const N: usize] ArrayString<N> => str
     }
@@ -813,7 +894,11 @@ mod arrayvec_serialize_impls {
     impl<const N: usize> AutoSerialize for ArrayVec<u32, N> {
         fn default_dtype() -> DType {
             let size = u64::try_from(N).unwrap();
-            DType::new_scalar(TypeStr::with_auto_endianness(TypeChar::UnicodeStr, size, None))
+            DType::new_scalar(TypeStr::with_auto_endianness(
+                TypeChar::UnicodeStr,
+                size,
+                None,
+            ))
         }
     }
 
@@ -821,7 +906,11 @@ mod arrayvec_serialize_impls {
     impl<const N: usize> AutoSerialize for ArrayVec<char, N> {
         fn default_dtype() -> DType {
             let size = u64::try_from(N).unwrap();
-            DType::new_scalar(TypeStr::with_auto_endianness(TypeChar::UnicodeStr, size, None))
+            DType::new_scalar(TypeStr::with_auto_endianness(
+                TypeChar::UnicodeStr,
+                size,
+                None,
+            ))
         }
     }
 
@@ -848,7 +937,10 @@ mod tests {
         for ty in vec!["'<S3'", "'>S3'", "'|S3'"] {
             let ty = DType::parse(ty).unwrap();
             assert_eq!(writer_output::<[u8]>(&ty, &[1, 3, 5][..]), blob![1, 3, 5]);
-            assert_eq!(reader_output::<Vec<u8>>(&ty, &[1, 3, 5][..]), blob![1, 3, 5]);
+            assert_eq!(
+                reader_output::<Vec<u8>>(&ty, &[1, 3, 5][..]),
+                blob![1, 3, 5]
+            );
         }
     }
 
@@ -863,8 +955,14 @@ mod tests {
         assert_eq!(writer_output::<[u8]>(&ts, &[]), blob![]);
 
         let ts = DType::parse("'|V0'").unwrap();
-        assert_eq!(reader_output::<FixedSizeBytes<0>>(&ts, &[]), FixedSizeBytes([]));
-        assert_eq!(writer_output::<FixedSizeBytes<0>>(&ts, &FixedSizeBytes([])), blob![]);
+        assert_eq!(
+            reader_output::<FixedSizeBytes<0>>(&ts, &[]),
+            FixedSizeBytes([])
+        );
+        assert_eq!(
+            writer_output::<FixedSizeBytes<0>>(&ts, &FixedSizeBytes([])),
+            blob![]
+        );
 
         let ts = DType::parse("'>U0'").unwrap();
         assert_eq!(reader_output::<Vec<u32>>(&ts, &[]), vec![]);
@@ -887,29 +985,56 @@ mod tests {
     #[test]
     fn write_wrong_length() {
         let s_3 = DType::parse("'|S3'").unwrap();
-        assert_eq!(DType::parse("'|a3'").unwrap(), s_3);  // doesn't need its own tests
+        assert_eq!(DType::parse("'|a3'").unwrap(), s_3); // doesn't need its own tests
         let v_3 = DType::parse("'|V3'").unwrap();
         let u_3 = DType::parse("'>U3'").unwrap();
 
         assert_eq!(writer_output::<[u8]>(&s_3, &[1, 3, 5]), blob![1, 3, 5]);
         assert_eq!(writer_output::<[u8]>(&v_3, &[1, 3, 5]), blob![1, 3, 5]);
-        assert_eq!(writer_output::<[u32]>(&u_3, &[1, 3, 5]), blob![be(1_u32), be(3_u32), be(5_u32)]);
-        assert_eq!(writer_output::<[char]>(&u_3, &char_vec("\x01\x03\x05")[..]), blob![be(1_u32), be(3_u32), be(5_u32)]);
-        assert_eq!(writer_output::<str>(&u_3, "\x01\x03\x05"), blob![be(1_u32), be(3_u32), be(5_u32)]);
+        assert_eq!(
+            writer_output::<[u32]>(&u_3, &[1, 3, 5]),
+            blob![be(1_u32), be(3_u32), be(5_u32)]
+        );
+        assert_eq!(
+            writer_output::<[char]>(&u_3, &char_vec("\x01\x03\x05")[..]),
+            blob![be(1_u32), be(3_u32), be(5_u32)]
+        );
+        assert_eq!(
+            writer_output::<str>(&u_3, "\x01\x03\x05"),
+            blob![be(1_u32), be(3_u32), be(5_u32)]
+        );
         assert_eq!(writer_output::<str>(&s_3, "\x01\x03\x05"), blob![1, 3, 5]);
 
         assert_eq!(writer_output::<[u8]>(&s_3, &[1]), blob![1, 0, 0]);
         writer_expect_write_err::<[u8]>(&v_3, &[1]);
-        assert_eq!(writer_output::<[u32]>(&u_3, &[1]), blob![be(1_u32), be(0_u32), be(0_u32)]);
-        assert_eq!(writer_output::<[char]>(&u_3, &char_vec("\x01")), blob![be(1_u32), be(0_u32), be(0_u32)]);
-        assert_eq!(writer_output::<str>(&u_3, "\x01"), blob![be(1_u32), be(0_u32), be(0_u32)]);
+        assert_eq!(
+            writer_output::<[u32]>(&u_3, &[1]),
+            blob![be(1_u32), be(0_u32), be(0_u32)]
+        );
+        assert_eq!(
+            writer_output::<[char]>(&u_3, &char_vec("\x01")),
+            blob![be(1_u32), be(0_u32), be(0_u32)]
+        );
+        assert_eq!(
+            writer_output::<str>(&u_3, "\x01"),
+            blob![be(1_u32), be(0_u32), be(0_u32)]
+        );
         assert_eq!(writer_output::<str>(&s_3, "\x01"), blob![1, 0, 0]);
 
         assert_eq!(writer_output::<[u8]>(&s_3, &[]), blob![0, 0, 0]);
         writer_expect_write_err::<[u8]>(&v_3, &[]);
-        assert_eq!(writer_output::<[u32]>(&u_3, &[]), blob![be(0_u32), be(0_u32), be(0_u32)]);
-        assert_eq!(writer_output::<[char]>(&u_3, &[]), blob![be(0_u32), be(0_u32), be(0_u32)]);
-        assert_eq!(writer_output::<str>(&u_3, ""), blob![be(0_u32), be(0_u32), be(0_u32)]);
+        assert_eq!(
+            writer_output::<[u32]>(&u_3, &[]),
+            blob![be(0_u32), be(0_u32), be(0_u32)]
+        );
+        assert_eq!(
+            writer_output::<[char]>(&u_3, &[]),
+            blob![be(0_u32), be(0_u32), be(0_u32)]
+        );
+        assert_eq!(
+            writer_output::<str>(&u_3, ""),
+            blob![be(0_u32), be(0_u32), be(0_u32)]
+        );
         assert_eq!(writer_output::<str>(&s_3, ""), blob![0, 0, 0]);
 
         writer_expect_write_err::<[u8]>(&s_3, &[1, 3, 5, 7]);
@@ -929,18 +1054,39 @@ mod tests {
         // Most arrayvec write impls defer to the slice implementation just like Vec, so they are
         // already tested by the `write_wrong_length`. However, ArrayVec<u8> has additional
         // preconditions for |V.
-        assert_eq!(writer_output(&s_3, &ArrayVec::<u8, 2>::from_iter([1, 3])), blob![1, 3, 0]);
-        assert_eq!(writer_output(&s_3, &ArrayVec::<u8, 2>::from_iter([1])), blob![1, 0, 0]);
-        assert_eq!(writer_output(&s_3, &ArrayVec::<u8, 3>::from_iter([1, 3, 5])), blob![1, 3, 5]);
-        assert_eq!(writer_output(&s_3, &ArrayVec::<u8, 3>::from_iter([1])), blob![1, 0, 0]);
+        assert_eq!(
+            writer_output(&s_3, &ArrayVec::<u8, 2>::from_iter([1, 3])),
+            blob![1, 3, 0]
+        );
+        assert_eq!(
+            writer_output(&s_3, &ArrayVec::<u8, 2>::from_iter([1])),
+            blob![1, 0, 0]
+        );
+        assert_eq!(
+            writer_output(&s_3, &ArrayVec::<u8, 3>::from_iter([1, 3, 5])),
+            blob![1, 3, 5]
+        );
+        assert_eq!(
+            writer_output(&s_3, &ArrayVec::<u8, 3>::from_iter([1])),
+            blob![1, 0, 0]
+        );
         writer_expect_write_err(&s_3, &ArrayVec::<u8, 4>::from_iter([1, 3, 5, 7]));
-        assert_eq!(writer_output(&s_3, &ArrayVec::<u8, 4>::from_iter([1])), blob![1, 0, 0]);
+        assert_eq!(
+            writer_output(&s_3, &ArrayVec::<u8, 4>::from_iter([1])),
+            blob![1, 0, 0]
+        );
 
         writer_expect_err::<ArrayVec<u8, 2>>(&v_3);
-        assert_eq!(writer_output(&v_3, &ArrayVec::<u8, 3>::from_iter([1, 3, 5])), blob![1, 3, 5]);
+        assert_eq!(
+            writer_output(&v_3, &ArrayVec::<u8, 3>::from_iter([1, 3, 5])),
+            blob![1, 3, 5]
+        );
         writer_expect_write_err(&v_3, &ArrayVec::<u8, 3>::from_iter([1]));
         writer_expect_write_err(&v_3, &ArrayVec::<u8, 4>::from_iter([1, 3, 5, 7]));
-        assert_eq!(writer_output(&v_3, &ArrayVec::<u8, 4>::from_iter([1, 3, 5])), blob![1, 3, 5]);
+        assert_eq!(
+            writer_output(&v_3, &ArrayVec::<u8, 4>::from_iter([1, 3, 5])),
+            blob![1, 3, 5]
+        );
         writer_expect_write_err(&v_3, &ArrayVec::<u8, 4>::from_iter([1]));
     }
 
@@ -952,7 +1098,10 @@ mod tests {
         writer_expect_err::<FixedSizeBytes<3>>(&s_3);
         writer_expect_err::<FixedSizeBytes<2>>(&v_3);
         writer_expect_err::<FixedSizeBytes<4>>(&v_3);
-        assert_eq!(writer_output::<FixedSizeBytes<3>>(&v_3, &FixedSizeBytes([1, 3, 5])), blob![1, 3, 5]);
+        assert_eq!(
+            writer_output::<FixedSizeBytes<3>>(&v_3, &FixedSizeBytes([1, 3, 5])),
+            blob![1, 3, 5]
+        );
     }
 
     #[test]
@@ -968,18 +1117,42 @@ mod tests {
         assert_eq!(reader_output::<Vec<u8>>(&ts, &blob![0, 0]), vec![0, 0]);
 
         let ts = DType::parse("'<U2'").unwrap();
-        assert_eq!(reader_output::<Vec<u32>>(&ts, &blob![le(1u32), le(3u32)]), vec![1, 3]);
-        assert_eq!(reader_output::<Vec<u32>>(&ts, &blob![le(1u32), le(0u32)]), vec![1]);
-        assert_eq!(reader_output::<Vec<u32>>(&ts, &blob![le(0u32), le(0u32)]), vec![]);
+        assert_eq!(
+            reader_output::<Vec<u32>>(&ts, &blob![le(1u32), le(3u32)]),
+            vec![1, 3]
+        );
+        assert_eq!(
+            reader_output::<Vec<u32>>(&ts, &blob![le(1u32), le(0u32)]),
+            vec![1]
+        );
+        assert_eq!(
+            reader_output::<Vec<u32>>(&ts, &blob![le(0u32), le(0u32)]),
+            vec![]
+        );
 
         let ts = DType::parse("'<U2'").unwrap();
-        assert_eq!(reader_output::<Vec<char>>(&ts, &blob![le(1u32), le(3u32)]), char_vec("\x01\x03"));
-        assert_eq!(reader_output::<Vec<char>>(&ts, &blob![le(1u32), le(0u32)]), char_vec("\x01"));
-        assert_eq!(reader_output::<Vec<char>>(&ts, &blob![le(0u32), le(0u32)]), char_vec(""));
+        assert_eq!(
+            reader_output::<Vec<char>>(&ts, &blob![le(1u32), le(3u32)]),
+            char_vec("\x01\x03")
+        );
+        assert_eq!(
+            reader_output::<Vec<char>>(&ts, &blob![le(1u32), le(0u32)]),
+            char_vec("\x01")
+        );
+        assert_eq!(
+            reader_output::<Vec<char>>(&ts, &blob![le(0u32), le(0u32)]),
+            char_vec("")
+        );
 
         let ts = DType::parse("'<U2'").unwrap();
-        assert_eq!(reader_output::<String>(&ts, &blob![le(1u32), le(3u32)]), "\x01\x03");
-        assert_eq!(reader_output::<String>(&ts, &blob![le(1u32), le(0u32)]), "\x01");
+        assert_eq!(
+            reader_output::<String>(&ts, &blob![le(1u32), le(3u32)]),
+            "\x01\x03"
+        );
+        assert_eq!(
+            reader_output::<String>(&ts, &blob![le(1u32), le(0u32)]),
+            "\x01"
+        );
         assert_eq!(reader_output::<String>(&ts, &blob![le(0u32), le(0u32)]), "");
 
         let ts = DType::parse("'|S2'").unwrap();
@@ -992,29 +1165,74 @@ mod tests {
     #[cfg(feature = "arrayvec")]
     fn arrayvec_truncate_trailing_nuls() {
         let ts = DType::parse("'<U2'").unwrap();
-        assert_eq!(reader_output::<ArrayVec<u32, 2>>(&ts, &blob![le(1u32), le(3u32)]), ArrayVec::from_iter(vec![1, 3]));
-        assert_eq!(reader_output::<ArrayVec<u32, 2>>(&ts, &blob![le(1u32), le(0u32)]), ArrayVec::from_iter(vec![1]));
-        assert_eq!(reader_output::<ArrayVec<u32, 2>>(&ts, &blob![le(0u32), le(0u32)]), ArrayVec::from_iter(vec![]));
+        assert_eq!(
+            reader_output::<ArrayVec<u32, 2>>(&ts, &blob![le(1u32), le(3u32)]),
+            ArrayVec::from_iter(vec![1, 3])
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<u32, 2>>(&ts, &blob![le(1u32), le(0u32)]),
+            ArrayVec::from_iter(vec![1])
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<u32, 2>>(&ts, &blob![le(0u32), le(0u32)]),
+            ArrayVec::from_iter(vec![])
+        );
 
         let ts = DType::parse("'<U2'").unwrap();
-        assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(1u32), le(3u32)]), ArrayVec::from_iter("\x01\x03".chars()));
-        assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(1u32), le(0u32)]), ArrayVec::from_iter("\x01".chars()));
-        assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(0u32), le(0u32)]), ArrayVec::from_iter("".chars()));
+        assert_eq!(
+            reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(1u32), le(3u32)]),
+            ArrayVec::from_iter("\x01\x03".chars())
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(1u32), le(0u32)]),
+            ArrayVec::from_iter("\x01".chars())
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<char, 2>>(&ts, &blob![le(0u32), le(0u32)]),
+            ArrayVec::from_iter("".chars())
+        );
 
         let ts = DType::parse("'|S2'").unwrap();
-        assert_eq!(reader_output::<ArrayString<2>>(&ts, &blob![1, 3]), ArrayString::<2>::try_from("\x01\x03").unwrap());
-        assert_eq!(reader_output::<ArrayString<2>>(&ts, &blob![1, 0]), ArrayString::<2>::try_from("\x01").unwrap());
-        assert_eq!(reader_output::<ArrayString<2>>(&ts, &blob![0, 0]), ArrayString::<2>::try_from("").unwrap());
+        assert_eq!(
+            reader_output::<ArrayString<2>>(&ts, &blob![1, 3]),
+            ArrayString::<2>::try_from("\x01\x03").unwrap()
+        );
+        assert_eq!(
+            reader_output::<ArrayString<2>>(&ts, &blob![1, 0]),
+            ArrayString::<2>::try_from("\x01").unwrap()
+        );
+        assert_eq!(
+            reader_output::<ArrayString<2>>(&ts, &blob![0, 0]),
+            ArrayString::<2>::try_from("").unwrap()
+        );
 
         let ts = DType::parse("'|S2'").unwrap();
-        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 3]), ArrayVec::<u8, 2>::from_iter(vec![1, 3]));
-        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 0]), ArrayVec::<u8, 2>::from_iter(vec![1]));
-        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![0, 0]), ArrayVec::<u8, 2>::from_iter(vec![]));
+        assert_eq!(
+            reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 3]),
+            ArrayVec::<u8, 2>::from_iter(vec![1, 3])
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 0]),
+            ArrayVec::<u8, 2>::from_iter(vec![1])
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<u8, 2>>(&ts, &blob![0, 0]),
+            ArrayVec::<u8, 2>::from_iter(vec![])
+        );
 
         let ts = DType::parse("'|V2'").unwrap();
-        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 3]), ArrayVec::<u8, 2>::from_iter(vec![1, 3]));
-        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 0]), ArrayVec::<u8, 2>::from_iter(vec![1, 0]));
-        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &blob![0, 0]), ArrayVec::<u8, 2>::from_iter(vec![0, 0]));
+        assert_eq!(
+            reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 3]),
+            ArrayVec::<u8, 2>::from_iter(vec![1, 3])
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<u8, 2>>(&ts, &blob![1, 0]),
+            ArrayVec::<u8, 2>::from_iter(vec![1, 0])
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<u8, 2>>(&ts, &blob![0, 0]),
+            ArrayVec::<u8, 2>::from_iter(vec![0, 0])
+        );
     }
 
     #[test]
@@ -1027,21 +1245,42 @@ mod tests {
         assert_eq!(writer_output(&ts, value), encoded.to_vec());
 
         let value: &[u32] = &[0, 1, 0, 0, 3, 5];
-        let encoded: &[u8] = &blob![le(0_u32), le(1_u32), le(0_u32), le(0_u32), le(3_u32), le(5_u32)];
+        let encoded: &[u8] = &blob![
+            le(0_u32),
+            le(1_u32),
+            le(0_u32),
+            le(0_u32),
+            le(3_u32),
+            le(5_u32)
+        ];
         let ts = DType::parse("'<U6'").unwrap();
 
         assert_eq!(reader_output::<Vec<u32>>(&ts, encoded), value.to_vec());
         assert_eq!(writer_output(&ts, value), encoded.to_vec());
 
         let value: &[char] = &char_vec("\x00\x01\x00\x00\x03\x05")[..];
-        let encoded: &[u8] = &blob![le(0_u32), le(1_u32), le(0_u32), le(0_u32), le(3_u32), le(5_u32)];
+        let encoded: &[u8] = &blob![
+            le(0_u32),
+            le(1_u32),
+            le(0_u32),
+            le(0_u32),
+            le(3_u32),
+            le(5_u32)
+        ];
         let ts = DType::parse("'<U6'").unwrap();
 
         assert_eq!(reader_output::<Vec<char>>(&ts, encoded), value.to_vec());
         assert_eq!(writer_output(&ts, value), encoded.to_vec());
 
         let value: &str = "\x00\x01\x00\x00\x03\x05";
-        let encoded: &[u8] = &blob![le(0_u32), le(1_u32), le(0_u32), le(0_u32), le(3_u32), le(5_u32)];
+        let encoded: &[u8] = &blob![
+            le(0_u32),
+            le(1_u32),
+            le(0_u32),
+            le(0_u32),
+            le(3_u32),
+            le(5_u32)
+        ];
         let ts = DType::parse("'<U6'").unwrap();
 
         assert_eq!(reader_output::<String>(&ts, encoded), value.to_string());
@@ -1061,14 +1300,26 @@ mod tests {
         let ts = DType::parse("'<U5'").unwrap();
         let data = blob![le(1_u32), le(3_u32), le(5_u32), le(7_u32), le(9_u32)];
 
-        assert_eq!(reader_output::<ArrayVec<u32, 2>>(&ts, &data), ArrayVec::from_iter(vec![1, 3]));
-        assert_eq!(reader_output::<ArrayVec<char, 2>>(&ts, &data), ArrayVec::from_iter("\x01\x03".chars()));
+        assert_eq!(
+            reader_output::<ArrayVec<u32, 2>>(&ts, &data),
+            ArrayVec::from_iter(vec![1, 3])
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<char, 2>>(&ts, &data),
+            ArrayVec::from_iter("\x01\x03".chars())
+        );
 
         let ts = DType::parse("'|S5'").unwrap();
         let data = blob![1, 3, 5, 7, 9];
 
-        assert_eq!(reader_output::<ArrayString<2>>(&ts, &data), ArrayString::<2>::try_from("\x01\x03").unwrap());
-        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &data), ArrayVec::<u8, 2>::try_from(&[1, 3][..]).unwrap());
+        assert_eq!(
+            reader_output::<ArrayString<2>>(&ts, &data),
+            ArrayString::<2>::try_from("\x01\x03").unwrap()
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<u8, 2>>(&ts, &data),
+            ArrayVec::<u8, 2>::try_from(&[1, 3][..]).unwrap()
+        );
     }
 
     #[test]
@@ -1086,41 +1337,89 @@ mod tests {
     #[cfg(feature = "arrayvec")]
     fn arrayvec_truncated_in_middle_of_utf8_char() {
         let ts = DType::parse("'|S6'").unwrap();
-        let data = "abはe".as_bytes().to_vec();  // has a 3-byte char
+        let data = "abはe".as_bytes().to_vec(); // has a 3-byte char
 
         // ArrayString cares about UTF8
-        assert_eq!(reader_output::<ArrayString<2>>(&ts, &data), ArrayString::<2>::try_from("ab").unwrap());
-        assert_eq!(reader_output::<ArrayString<3>>(&ts, &data), ArrayString::<3>::try_from("ab").unwrap());
-        assert_eq!(reader_output::<ArrayString<4>>(&ts, &data), ArrayString::<4>::try_from("ab").unwrap());
-        assert_eq!(reader_output::<ArrayString<5>>(&ts, &data), ArrayString::<5>::try_from("abは").unwrap());
+        assert_eq!(
+            reader_output::<ArrayString<2>>(&ts, &data),
+            ArrayString::<2>::try_from("ab").unwrap()
+        );
+        assert_eq!(
+            reader_output::<ArrayString<3>>(&ts, &data),
+            ArrayString::<3>::try_from("ab").unwrap()
+        );
+        assert_eq!(
+            reader_output::<ArrayString<4>>(&ts, &data),
+            ArrayString::<4>::try_from("ab").unwrap()
+        );
+        assert_eq!(
+            reader_output::<ArrayString<5>>(&ts, &data),
+            ArrayString::<5>::try_from("abは").unwrap()
+        );
 
         // but ArrayVec<u8> does not
-        assert_eq!(reader_output::<ArrayVec<u8, 2>>(&ts, &data), ArrayVec::<u8, 2>::try_from(&data[..2]).unwrap());
-        assert_eq!(reader_output::<ArrayVec<u8, 3>>(&ts, &data), ArrayVec::<u8, 3>::try_from(&data[..3]).unwrap());
-        assert_eq!(reader_output::<ArrayVec<u8, 4>>(&ts, &data), ArrayVec::<u8, 4>::try_from(&data[..4]).unwrap());
-        assert_eq!(reader_output::<ArrayVec<u8, 5>>(&ts, &data), ArrayVec::<u8, 5>::try_from(&data[..5]).unwrap());
+        assert_eq!(
+            reader_output::<ArrayVec<u8, 2>>(&ts, &data),
+            ArrayVec::<u8, 2>::try_from(&data[..2]).unwrap()
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<u8, 3>>(&ts, &data),
+            ArrayVec::<u8, 3>::try_from(&data[..3]).unwrap()
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<u8, 4>>(&ts, &data),
+            ArrayVec::<u8, 4>::try_from(&data[..4]).unwrap()
+        );
+        assert_eq!(
+            reader_output::<ArrayVec<u8, 5>>(&ts, &data),
+            ArrayVec::<u8, 5>::try_from(&data[..5]).unwrap()
+        );
     }
 
     #[test]
     fn serialize_types_that_deref_to_slices() {
         let ts = DType::parse("'|S3'").unwrap();
-        assert_eq!(writer_output::<Vec<u8>>(&ts, &vec![1, 3, 5]), blob![1, 3, 5]);
+        assert_eq!(
+            writer_output::<Vec<u8>>(&ts, &vec![1, 3, 5]),
+            blob![1, 3, 5]
+        );
         assert_eq!(writer_output::<&[u8]>(&ts, &&[1, 3, 5][..]), blob![1, 3, 5]);
 
         let ts = DType::parse("'<U3'").unwrap();
-        assert_eq!(writer_output::<Vec<u32>>(&ts, &vec![1, 3, 5]), blob![le(1_u32), le(3_u32), le(5_u32)]);
-        assert_eq!(writer_output::<&[u32]>(&ts, &&[1, 3, 5][..]), blob![le(1_u32), le(3_u32), le(5_u32)]);
+        assert_eq!(
+            writer_output::<Vec<u32>>(&ts, &vec![1, 3, 5]),
+            blob![le(1_u32), le(3_u32), le(5_u32)]
+        );
+        assert_eq!(
+            writer_output::<&[u32]>(&ts, &&[1, 3, 5][..]),
+            blob![le(1_u32), le(3_u32), le(5_u32)]
+        );
 
         let ts = DType::parse("'<U3'").unwrap();
-        assert_eq!(writer_output::<Vec<char>>(&ts, &char_vec("\x01\x03\x05")), blob![le(1_u32), le(3_u32), le(5_u32)]);
-        assert_eq!(writer_output::<&[char]>(&ts, &&char_vec("\x01\x03\x05")[..]), blob![le(1_u32), le(3_u32), le(5_u32)]);
+        assert_eq!(
+            writer_output::<Vec<char>>(&ts, &char_vec("\x01\x03\x05")),
+            blob![le(1_u32), le(3_u32), le(5_u32)]
+        );
+        assert_eq!(
+            writer_output::<&[char]>(&ts, &&char_vec("\x01\x03\x05")[..]),
+            blob![le(1_u32), le(3_u32), le(5_u32)]
+        );
 
         let ts = DType::parse("'<U3'").unwrap();
-        assert_eq!(writer_output::<String>(&ts, &"\x01\x03\x05".to_string()), blob![le(1_u32), le(3_u32), le(5_u32)]);
-        assert_eq!(writer_output::<&str>(&ts, &"\x01\x03\x05"), blob![le(1_u32), le(3_u32), le(5_u32)]);
+        assert_eq!(
+            writer_output::<String>(&ts, &"\x01\x03\x05".to_string()),
+            blob![le(1_u32), le(3_u32), le(5_u32)]
+        );
+        assert_eq!(
+            writer_output::<&str>(&ts, &"\x01\x03\x05"),
+            blob![le(1_u32), le(3_u32), le(5_u32)]
+        );
 
         let ts = DType::parse("'|S3'").unwrap();
-        assert_eq!(writer_output::<String>(&ts, &"\x01\x03\x05".to_string()), blob![1, 3, 5]);
+        assert_eq!(
+            writer_output::<String>(&ts, &"\x01\x03\x05".to_string()),
+            blob![1, 3, 5]
+        );
         assert_eq!(writer_output::<&str>(&ts, &"\x01\x03\x05"), blob![1, 3, 5]);
     }
 

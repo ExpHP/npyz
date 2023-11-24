@@ -1,13 +1,13 @@
-use std::io::{self,Write,BufWriter,Seek,SeekFrom};
 use std::fs::File;
-use std::path::Path;
+use std::io::{self, BufWriter, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
+use std::path::Path;
 
-use byteorder::{WriteBytesExt, LittleEndian};
+use byteorder::{LittleEndian, WriteBytesExt};
 
-use crate::serialize::{AutoSerialize, Serialize, TypeWrite};
-use crate::header::{self, DType, VersionProps, HeaderSizeType, HeaderEncoding};
+use crate::header::{self, DType, HeaderEncoding, HeaderSizeType, VersionProps};
 use crate::read::Order;
+use crate::serialize::{AutoSerialize, Serialize, TypeWrite};
 
 // Long enough to accomodate a large integer followed by ",), }".
 // Used when no shape is provided.
@@ -46,18 +46,27 @@ pub mod write_options {
 
     impl<T: ?Sized> WriteOptions<T> {
         /// Construct an almost empty Writer configuration.
-        pub fn new() -> Self { WriteOptions {
-            order: Order::C,
-            _marker: PhantomData,
-        }}
+        pub fn new() -> Self {
+            WriteOptions {
+                order: Order::C,
+                _marker: PhantomData,
+            }
+        }
     }
 
     impl<T: ?Sized> Default for WriteOptions<T> {
-        fn default() -> Self { Self::new() }
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl<T: ?Sized> Clone for WriteOptions<T> {
-        fn clone(&self) -> Self { WriteOptions { order: self.order.clone(), _marker: self._marker }}
+        fn clone(&self) -> Self {
+            WriteOptions {
+                order: self.order.clone(),
+                _marker: self._marker,
+            }
+        }
     }
 
     /// Trait that provides methods on [`WriteOptions`].
@@ -70,17 +79,29 @@ pub mod write_options {
         /// Calls [`Self::dtype`] with the default dtype for the type to be serialized.
         ///
         /// **Calling this method or [`Self::dtype`] is required.**
-        fn default_dtype(self) -> WithDType<Self> where T: AutoSerialize { self.dtype(T::default_dtype()) }
+        fn default_dtype(self) -> WithDType<Self>
+        where
+            T: AutoSerialize,
+        {
+            self.dtype(T::default_dtype())
+        }
 
         /// Use the specified dtype.
         ///
         /// **Calling `dtype` (or [`Self::default_dtype`]) is required.**
-        fn dtype(self, dtype: DType) -> WithDType<Self> { WithDType { inner: self, dtype } }
+        fn dtype(self, dtype: DType) -> WithDType<Self> {
+            WithDType { inner: self, dtype }
+        }
 
         /// Set the shape for an n-d array.
         ///
         /// This is required for any array of dimension `!= 1`.
-        fn shape(self, shape: &[u64]) -> WithShape<Self> { WithShape { inner: self, shape: shape.to_vec() } }
+        fn shape(self, shape: &[u64]) -> WithShape<Self> {
+            WithShape {
+                inner: self,
+                shape: shape.to_vec(),
+            }
+        }
 
         /// Set the ouput [`Write`] object.
         ///
@@ -89,7 +110,12 @@ pub mod write_options {
         fn writer<W>(self, writer: W) -> WithWriter<W, Self>
         where
             Self: MissingWriter,
-        { WithWriter { inner: self, writer } }
+        {
+            WithWriter {
+                inner: self,
+                writer,
+            }
+        }
 
         /// Set the data order for arrays with more than one dimension.
         ///
@@ -97,7 +123,8 @@ pub mod write_options {
         fn order(self, order: Order) -> Self;
 
         // getters for properties not encoded in typestate
-        #[doc(hidden)] fn __get_order(&self) -> Order;
+        #[doc(hidden)]
+        fn __get_order(&self) -> Order;
 
         /// Begin writing an array of the previously supplied [`shape`][Self::shape].
         fn begin_nd(self) -> io::Result<NpyWriter<T, <Self as HasWriter>::Writer>>
@@ -105,12 +132,15 @@ pub mod write_options {
             Self: HasDType + HasWriter + HasShape,
             <Self as HasWriter>::Writer: Write,
         {
-            NpyWriter::_begin(DataFromBuilder {
-                dtype: self.__get_dtype(),
-                order: self.__get_order(),
-                shape: Some(self.__get_shape()),
-                _marker: PhantomData,
-            }, MaybeSeek::Isnt(self.__into_writer()))
+            NpyWriter::_begin(
+                DataFromBuilder {
+                    dtype: self.__get_dtype(),
+                    order: self.__get_order(),
+                    shape: Some(self.__get_shape()),
+                    _marker: PhantomData,
+                },
+                MaybeSeek::Isnt(self.__into_writer()),
+            )
         }
 
         /// Begin writing a 1d array, of length to be inferred from the number of elements written.
@@ -125,12 +155,15 @@ pub mod write_options {
             Self: HasDType + HasWriter,
             <Self as HasWriter>::Writer: Write + Seek,
         {
-            NpyWriter::_begin(DataFromBuilder {
-                dtype: self.__get_dtype(),
-                order: self.__get_order(),
-                shape: None,
-                _marker: PhantomData,
-            }, MaybeSeek::new_seek(self.__into_writer()))
+            NpyWriter::_begin(
+                DataFromBuilder {
+                    dtype: self.__get_dtype(),
+                    order: self.__get_order(),
+                    shape: None,
+                    _marker: PhantomData,
+                },
+                MaybeSeek::new_seek(self.__into_writer()),
+            )
         }
     }
 
@@ -166,7 +199,8 @@ pub mod write_options {
     /// Then it is most likely because you are missing a call to [`WriterBuilder::dtype`]
     /// or [`WriterBuilder::default_dtype`].
     pub trait HasDType {
-        #[doc(hidden)] fn __get_dtype(&self) -> DType;
+        #[doc(hidden)]
+        fn __get_dtype(&self) -> DType;
     }
 
     /// Indicates that a Writer options type includes a shape.
@@ -179,7 +213,8 @@ pub mod write_options {
     ///
     /// Then it is most likely because you are missing a call to [`WriterBuilder::shape`].
     pub trait HasShape {
-        #[doc(hidden)] fn __get_shape(&self) -> Vec<u64>;
+        #[doc(hidden)]
+        fn __get_shape(&self) -> Vec<u64>;
     }
 
     /// Indicates that a Writer options type includes an output stream.
@@ -216,36 +251,62 @@ pub mod write_options {
     pub trait MissingWriter {}
 
     impl<T: Serialize + ?Sized> WriterBuilder<T> for WriteOptions<T> {
-        fn order(mut self, order: Order) -> Self { self.order = order; self }
-        fn __get_order(&self) -> Order { self.order }
+        fn order(mut self, order: Order) -> Self {
+            self.order = order;
+            self
+        }
+        fn __get_order(&self) -> Order {
+            self.order
+        }
     }
 
     impl<W, T: Serialize + ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithWriter<W, B> {
-        fn order(mut self, order: Order) -> Self { self.inner = self.inner.order(order); self }
-        fn __get_order(&self) -> Order { self.inner.__get_order() }
+        fn order(mut self, order: Order) -> Self {
+            self.inner = self.inner.order(order);
+            self
+        }
+        fn __get_order(&self) -> Order {
+            self.inner.__get_order()
+        }
     }
 
     impl<T: Serialize + ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithDType<B> {
-        fn order(mut self, order: Order) -> Self { self.inner = self.inner.order(order); self }
-        fn __get_order(&self) -> Order { self.inner.__get_order() }
+        fn order(mut self, order: Order) -> Self {
+            self.inner = self.inner.order(order);
+            self
+        }
+        fn __get_order(&self) -> Order {
+            self.inner.__get_order()
+        }
     }
 
     impl<T: Serialize + ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithShape<B> {
-        fn order(mut self, order: Order) -> Self { self.inner = self.inner.order(order); self }
-        fn __get_order(&self) -> Order { self.inner.__get_order() }
+        fn order(mut self, order: Order) -> Self {
+            self.inner = self.inner.order(order);
+            self
+        }
+        fn __get_order(&self) -> Order {
+            self.inner.__get_order()
+        }
     }
 
     // Now the silly part where we have to write O(n^2) trait impls
     // Base cases
     impl<B> HasDType for WithDType<B> {
-        fn __get_dtype(&self) -> DType { self.dtype.clone() }
+        fn __get_dtype(&self) -> DType {
+            self.dtype.clone()
+        }
     }
     impl<B> HasShape for WithShape<B> {
-        fn __get_shape(&self) -> Vec<u64> { self.shape.to_vec() }
+        fn __get_shape(&self) -> Vec<u64> {
+            self.shape.to_vec()
+        }
     }
     impl<W, B> HasWriter for WithWriter<W, B> {
         type Writer = W;
-        fn __into_writer(self) -> Self::Writer { self.writer }
+        fn __into_writer(self) -> Self::Writer {
+            self.writer
+        }
     }
     impl<T: ?Sized> MissingWriter for WriteOptions<T> {}
 
@@ -278,7 +339,7 @@ pub mod write_options {
         };
     }
 
-    forward_typestate_impls!{
+    forward_typestate_impls! {
         ([B] [B] [WithShape<B>]): (/*HasShape*/ HasDType HasWriter MissingWriter)
         ([B] [B] [WithDType<B>]): (HasShape /*HasDType*/ HasWriter MissingWriter)
         ([B] [W, B] [WithWriter<W, B>]): (HasShape HasDType /*HasWriter MissingWriter*/)
@@ -334,13 +395,19 @@ enum ShapeInfo {
 }
 
 /// [`NpyWriter`] that writes an entire file.
-#[deprecated(since = "0.5.0", note = "Doesn't carry its weight.  Use to_file_1d instead, or replicate the original behavior with Builder::new().default_dtype().begin_1d(std::io::BufWriter::new(std::fs::File::create(path)?))")]
+#[deprecated(
+    since = "0.5.0",
+    note = "Doesn't carry its weight.  Use to_file_1d instead, or replicate the original behavior with Builder::new().default_dtype().begin_1d(std::io::BufWriter::new(std::fs::File::create(path)?))"
+)]
 pub type OutFile<Row> = NpyWriter<Row, BufWriter<File>>;
 
 #[allow(deprecated)]
 impl<Row: AutoSerialize> OutFile<Row> {
     /// Create a file, using the default format for the given type.
-    #[deprecated(since = "0.5.0", note = "Doesn't carry its weight.  Use to_file_1d instead, or replicate the original behavior with Builder::new().default_dtype().begin_1d(std::io::BufWriter::new(std::fs::File::create(path)?))")]
+    #[deprecated(
+        since = "0.5.0",
+        note = "Doesn't carry its weight.  Use to_file_1d instead, or replicate the original behavior with Builder::new().default_dtype().begin_1d(std::io::BufWriter::new(std::fs::File::create(path)?))"
+    )]
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         WriteOptions::new()
             .default_dtype()
@@ -361,9 +428,14 @@ impl<Row: Serialize> OutFile<Row> {
     }
 }
 
-impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
+impl<Row: Serialize + ?Sized, W: Write> NpyWriter<Row, W> {
     fn _begin(builder: DataFromBuilder<Row>, mut fw: MaybeSeek<W>) -> io::Result<Self> {
-        let DataFromBuilder { dtype, order, shape, _marker } = builder;
+        let DataFromBuilder {
+            dtype,
+            order,
+            shape,
+            _marker,
+        } = builder;
 
         let start_pos = match fw {
             MaybeSeek::Is(ref mut fw) => Some(fw.seek(SeekFrom::Current(0))?),
@@ -375,22 +447,26 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
         }
 
         let (dict_text, shape_info) = create_dict(&dtype, order, shape.as_deref());
-        let (header_text, version, version_props) = determine_required_version_and_pad_header(dict_text);
+        let (header_text, version, version_props) =
+            determine_required_version_and_pad_header(dict_text);
 
         fw.write_all(&[0x93u8])?;
         fw.write_all(b"NUMPY")?;
         fw.write_all(&[version.0, version.1])?;
 
-        assert_eq!((header_text.len() + version_props.bytes_before_text()) % 16, 0);
+        assert_eq!(
+            (header_text.len() + version_props.bytes_before_text()) % 16,
+            0
+        );
         match version_props.header_size_type {
             HeaderSizeType::U16 => {
                 assert!(header_text.len() <= u16::MAX as usize);
                 fw.write_u16::<LittleEndian>(header_text.len() as u16)?;
-            },
+            }
             HeaderSizeType::U32 => {
                 assert!(header_text.len() <= u32::MAX as usize);
                 fw.write_u32::<LittleEndian>(header_text.len() as u32)?;
-            },
+            }
         }
         fw.write_all(&header_text)?;
 
@@ -416,7 +492,10 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
     }
 
     /// Write an iterator to the file
-    pub fn extend(&mut self, rows: impl IntoIterator<Item=Row>) -> io::Result<()> where Row: Sized {
+    pub fn extend(&mut self, rows: impl IntoIterator<Item = Row>) -> io::Result<()>
+    where
+        Row: Sized,
+    {
         rows.into_iter().try_for_each(|row| self.push(&row))
     }
 
@@ -425,22 +504,33 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
             ShapeInfo::Known { expected_num_items } => {
                 if expected_num_items != self.num_items {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, {
-                        format!("shape has {} item(s), but {} item(s) were written!", expected_num_items, self.num_items)
+                        format!(
+                            "shape has {} item(s), but {} item(s) were written!",
+                            expected_num_items, self.num_items
+                        )
                     }));
                 }
-            },
-            ShapeInfo::Automatic { offset_in_header_text } => {
+            }
+            ShapeInfo::Automatic {
+                offset_in_header_text,
+            } => {
                 // Write the size to the header
-                let shape_pos = self.start_pos.unwrap() + self.version_props.bytes_before_text() as u64 + offset_in_header_text;
+                let shape_pos = self.start_pos.unwrap()
+                    + self.version_props.bytes_before_text() as u64
+                    + offset_in_header_text;
                 let end_pos = self.fw.seek(SeekFrom::Current(0))?;
 
                 self.fw.seek(SeekFrom::Start(shape_pos))?;
                 let length = format!("{}", self.num_items);
                 self.fw.write_all(length.as_bytes())?;
                 self.fw.write_all(&b",), }"[..])?;
-                self.fw.write_all(&::std::iter::repeat(b' ').take(FILLER_FOR_UNKNOWN_SIZE.len() - length.len()).collect::<Vec<_>>())?;
+                self.fw.write_all(
+                    &::std::iter::repeat(b' ')
+                        .take(FILLER_FOR_UNKNOWN_SIZE.len() - length.len())
+                        .collect::<Vec<_>>(),
+                )?;
                 self.fw.seek(SeekFrom::Start(end_pos))?;
-            },
+            }
         }
         self.fw.flush()?;
         Ok(())
@@ -474,14 +564,18 @@ fn create_dict(dtype: &DType, order: Order, shape: Option<&[u64]>) -> (Vec<u8>, 
                 write!(header, "{}, ", x).unwrap();
             }
             header.extend(&b"), }"[..]);
-            ShapeInfo::Known { expected_num_items: shape.iter().product() }
-        },
+            ShapeInfo::Known {
+                expected_num_items: shape.iter().product(),
+            }
+        }
         None => {
             let shape_offset = header.len() as u64;
             header.extend(FILLER_FOR_UNKNOWN_SIZE);
             header.extend(&b",), }"[..]);
-            ShapeInfo::Automatic { offset_in_header_text: shape_offset }
-        },
+            ShapeInfo::Automatic {
+                offset_in_header_text: shape_offset,
+            }
+        }
     };
     (header, shape_info)
 }
@@ -501,9 +595,11 @@ impl<Row: Serialize + ?Sized, W: Write> Drop for NpyWriter<Row, W> {
 /// header lengths close to but *just under* 65536, where the padding can push the length over
 /// the 65536 threshold, causing version 2 to be used and therefore use 2 additional bytes.
 /// Those additional bytes in turn could throw off the padding.
-fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u8>, (u8, u8), VersionProps) {
-    use HeaderSizeType::*;
+fn determine_required_version_and_pad_header(
+    mut header_utf8: Vec<u8>,
+) -> (Vec<u8>, (u8, u8), VersionProps) {
     use HeaderEncoding::*;
+    use HeaderSizeType::*;
 
     // I'm almost 100% certain that, when regarding the initial length of dict_utf8,
     // there is a precise value at which the optimal version suddenly switches from 1 to 2.
@@ -514,15 +610,24 @@ fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u
     const SAFE_U16_CUTOFF: usize = 0xffff_fc00; // = 0x1_0000_0000 - 0x400 (which doesn't compile on WASM)
 
     let required_props = VersionProps {
-        header_size_type: if header_utf8.len() >= SAFE_U16_CUTOFF { U32 } else { U16 },
-        encoding: if header_utf8.iter().any(|b| !b.is_ascii()) { Utf8 } else { Ascii },
+        header_size_type: if header_utf8.len() >= SAFE_U16_CUTOFF {
+            U32
+        } else {
+            U16
+        },
+        encoding: if header_utf8.iter().any(|b| !b.is_ascii()) {
+            Utf8
+        } else {
+            Ascii
+        },
     };
 
     let version = header::get_minimal_version(required_props);
 
     // Actual props may differ from required props.  (e.g. if it has unicode, then it needs
     // to use version 3 which will cause the size to be upgraded to U32 even if not needed)
-    let actual_props = header::get_version_props(version).expect("generated internally so must be valid");
+    let actual_props =
+        header::get_version_props(version).expect("generated internally so must be valid");
 
     // Now pad using the final choice of version.
     //
@@ -533,7 +638,11 @@ fn determine_required_version_and_pad_header(mut header_utf8: Vec<u8>) -> (Vec<u
     const ALIGN_TO: usize = 64;
 
     let bytes_before_text = actual_props.bytes_before_text();
-    header_utf8.extend(&::std::iter::repeat(b' ').take(ALIGN_TO - 1 - ((header_utf8.len() + bytes_before_text) % ALIGN_TO)).collect::<Vec<_>>());
+    header_utf8.extend(
+        &::std::iter::repeat(b' ')
+            .take(ALIGN_TO - 1 - ((header_utf8.len() + bytes_before_text) % ALIGN_TO))
+            .collect::<Vec<_>>(),
+    );
     header_utf8.push(b'\n');
     assert_eq!((header_utf8.len() + bytes_before_text) % ALIGN_TO, 0);
 
@@ -548,7 +657,7 @@ pub fn to_file<S, T, P>(filename: P, data: T) -> std::io::Result<()>
 where
     P: AsRef<Path>,
     S: AutoSerialize,
-    T: IntoIterator<Item=S>,
+    T: IntoIterator<Item = S>,
 {
     to_file_1d(filename, data)
 }
@@ -560,7 +669,7 @@ pub fn to_file_1d<S, T, P>(filename: P, data: T) -> std::io::Result<()>
 where
     P: AsRef<Path>,
     S: AutoSerialize,
-    T: IntoIterator<Item=S>,
+    T: IntoIterator<Item = S>,
 {
     #![allow(deprecated)]
     let mut of = OutFile::open(filename)?;
@@ -635,10 +744,9 @@ mod maybe_seek {
                 //
                 // See discussion here:
                 //   https://users.rust-lang.org/t/a-trait-object-with-an-implied-lifetime/29340
-                std::mem::transmute::<
-                    Box<dyn WriteSeek<W> + '_>,
-                    Box<dyn WriteSeek<W> + 'static>,
-                >(Box::new(w))
+                std::mem::transmute::<Box<dyn WriteSeek<W> + '_>, Box<dyn WriteSeek<W> + 'static>>(
+                    Box::new(w),
+                )
             };
             MaybeSeek::Is(inner)
         }
@@ -655,15 +763,26 @@ pub(crate) fn to_bytes_1d<T: AutoSerialize>(data: &[T]) -> io::Result<Vec<u8>> {
 
 /// Quick API for writing a 1D array to an io::Write.
 #[cfg(test)]
-pub(crate) fn to_writer_1d<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T]) -> io::Result<()> {
+pub(crate) fn to_writer_1d<W: io::Write + io::Seek, T: AutoSerialize>(
+    writer: W,
+    data: &[T],
+) -> io::Result<()> {
     // we might change this later and/or remove the Seek bound from the current function, but for now this will do
     to_writer_1d_with_seeking(writer, data)
 }
 
 /// Quick API for writing an n-d array to an io::Write.
 #[cfg(test)]
-pub(crate) fn to_writer_nd<W: io::Write, T: AutoSerialize>(writer: W, data: &[T], shape: &[u64]) -> io::Result<()> {
-    let mut writer = WriteOptions::new().default_dtype().writer(writer).shape(shape).begin_nd()?;
+pub(crate) fn to_writer_nd<W: io::Write, T: AutoSerialize>(
+    writer: W,
+    data: &[T],
+    shape: &[u64],
+) -> io::Result<()> {
+    let mut writer = WriteOptions::new()
+        .default_dtype()
+        .writer(writer)
+        .shape(shape)
+        .begin_nd()?;
     writer.extend(data)?;
     writer.finish()
 }
@@ -673,8 +792,14 @@ pub(crate) fn to_writer_nd<W: io::Write, T: AutoSerialize>(writer: W, data: &[T]
 /// (tests will use this instead of 'to_writer_1d' if their purpose is to test the correctness of seek behavior,
 /// so that changing 'to_writer_1d' to be Seek-less won't affect these tests)
 #[cfg(test)]
-pub(crate) fn to_writer_1d_with_seeking<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T]) -> io::Result<()> {
-    let mut writer = WriteOptions::new().default_dtype().writer(writer).begin_1d()?;
+pub(crate) fn to_writer_1d_with_seeking<W: io::Write + io::Seek, T: AutoSerialize>(
+    writer: W,
+    data: &[T],
+) -> io::Result<()> {
+    let mut writer = WriteOptions::new()
+        .default_dtype()
+        .writer(writer)
+        .begin_1d()?;
     writer.extend(data)?;
     writer.finish()
 }
@@ -682,8 +807,8 @@ pub(crate) fn to_writer_1d_with_seeking<W: io::Write + io::Seek, T: AutoSerializ
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{self, Cursor};
     use crate::NpyFile;
+    use std::io::{self, Cursor};
 
     fn bytestring_contains(haystack: &[u8], needle: &[u8]) -> bool {
         if needle.is_empty() {
@@ -731,7 +856,10 @@ mod tests {
     fn implicit_finish() -> io::Result<()> {
         let mut cursor = Cursor::new(vec![]);
 
-        let mut writer = WriteOptions::new().default_dtype().writer(&mut cursor).begin_1d()?;
+        let mut writer = WriteOptions::new()
+            .default_dtype()
+            .writer(&mut cursor)
+            .begin_1d()?;
         writer.extend(vec![1.0, 3.0, 5.0, 7.0])?;
         // don't call finish
         drop(writer);
@@ -760,7 +888,11 @@ mod tests {
     fn write_nd_wrong_len() -> io::Result<()> {
         let try_writing = |elems: &[i32]| -> io::Result<()> {
             let mut buf = vec![];
-            let mut writer = WriteOptions::new().default_dtype().writer(&mut buf).shape(&[2, 3]).begin_nd()?;
+            let mut writer = WriteOptions::new()
+                .default_dtype()
+                .writer(&mut buf)
+                .shape(&[2, 3])
+                .begin_nd()?;
             for &x in elems {
                 writer.push(&x)?;
             }

@@ -159,7 +159,9 @@ have occurred.
 One can work with structured arrays by enabling the **`"derive"`** feature, which provides derive
 macros for [`Serialize`], [`Deserialize`], and [`AutoSerialize`].
 */
-#![cfg_attr(any(not(doctest), feature="derive"), doc = r##"
+#![cfg_attr(
+    any(not(doctest), feature = "derive"),
+    doc = r##"
 ```
 // make sure to add `features = ["derive"]` in Cargo.toml!
 #[derive(npyz::Deserialize)]
@@ -168,7 +170,8 @@ struct Struct {
     b: f32,
 }
 ```
-"##)]
+"##
+)]
 /*!
 
 This type can be used to deserialize the numpy dtype `np.dtype([('a', '<i4'), ('b', '<f4')])`.
@@ -178,7 +181,9 @@ This type can be used to deserialize the numpy dtype `np.dtype([('a', '<i4'), ('
 Members of structured arrays are allowed to be n-dimensional arrays.  These can be represented
 in rust using the primitive array type `[T; N]`:
  */
-#![cfg_attr(any(not(doctest), feature="derive"), doc = r##"
+#![cfg_attr(
+    any(not(doctest), feature = "derive"),
+    doc = r##"
 ```
 // make sure to add `features = ["derive"]` in Cargo.toml!
 #[derive(npyz::Deserialize)]
@@ -186,18 +191,19 @@ struct Struct {
     a: [[i32; 3]; 4],
 }
 ```
-"##)]
+"##
+)]
 /*!
 
 This type can deserialize the numpy dtype `np.dtype([('a', '<i4', (4, 3))])`.
 **/
 
 #[allow(unused)] // used by docstring
-use crate::{FixedSizeBytes, TypeStr, Deserialize, Serialize, AutoSerialize, DType};
+use crate::{AutoSerialize, DType, Deserialize, FixedSizeBytes, Serialize, TypeStr};
 
 #[cfg(feature = "arrayvec")]
 #[allow(unused)] // used by docstring
-use arrayvec::{self, ArrayVec, ArrayString};
+use arrayvec::{self, ArrayString, ArrayVec};
 
 #[cfg(feature = "complex")]
 #[allow(unused)] // used by docstring

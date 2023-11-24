@@ -226,7 +226,9 @@ and make sure the field names and types all match up:
 // doctests, so that:
 //    - It always appears in documentation (`cargo doc`)
 //    - It is only tested when the feature is present (`cargo test --features derive`)
-#![cfg_attr(any(not(doctest), feature="derive"), doc = r##"
+#![cfg_attr(
+    any(not(doctest), feature = "derive"),
+    doc = r##"
 ```
 // make sure to add `features = ["derive"]` in Cargo.toml!
 #[derive(npyz::Deserialize, Debug)]
@@ -247,7 +249,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
-"##)]
+"##
+)]
 /*!
 The output is:
 
@@ -264,15 +267,16 @@ Array { a: 2, b: 3.1, c: 5 }
 */
 
 // Reexport the macros.
-#[cfg(feature = "derive")] pub use npyz_derive::*;
+#[cfg(feature = "derive")]
+pub use npyz_derive::*;
 
 mod header;
-mod read;
-mod write;
-mod type_str;
-mod serialize;
 #[cfg(feature = "npz")]
 mod npz_feature;
+mod read;
+mod serialize;
+mod type_str;
+mod write;
 
 pub mod npz;
 #[cfg(feature = "npz")]
@@ -281,20 +285,22 @@ pub mod sparse;
 pub mod type_matchup_docs;
 
 // Expose public dependencies
-#[cfg(feature = "complex")]
-pub use num_complex;
 #[cfg(feature = "arrayvec")]
 pub use arrayvec;
+#[cfg(feature = "complex")]
+pub use num_complex;
 #[cfg(feature = "zip")]
 pub use zip;
 
 pub use header::{DType, Field};
 #[allow(deprecated)]
 pub use read::{NpyData, NpyFile, NpyHeader, NpyReader, Order};
-#[allow(deprecated)]
-pub use write::{to_file, to_file_1d, OutFile, NpyWriter, write_options, WriteOptions, WriterBuilder};
 pub use serialize::FixedSizeBytes;
-pub use serialize::{Serialize, Deserialize, AutoSerialize};
-pub use serialize::{TypeRead, TypeWrite, TypeWriteDyn, TypeReadDyn, DTypeError};
-pub use type_str::{TypeStr, ParseTypeStrError};
-pub use type_str::{Endianness, TypeChar, TimeUnits};
+pub use serialize::{AutoSerialize, Deserialize, Serialize};
+pub use serialize::{DTypeError, TypeRead, TypeReadDyn, TypeWrite, TypeWriteDyn};
+pub use type_str::{Endianness, TimeUnits, TypeChar};
+pub use type_str::{ParseTypeStrError, TypeStr};
+#[allow(deprecated)]
+pub use write::{
+    to_file, to_file_1d, write_options, NpyWriter, OutFile, WriteOptions, WriterBuilder,
+};

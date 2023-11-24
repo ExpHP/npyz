@@ -1,11 +1,10 @@
-
-use std::io;
 use core::fmt;
+use std::io;
 
-use py_literal::ParseError;
-pub use py_literal::Value;
 use byteorder::{LittleEndian, ReadBytesExt};
 use num_bigint::Sign;
+use py_literal::ParseError;
+pub use py_literal::Value;
 
 use crate::type_str::TypeStr;
 
@@ -25,7 +24,9 @@ pub enum DType {
     /// E.g. in the `DType` for `dtype=[('abc', 'i4', [2, 3])]`, the `DType` for `abc`
     /// will be `Array(2, Array(3, Plain("<i4")))`. In rust, such an array could be read using
     /// the following element type:
-    #[cfg_attr(any(not(doctest), feature="derive"), doc = r##"
+    #[cfg_attr(
+        any(not(doctest), feature = "derive"),
+        doc = r##"
 ```
 # #[allow(unused)]
 #[derive(npyz::Serialize, npyz::Deserialize, npyz::AutoSerialize)]
@@ -33,7 +34,8 @@ struct Row {
     abc: [[i32; 3]; 2],
 }
 ```
-"##)]
+"##
+    )]
     Array(u64, Box<DType>),
 
     /// A structure record array
@@ -60,21 +62,27 @@ impl DType {
         match self {
             Plain(ty) => format!("'{}'", ty),
             Record(fields) => {
-                fields.iter()
+                fields
+                    .iter()
                     .map(|Field { name, dtype }| {
                         let name = PyUtf8StringLiteral(name);
                         match dtype {
-                            ty@Plain(_) |
-                            ty@Record(_) => format!("({}, {}), ", name, ty.descr()),
+                            ty @ Plain(_) | ty @ Record(_) => {
+                                format!("({}, {}), ", name, ty.descr())
+                            }
 
-                            array@Array(..) => {
+                            array @ Array(..) => {
                                 let (shape, elem_ty) = extract_full_array_shape(array);
-                                let shape_str = shape.iter().fold(String::new(), |o, n| o + &format!("{},", n));
+                                let shape_str = shape
+                                    .iter()
+                                    .fold(String::new(), |o, n| o + &format!("{},", n));
                                 format!("({}, {}, ({})), ", name, elem_ty.descr(), shape_str)
-                            },
+                            }
                         }
-                    }).fold("[".to_string(), |o, n| o + &n) + "]"
-            },
+                    })
+                    .fold("[".to_string(), |o, n| o + &n)
+                    + "]"
+            }
 
             Array(n, inner) => format!("<< array {} of {} >>", n, inner.descr()),
         }
@@ -117,20 +125,21 @@ impl DType {
         match self {
             DType::Plain(ty) => ty.num_bytes(),
             DType::Array(n, inner) => inner.num_bytes()?.checked_mul(usize::try_from(*n).ok()?),
-            DType::Record(fields) => {
-                fields.iter().map(|field| field.dtype.num_bytes())
-                    .fold(Some(0), |a, b| a?.checked_add(b?))
-            },
+            DType::Record(fields) => fields
+                .iter()
+                .map(|field| field.dtype.num_bytes())
+                .fold(Some(0), |a, b| a?.checked_add(b?)),
         }
     }
 }
 
 fn convert_list_to_record_fields(values: &[Value]) -> io::Result<Vec<Field>> {
-    values.iter()
+    values
+        .iter()
         .map(|value| match *value {
             Value::List(ref tuple) => convert_tuple_to_record_field(tuple),
             Value::Tuple(ref tuple) => convert_tuple_to_record_field(tuple),
-            _ => Err(invalid_data("list must contain list or tuple"))
+            _ => Err(invalid_data("list must contain list or tuple")),
         })
         .collect()
 }
@@ -160,7 +169,7 @@ fn convert_value_to_sequence(field: &Value) -> Option<&[Value]> {
     match field {
         &Value::List(ref lengths) => Some(lengths),
         &Value::Tuple(ref lengths) => Some(lengths),
-        _ => None
+        _ => None,
     }
 }
 
@@ -171,7 +180,7 @@ fn convert_value_to_shape_integer(number: &Value) -> io::Result<u64> {
             (Sign::Minus, _) => Err(invalid_data("dimension cannot be negative")),
             (Sign::NoSign, _) => Ok(0),
             (_, parts) if parts.len() == 1 => Ok(parts[0]),
-            _ => Err(invalid_data("dimension cannot be larger than u64"))
+            _ => Err(invalid_data("dimension cannot be larger than u64")),
         }
     } else {
         Err(invalid_data("dimension must be an integer"))
@@ -205,7 +214,10 @@ fn invalid_data(message: impl ToString) -> io::Error {
 }
 
 pub(crate) fn read_header(r: &mut dyn io::Read) -> io::Result<Value> {
-    let PreHeader { version_props, header_size } = read_pre_header(r)?;
+    let PreHeader {
+        version_props,
+        header_size,
+    } = read_pre_header(r)?;
 
     // FIXME: properly account for encoding
     let _ = version_props.encoding;
@@ -223,7 +235,12 @@ fn parse_header_text_to_io_result(bytes: &[u8]) -> io::Result<Value> {
     std::str::from_utf8(without_newline)
         .map_err(|_| invalid_data("could not parse utf-8"))?
         .parse()
-        .map_err(|e: ParseError| invalid_data(format_args!("could not parse Python expression: {}", e.to_string())))
+        .map_err(|e: ParseError| {
+            invalid_data(format_args!(
+                "could not parse Python expression: {}",
+                e.to_string()
+            ))
+        })
 }
 
 struct PreHeader {
@@ -240,7 +257,10 @@ fn read_pre_header(r: &mut dyn io::Read) -> io::Result<PreHeader> {
         HeaderSizeType::U16 => r.read_u16::<LittleEndian>()? as usize,
     };
 
-    Ok(PreHeader { version_props, header_size })
+    Ok(PreHeader {
+        version_props,
+        header_size,
+    })
 }
 
 fn read_magic_and_version(r: &mut dyn io::Read) -> io::Result<(u8, u8)> {
@@ -259,7 +279,10 @@ fn read_magic_and_version(r: &mut dyn io::Read) -> io::Result<(u8, u8)> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HeaderSizeType { U16, U32 }
+pub(crate) enum HeaderSizeType {
+    U16,
+    U32,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HeaderEncoding {
@@ -286,13 +309,25 @@ impl VersionProps {
 }
 
 pub(crate) fn get_version_props(version: (u8, u8)) -> io::Result<VersionProps> {
-    use self::HeaderSizeType::*;
     use self::HeaderEncoding::*;
+    use self::HeaderSizeType::*;
     match version {
-        (1, 0) => Ok(VersionProps { header_size_type: U16, encoding: Ascii }),
-        (2, 0) => Ok(VersionProps { header_size_type: U32, encoding: Ascii }),
-        (3, 0) => Ok(VersionProps { header_size_type: U32, encoding: Utf8 }),
-        _ => Err(invalid_data(format_args!("unsupported version: ({}, {})", version.0, version.1))),
+        (1, 0) => Ok(VersionProps {
+            header_size_type: U16,
+            encoding: Ascii,
+        }),
+        (2, 0) => Ok(VersionProps {
+            header_size_type: U32,
+            encoding: Ascii,
+        }),
+        (3, 0) => Ok(VersionProps {
+            header_size_type: U32,
+            encoding: Utf8,
+        }),
+        _ => Err(invalid_data(format_args!(
+            "unsupported version: ({}, {})",
+            version.0, version.1
+        ))),
     }
 }
 
@@ -305,7 +340,8 @@ struct PyUtf8StringLiteral<'a>(&'a str);
 impl fmt::Display for PyUtf8StringLiteral<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let replaced = {
-            self.0.replace("\\", "\\\\")
+            self.0
+                .replace("\\", "\\\\")
                 .replace("'", "\\'")
                 .replace("\r", "\\r")
                 .replace("\n", "\\n")
@@ -324,7 +360,6 @@ pub(crate) fn get_minimal_version(required_props: VersionProps) -> (u8, u8) {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -342,7 +377,7 @@ mod tests {
             Field {
                 name: "byte".to_string(),
                 dtype: DType::Plain("<u1".parse()?),
-            }
+            },
         ]);
         let expected = "[('float', '>f4'), ('byte', '<u1'), ]";
         assert_eq!(dtype.descr(), expected);
@@ -358,17 +393,13 @@ mod tests {
 
     #[test]
     fn description_of_nested_record_dtype() -> TestResult {
-        let dtype = DType::Record(vec![
-            Field {
-                name: "parent".to_string(),
-                dtype: DType::Record(vec![
-                    Field {
-                        name: "child".to_string(),
-                        dtype: DType::Plain("<i4".parse()?),
-                    },
-                ]),
-            }
-        ]);
+        let dtype = DType::Record(vec![Field {
+            name: "parent".to_string(),
+            dtype: DType::Record(vec![Field {
+                name: "child".to_string(),
+                dtype: DType::Plain("<i4".parse()?),
+            }]),
+        }]);
         assert_eq!(dtype.descr(), "[('parent', [('child', '<i4'), ]), ]");
         Ok(())
     }
@@ -404,7 +435,7 @@ mod tests {
             Field {
                 name: "b".to_string(),
                 dtype: DType::Plain("<f4".parse()?),
-            }
+            },
         ]);
         assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
         Ok(())
@@ -412,12 +443,10 @@ mod tests {
 
     #[test]
     fn funny_member_name_roundtrips() -> TestResult {
-        let original_dtype = DType::Record(vec![
-            Field {
-                name: " \'\"\r\n\\ ".to_string(),
-                dtype: DType::Plain("<u2".parse()?),
-            },
-        ]);
+        let original_dtype = DType::Record(vec![Field {
+            name: " \'\"\r\n\\ ".to_string(),
+            dtype: DType::Plain("<u2".parse()?),
+        }]);
         let descr = parse(&original_dtype.descr());
         assert_eq!(DType::from_descr(&descr).unwrap(), original_dtype);
         Ok(())
@@ -426,12 +455,10 @@ mod tests {
     #[test]
     fn record_description_with_onedimensional_field_shape_declaration() -> TestResult {
         let descr = parse("[('a', '>f8', (1,))]");
-        let expected_dtype = DType::Record(vec![
-            Field {
-                name: "a".to_string(),
-                dtype: DType::Array(1, Box::new(DType::Plain(">f8".parse()?))),
-            }
-        ]);
+        let expected_dtype = DType::Record(vec![Field {
+            name: "a".to_string(),
+            dtype: DType::Array(1, Box::new(DType::Plain(">f8".parse()?))),
+        }]);
         assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
         Ok(())
     }
@@ -439,17 +466,13 @@ mod tests {
     #[test]
     fn record_description_with_nested_record_field() -> TestResult {
         let descr = parse("[('parent', [('child', '<i4')])]");
-        let expected_dtype = DType::Record(vec![
-            Field {
-                name: "parent".to_string(),
-                dtype: DType::Record(vec![
-                    Field {
-                        name: "child".to_string(),
-                        dtype: DType::Plain("<i4".parse()?),
-                    },
-                ]),
-            }
-        ]);
+        let expected_dtype = DType::Record(vec![Field {
+            name: "parent".to_string(),
+            dtype: DType::Record(vec![Field {
+                name: "child".to_string(),
+                dtype: DType::Plain("<i4".parse()?),
+            }]),
+        }]);
         assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
         Ok(())
     }
@@ -457,17 +480,16 @@ mod tests {
     #[test]
     fn nested_record_field_array() -> TestResult {
         let descr = parse("[('parent', [('child', '<i4')], (2,))]");
-        let expected_dtype = DType::Record(vec![
-            Field {
-                name: "parent".to_string(),
-                dtype: DType::Array(2, Box::new(DType::Record(vec![
-                    Field {
-                        name: "child".to_string(),
-                        dtype: DType::Plain("<i4".parse()?),
-                    },
-                ]))),
-            }
-        ]);
+        let expected_dtype = DType::Record(vec![Field {
+            name: "parent".to_string(),
+            dtype: DType::Array(
+                2,
+                Box::new(DType::Record(vec![Field {
+                    name: "child".to_string(),
+                    dtype: DType::Plain("<i4".parse()?),
+                }])),
+            ),
+        }]);
         assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
         Ok(())
     }
@@ -525,6 +547,8 @@ mod tests {
     }
 
     fn parse(source: &str) -> Value {
-        source.parse().unwrap_or_else(|e| panic!("could not parse Python expression:\n{}", e))
+        source
+            .parse()
+            .unwrap_or_else(|e| panic!("could not parse Python expression:\n{}", e))
     }
 }

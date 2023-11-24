@@ -13,18 +13,29 @@ where
 {
     let mut npz = npyz::npz::NpzArchive::open(path)?;
     let csr = npyz::sparse::Csr::from_npz(&mut npz)?;
-    let npyz::sparse::Csr { shape, indices, indptr, data } = csr;
+    let npyz::sparse::Csr {
+        shape,
+        indices,
+        indptr,
+        data,
+    } = csr;
 
     // IMPORTANT:  Scipy CSR matrices might not be sorted so use new_from_unsorted!
     let sprs = MyCsMat::new_from_unsorted(
         (shape[0] as usize, shape[1] as usize),
-        indptr, indices, data,
-    ).map_err(|(_, _, _, e)| e)?;
+        indptr,
+        indices,
+        data,
+    )
+    .map_err(|(_, _, _, e)| e)?;
     Ok(sprs)
 }
 
 // Save a sprs CSR matrix to file
-fn save_sprs_csr<T>(path: &std::path::Path, sprs: &MyCsMatView<'_, T>) -> Result<(), Box<dyn std::error::Error>>
+fn save_sprs_csr<T>(
+    path: &std::path::Path,
+    sprs: &MyCsMatView<'_, T>,
+) -> Result<(), Box<dyn std::error::Error>>
 where
     T: AutoSerialize + Clone,
 {

@@ -1,6 +1,6 @@
-use std::io;
-use npyz::WriterBuilder;
 use npyz::npz::{NpzArchive, NpzWriter};
+use npyz::WriterBuilder;
+use std::io;
 
 #[test]
 fn read_uncompressed() {
@@ -36,17 +36,23 @@ fn basic_write() {
     let mut buf = io::Cursor::new(vec![]);
     let mut npz = NpzWriter::new(&mut buf);
 
-    npz.array("ints", Default::default()).unwrap()
+    npz.array("ints", Default::default())
+        .unwrap()
         .default_dtype()
         .shape(&[4])
-        .begin_nd().unwrap()
-        .extend(vec![1_i64, 2, 3, 4]).unwrap();
+        .begin_nd()
+        .unwrap()
+        .extend(vec![1_i64, 2, 3, 4])
+        .unwrap();
 
-    npz.array("floats", Default::default()).unwrap()
+    npz.array("floats", Default::default())
+        .unwrap()
         .default_dtype()
         .shape(&[2, 1])
-        .begin_nd().unwrap()
-        .extend(vec![1.0, 2.0]).unwrap();
+        .begin_nd()
+        .unwrap()
+        .extend(vec![1.0, 2.0])
+        .unwrap();
 
     drop(npz); // release borrow
 

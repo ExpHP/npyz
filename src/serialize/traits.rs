@@ -1,8 +1,8 @@
-use std::io;
 use std::fmt;
+use std::io;
 
 use crate::header::DType;
-use crate::type_str::{TypeStr};
+use crate::type_str::TypeStr;
 
 #[allow(unused)] // used by docstrings
 use crate::type_matchup_docs;
@@ -27,7 +27,7 @@ pub trait Deserialize: Sized {
     ///
     /// There is no closure-like sugar for these; you must manually define a type that
     /// implements [`TypeRead`].
-    type TypeReader: TypeRead<Value=Self>;
+    type TypeReader: TypeRead<Value = Self>;
 
     /// Get a function that deserializes a single data field at a time.
     ///
@@ -60,7 +60,7 @@ pub trait Serialize {
     ///
     /// There is no closure-like sugar for these; you must manually define a type that
     /// implements [`TypeWrite`].
-    type TypeWriter: TypeWrite<Value=Self>;
+    type TypeWriter: TypeWrite<Value = Self>;
 
     /// Get a function that serializes a single data field at a time.
     ///
@@ -111,7 +111,8 @@ pub trait TypeRead {
 
     /// The function.
     fn read_one<R: io::Read>(&self, bytes: R) -> io::Result<Self::Value>
-        where Self: Sized;
+    where
+        Self: Sized;
 }
 
 /// Like some sort of `for<W: io::Write> Fn(W, &T) -> io::Result<()>`.
@@ -131,7 +132,8 @@ pub trait TypeWrite {
 
     /// The function.
     fn write_one<W: io::Write>(&self, writer: W, value: &Self::Value) -> io::Result<()>
-        where Self: Sized;
+    where
+        Self: Sized;
 }
 
 /// The proper trait to use for trait objects of [`TypeRead`].
@@ -150,11 +152,14 @@ impl<T: TypeRead> TypeReadDyn for T {
     }
 }
 
-impl<T> TypeRead for Box<dyn TypeReadDyn<Value=T>> {
+impl<T> TypeRead for Box<dyn TypeReadDyn<Value = T>> {
     type Value = T;
 
     #[inline(always)]
-    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<T> where Self: Sized {
+    fn read_one<R: io::Read>(&self, mut reader: R) -> io::Result<T>
+    where
+        Self: Sized,
+    {
         (**self).read_one_dyn(&mut reader)
     }
 }
@@ -175,12 +180,13 @@ impl<T: TypeWrite> TypeWriteDyn for T {
     }
 }
 
-impl<T: ?Sized> TypeWrite for Box<dyn TypeWriteDyn<Value=T>> {
+impl<T: ?Sized> TypeWrite for Box<dyn TypeWriteDyn<Value = T>> {
     type Value = T;
 
     #[inline(always)]
     fn write_one<W: io::Write>(&self, mut writer: W, value: &T) -> io::Result<()>
-        where Self: Sized,
+    where
+        Self: Sized,
     {
         // Boxes must always go through two virtual dispatches.
         //
@@ -239,7 +245,11 @@ impl DTypeError {
     pub(crate) fn bad_scalar<T: ?Sized>(verb: &'static str, type_str: &TypeStr) -> Self {
         let type_str = type_str.clone();
         let rust_type = std::any::type_name::<T>();
-        DTypeError(ErrorKind::BadScalar { type_str, rust_type, verb })
+        DTypeError(ErrorKind::BadScalar {
+            type_str,
+            rust_type,
+            verb,
+        })
     }
 
     pub(crate) fn bad_usize(x: u64) -> Self {
@@ -249,17 +259,22 @@ impl DTypeError {
     // used by derives
     #[doc(hidden)]
     pub fn expected_record(dtype: &DType) -> Self {
-        DTypeError(ErrorKind::ExpectedRecord { dtype: dtype.descr() })
+        DTypeError(ErrorKind::ExpectedRecord {
+            dtype: dtype.descr(),
+        })
     }
 
     // used by derives
     #[doc(hidden)]
     pub fn wrong_fields<S1: AsRef<str>, S2: AsRef<str>>(
-        expected: impl IntoIterator<Item=S1>,
-        actual: impl IntoIterator<Item=S2>,
+        expected: impl IntoIterator<Item = S1>,
+        actual: impl IntoIterator<Item = S2>,
     ) -> Self {
         DTypeError(ErrorKind::WrongFields {
-            expected: expected.into_iter().map(|s| s.as_ref().to_string()).collect(),
+            expected: expected
+                .into_iter()
+                .map(|s| s.as_ref().to_string())
+                .collect(),
             actual: actual.into_iter().map(|s| s.as_ref().to_string()).collect(),
         })
     }
@@ -270,28 +285,48 @@ impl fmt::Display for DTypeError {
         match &self.0 {
             ErrorKind::Custom(msg) => {
                 write!(f, "{}", msg)
-            },
+            }
             ErrorKind::ExpectedScalar { dtype, rust_type } => {
-                write!(f, "type {} requires a scalar (string) dtype, not {}", rust_type, dtype)
-            },
+                write!(
+                    f,
+                    "type {} requires a scalar (string) dtype, not {}",
+                    rust_type, dtype
+                )
+            }
             ErrorKind::ExpectedRecord { dtype } => {
                 write!(f, "expected a record type; got {}", dtype)
-            },
+            }
             ErrorKind::ExpectedArray { got } => {
                 write!(f, "rust array types require an array dtype (got {})", got)
-            },
+            }
             ErrorKind::WrongArrayLen { actual, expected } => {
-                write!(f, "wrong array size (expected {}, got {})", expected, actual)
-            },
+                write!(
+                    f,
+                    "wrong array size (expected {}, got {})",
+                    expected, actual
+                )
+            }
             ErrorKind::WrongFields { actual, expected } => {
-                write!(f, "field names do not match (expected {:?}, got {:?})", expected, actual)
-            },
-            ErrorKind::BadScalar { type_str, rust_type, verb } => {
-                write!(f, "cannot {} type {} with type-string '{}'", verb, rust_type, type_str)
-            },
+                write!(
+                    f,
+                    "field names do not match (expected {:?}, got {:?})",
+                    expected, actual
+                )
+            }
+            ErrorKind::BadScalar {
+                type_str,
+                rust_type,
+                verb,
+            } => {
+                write!(
+                    f,
+                    "cannot {} type {} with type-string '{}'",
+                    verb, rust_type, type_str
+                )
+            }
             ErrorKind::UsizeOverflow(value) => {
                 write!(f, "cannot cast {} as usize", value)
-            },
+            }
         }
     }
 }
@@ -314,7 +349,7 @@ pub(in crate::serialize) mod helper {
 
     impl<T, U: ?Sized> TypeWrite for TypeWriteViaDeref<T>
     where
-        T: Deref<Target=U>,
+        T: Deref<Target = U>,
         U: Serialize,
     {
         type Value = T;
@@ -358,18 +393,18 @@ pub(in crate::serialize) mod helper {
     }
 }
 
-impl_serialize_by_deref!{['a, T: ?Sized] &'a T => T where T: Serialize}
-impl_serialize_by_deref!{['a, T: ?Sized] &'a mut T => T where T: Serialize}
-impl_serialize_by_deref!{[T: ?Sized] Box<T> => T where T: Serialize}
-impl_serialize_by_deref!{[T: ?Sized] std::rc::Rc<T> => T where T: Serialize}
-impl_serialize_by_deref!{[T: ?Sized] std::sync::Arc<T> => T where T: Serialize}
-impl_serialize_by_deref!{['a, T: ?Sized] std::borrow::Cow<'a, T> => T where T: Serialize + std::borrow::ToOwned}
-impl_auto_serialize!{[T: ?Sized] &T as T where T: AutoSerialize}
-impl_auto_serialize!{[T: ?Sized] &mut T as T where T: AutoSerialize}
-impl_auto_serialize!{[T: ?Sized] Box<T> as T where T: AutoSerialize}
-impl_auto_serialize!{[T: ?Sized] std::rc::Rc<T> as T where T: AutoSerialize}
-impl_auto_serialize!{[T: ?Sized] std::sync::Arc<T> as T where T: AutoSerialize}
-impl_auto_serialize!{[T: ?Sized] std::borrow::Cow<'_, T> as T where T: AutoSerialize + std::borrow::ToOwned}
+impl_serialize_by_deref! {['a, T: ?Sized] &'a T => T where T: Serialize}
+impl_serialize_by_deref! {['a, T: ?Sized] &'a mut T => T where T: Serialize}
+impl_serialize_by_deref! {[T: ?Sized] Box<T> => T where T: Serialize}
+impl_serialize_by_deref! {[T: ?Sized] std::rc::Rc<T> => T where T: Serialize}
+impl_serialize_by_deref! {[T: ?Sized] std::sync::Arc<T> => T where T: Serialize}
+impl_serialize_by_deref! {['a, T: ?Sized] std::borrow::Cow<'a, T> => T where T: Serialize + std::borrow::ToOwned}
+impl_auto_serialize! {[T: ?Sized] &T as T where T: AutoSerialize}
+impl_auto_serialize! {[T: ?Sized] &mut T as T where T: AutoSerialize}
+impl_auto_serialize! {[T: ?Sized] Box<T> as T where T: AutoSerialize}
+impl_auto_serialize! {[T: ?Sized] std::rc::Rc<T> as T where T: AutoSerialize}
+impl_auto_serialize! {[T: ?Sized] std::sync::Arc<T> as T where T: AutoSerialize}
+impl_auto_serialize! {[T: ?Sized] std::borrow::Cow<'_, T> as T where T: AutoSerialize + std::borrow::ToOwned}
 
 #[cfg(test)]
 mod tests {
@@ -377,8 +412,10 @@ mod tests {
 
     #[test]
     fn dynamic_readers_and_writers() {
-        let writer: Box<dyn TypeWriteDyn<Value=i32>> = Box::new(i32::writer(&i32::default_dtype()).unwrap());
-        let reader: Box<dyn TypeReadDyn<Value=i32>> = Box::new(i32::reader(&i32::default_dtype()).unwrap());
+        let writer: Box<dyn TypeWriteDyn<Value = i32>> =
+            Box::new(i32::writer(&i32::default_dtype()).unwrap());
+        let reader: Box<dyn TypeReadDyn<Value = i32>> =
+            Box::new(i32::reader(&i32::default_dtype()).unwrap());
 
         let mut buf = vec![];
         writer.write_one(&mut buf, &4000).unwrap();

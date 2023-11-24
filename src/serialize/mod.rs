@@ -7,9 +7,9 @@ use crate::type_str::TypeStr;
 #[macro_use]
 mod test_helpers;
 
-pub use traits::{Serialize, Deserialize, AutoSerialize};
-pub use traits::{TypeRead, TypeWrite, TypeWriteDyn, TypeReadDyn, DTypeError};
 use traits::{helper, ErrorKind};
+pub use traits::{AutoSerialize, Deserialize, Serialize};
+pub use traits::{DTypeError, TypeRead, TypeReadDyn, TypeWrite, TypeWriteDyn};
 #[macro_use]
 mod traits;
 

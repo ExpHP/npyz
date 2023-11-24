@@ -58,22 +58,14 @@ fn example_dia() -> sparse::Dia<i64> {
     sparse::Dia {
         shape: [3, 6],
         offsets: vec![-2, 0, 2],
-        data: vec![
-            6, 0, 0,
-            1, 2, 7,
-            0, 0, 4,
-        ],
+        data: vec![6, 0, 0, 1, 2, 7, 0, 0, 4],
     }
 }
 fn example_bsr() -> sparse::Bsr<i64> {
     sparse::Bsr {
         shape: [3, 6],
         blocksize: [1, 2],
-        data: vec![
-            1, 0, 4, 0,
-            0, 2,
-            6, 0, 7, 0,
-        ],
+        data: vec![1, 0, 4, 0, 0, 2, 6, 0, 7, 0],
         indices: vec![0, 1, 0, 0, 1],
         indptr: vec![0, 2, 3, 5],
     }
@@ -155,20 +147,51 @@ fn read_sparse_bsr() {
 fn read_sparse_dynamic() {
     use sparse::Sparse;
 
-    assert!(matches!(Sparse::<i64>::from_npz(&mut open_test_npz("coo.npz")).unwrap(), Sparse::Coo(_)));
-    assert!(matches!(Sparse::<i64>::from_npz(&mut open_test_npz("csr.npz")).unwrap(), Sparse::Csr(_)));
-    assert!(matches!(Sparse::<i64>::from_npz(&mut open_test_npz("csc.npz")).unwrap(), Sparse::Csc(_)));
-    assert!(matches!(Sparse::<i64>::from_npz(&mut open_test_npz("bsr.npz")).unwrap(), Sparse::Bsr(_)));
-    assert!(matches!(Sparse::<i64>::from_npz(&mut open_test_npz("dia.npz")).unwrap(), Sparse::Dia(_)));
+    assert!(matches!(
+        Sparse::<i64>::from_npz(&mut open_test_npz("coo.npz")).unwrap(),
+        Sparse::Coo(_)
+    ));
+    assert!(matches!(
+        Sparse::<i64>::from_npz(&mut open_test_npz("csr.npz")).unwrap(),
+        Sparse::Csr(_)
+    ));
+    assert!(matches!(
+        Sparse::<i64>::from_npz(&mut open_test_npz("csc.npz")).unwrap(),
+        Sparse::Csc(_)
+    ));
+    assert!(matches!(
+        Sparse::<i64>::from_npz(&mut open_test_npz("bsr.npz")).unwrap(),
+        Sparse::Bsr(_)
+    ));
+    assert!(matches!(
+        Sparse::<i64>::from_npz(&mut open_test_npz("dia.npz")).unwrap(),
+        Sparse::Dia(_)
+    ));
 }
 
-#[test] fn write_sparse_coo() { test_writing_sparse!(sparse::Coo<i64>, example_coo()) }
-#[test] fn write_sparse_csr() { test_writing_sparse!(sparse::Csr<i64>, example_csr()) }
-#[test] fn write_sparse_csc() { test_writing_sparse!(sparse::Csc<i64>, example_csc()) }
-#[test] fn write_sparse_bsr() { test_writing_sparse!(sparse::Bsr<i64>, example_bsr()) }
-#[test] fn write_sparse_dia() { test_writing_sparse!(sparse::Dia<i64>, example_dia()) }
+#[test]
+fn write_sparse_coo() {
+    test_writing_sparse!(sparse::Coo<i64>, example_coo())
+}
+#[test]
+fn write_sparse_csr() {
+    test_writing_sparse!(sparse::Csr<i64>, example_csr())
+}
+#[test]
+fn write_sparse_csc() {
+    test_writing_sparse!(sparse::Csc<i64>, example_csc())
+}
+#[test]
+fn write_sparse_bsr() {
+    test_writing_sparse!(sparse::Bsr<i64>, example_bsr())
+}
+#[test]
+fn write_sparse_dia() {
+    test_writing_sparse!(sparse::Dia<i64>, example_dia())
+}
 
-#[test] fn write_sparse_dynamic() {
+#[test]
+fn write_sparse_dynamic() {
     use sparse::Sparse;
 
     test_writing_sparse!(Sparse<i64>, Sparse::Csr(example_csr()));
@@ -177,7 +200,6 @@ fn read_sparse_dynamic() {
     test_writing_sparse!(Sparse<i64>, Sparse::Dia(example_dia()));
     test_writing_sparse!(Sparse<i64>, Sparse::Bsr(example_bsr()));
 }
-
 
 #[test]
 fn read_wrong_format_err() {
