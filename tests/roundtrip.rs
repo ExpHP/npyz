@@ -7,6 +7,7 @@
 use std::io::{self, Read, Write, Cursor};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 use npyz::{DType, Field, Serialize, Deserialize, AutoSerialize, WriterBuilder};
+use half::f16;
 
 // Allows to use the `#[test]` on WASM.
 #[cfg(target_arch="wasm32")]
@@ -30,6 +31,7 @@ struct Array {
     v_u16: u16,
     v_u32: u32,
     v_u64: u64,
+    v_f16: f16,
     v_f32: f32,
     v_f64: f64,
     v_arr_u32: [u32;7],
@@ -124,6 +126,7 @@ fn roundtrip() {
             v_u16: i as u16,
             v_u32: i as u32,
             v_u64: i as u64,
+            v_f16: f16::from_f32(i as f32),
             v_f32: i as f32,
             v_f64: i as f64,
             v_arr_u32: [j,1+j,2+j,3+j,4+j,5+j,6+j],
@@ -176,6 +179,8 @@ fn roundtrip_byteorder() {
     struct Row {
         be_u32: u32,
         le_u32: u32,
+        be_f16: f16,
+        le_f16: f16,
         be_f32: f32,
         le_f32: f32,
         be_i8: i8,
@@ -186,6 +191,8 @@ fn roundtrip_byteorder() {
     let dtype = DType::Record(vec![
         plain_field("be_u32", ">u4"),
         plain_field("le_u32", "<u4"),
+        plain_field("be_f16", ">f2"),
+        plain_field("le_f16", "<f2"),
         plain_field("be_f32", ">f4"),
         plain_field("le_f32", "<f4"),
         // check that all byteorders are legal for i1
@@ -197,6 +204,8 @@ fn roundtrip_byteorder() {
     let row = Row {
         be_u32: 0x01_02_03_04,
         le_u32: 0x01_02_03_04,
+        be_f16: f16::from_f32_const(-123456789.0),
+        le_f16: f16::from_f32_const(-123456789.0),
         be_f32: -6259853398707798016.0, // 0xdeadbeef
         le_f32: -6259853398707798016.0,
         be_i8: 5,
@@ -207,6 +216,7 @@ fn roundtrip_byteorder() {
     let expected_data_bytes = {
         let mut buf = vec![];
         buf.extend_from_slice(b"\x01\x02\x03\x04\x04\x03\x02\x01");
+        buf.extend_from_slice(b"\xFC\x00\x00\xFC");
         buf.extend_from_slice(b"\xDE\xAD\xBE\xEF\xEF\xBE\xAD\xDE");
         buf.extend_from_slice(b"\x05\x06\x07");
         buf
@@ -473,8 +483,8 @@ fn roundtrip_zero_length_array_member() {
             DType::Array(0, Box::new(
                 DType::Array(7, Box::new(
                     DType::Plain("<i4".parse().unwrap())
+                    )),
                 )),
-            )),
         ))},
     ]);
 

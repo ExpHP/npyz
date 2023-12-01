@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io;
+use std::ops::Deref;
 
 use crate::header::{Value, DType, read_header, convert_value_to_shape};
 use crate::serialize::{Deserialize, TypeRead, DTypeError};
@@ -468,7 +469,7 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     /// layout of the data, so if you want to correctly read multi-dimensional arrays you should
     /// switch to [`NpyFile`].
     pub fn to_vec(&self) -> Vec<T> {
-        let mut reader = self.inner.reader().clone();
+        let mut reader = self.inner.reader().deref().clone();
         (0..self.len()).map(|_| self.inner.type_reader.read_one(&mut reader).unwrap()).collect()
     }
 }

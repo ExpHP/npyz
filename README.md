@@ -24,7 +24,7 @@ You also may be interested in enabling some features:
 
 ```toml
 [dependencies]
-npyz = {version = "0.8", features = ["derive", "complex", "npz", "arrayvec"]}
+npyz = {version = "0.8", features = ["derive", "complex", "npz", "arrayvec", "half"]}
 ```
 
 Data can now be read from a `*.npy` file:
