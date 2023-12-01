@@ -24,9 +24,10 @@ Integers and floats correspond to simple dtypes:
 
 ### Floats
 
-The rust types `f32`, `f64` use type code `f`.
+* The rust types `f32`, `f64` use type code `f`.
+* When the **`"half"`** feature is enabled, rust type f16 is also supported.
 
-**Notice:** numpy *does* have 16-bit and 128-bit floats, but neither is currently supported by `npyz`.
+**Notice:** numpy *does* have 128-bit floats, but it is currently supported by `npyz`.
 
 ### Complex
 

@@ -20,6 +20,7 @@ No features are enabled by default.  Here is the list of existing features:
   may introduce a major version bump of one of these crates.  (NOTE: to ease this issue somewhat,
   `npyz` will re-export the versions of the crates it uses)
   * **`"complex"`** enables the use of [`num_complex::Complex`].
+  * **`"half"`** enables the use of [`half::f16`].
   * **`"arrayvec"`** enables the use of [`arrayvec::ArrayVec`] and [`arrayvec::ArrayString`]
     as alternatives to `Vec` and `String` for some string types.
 * **`"derive"`** enables derives of traits for working with structured arrays.
@@ -287,6 +288,8 @@ pub use num_complex;
 pub use arrayvec;
 #[cfg(feature = "zip")]
 pub use zip;
+#[cfg(feature = "half")]
+pub use half;
 
 pub use header::{DType, Field};
 #[allow(deprecated)]

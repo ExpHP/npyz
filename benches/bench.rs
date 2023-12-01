@@ -1,4 +1,4 @@
-use npyz::{AutoSerialize};
+use npyz::AutoSerialize;
 use bencher::{Bencher, black_box as bb};
 use std::io::Cursor;
 use npyz::WriterBuilder;
