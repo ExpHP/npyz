@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 No unreleased changes yet!
 
+## [0.8.2] - 2023-12-03
+
+### Added
+- npyz now has support for half-precision floats using the [`half`](https://crates.io/crates/half) crate.  This support can be enabled with the `"half"` feature.  Thanks, @KeKsBoTer!
+
 ## [0.8.1] - 2023-06-05
 
 ### Added
@@ -70,7 +75,7 @@ This is an extremely minor update that just updates the README.
 - This CHANGELOG.
 - Tools for NPZ files and scipy sparse matrices, and the associated **`"npz"`** feature.
 - Nested structs inside array fields of a structured array now work.
-- [`NpyWriter`] now allows `T: ?Sized`.
+- `NpyWriter` now allows `T: ?Sized`.
 
 ### Changed
 - In order to fix nested structs inside array fields, the layout of `DType` had to be changed
@@ -96,7 +101,8 @@ This is an extremely minor update that just updates the README.
 - Adds `NpyReader` for reading from an `io::Read`
 - Adds `Builder` and `NpyWriter` for writing to an `io::Write`
 
-[Unreleased]: https://github.com/ExpHP/npyz/compare/0.8.1...HEAD
+[Unreleased]: https://github.com/ExpHP/npyz/compare/0.8.2...HEAD
+[0.8.2]: https://github.com/ExpHP/npyz/compare/0.8.1...0.8.2
 [0.8.1]: https://github.com/ExpHP/npyz/compare/0.8.0...0.8.1
 [0.8.0]: https://github.com/ExpHP/npyz/compare/0.7.4...0.8.0
 [0.7.4]: https://github.com/ExpHP/npyz/compare/0.7.3...0.7.4
