@@ -483,8 +483,8 @@ fn roundtrip_zero_length_array_member() {
             DType::Array(0, Box::new(
                 DType::Array(7, Box::new(
                     DType::Plain("<i4".parse().unwrap())
-                    )),
                 )),
+            )),
         ))},
     ]);
 
