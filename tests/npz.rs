@@ -2,13 +2,18 @@ use std::io;
 use npyz::WriterBuilder;
 use npyz::npz::{NpzArchive, NpzWriter};
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+
 #[test]
 fn read_uncompressed() {
-    test_basic_read(NpzArchive::open("test-data/uncompressed.npz").unwrap())
+    let mut data = io::Cursor::new(include_bytes!("../test-data/uncompressed.npz").to_vec());
+    test_basic_read(NpzArchive::new(&mut data).unwrap())
 }
 #[test]
 fn read_compressed() {
-    test_basic_read(NpzArchive::open("test-data/compressed.npz").unwrap())
+    let mut data = io::Cursor::new(include_bytes!("../test-data/compressed.npz").to_vec());
+    test_basic_read(NpzArchive::new(&mut data).unwrap())
 }
 
 // Python code to create NPZs:
