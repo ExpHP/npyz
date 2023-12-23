@@ -107,7 +107,7 @@ This is an extremely minor update that just updates the README.
 - Adds `Builder` and `NpyWriter` for writing to an `io::Write`
 
 [Unreleased]: https://github.com/ExpHP/npyz/compare/0.8.3...HEAD
-[0.8.2]: https://github.com/ExpHP/npyz/compare/0.8.2...0.8.3
+[0.8.3]: https://github.com/ExpHP/npyz/compare/0.8.2...0.8.3
 [0.8.2]: https://github.com/ExpHP/npyz/compare/0.8.1...0.8.2
 [0.8.1]: https://github.com/ExpHP/npyz/compare/0.8.0...0.8.1
 [0.8.0]: https://github.com/ExpHP/npyz/compare/0.7.4...0.8.0
