@@ -429,20 +429,21 @@ impl<R: io::Read, T: Deserialize + bytemuck::Pod> NpyReader<T, R> {
     pub fn read_complete(&mut self) -> io::Result<Vec<T>> {
         match &self.header.dtype{
             DType::Plain(d) =>{
-                if cfg!(endian = "big") {
+                #[cfg(target_endian = "big")]
+                {
                     if d.endianness == Endianness::Big{
                         self.read_bytemuck()
                     }else{
                         self.read_byteorder()
                     }
-                }else if cfg!(endian = "big") {
+                }
+                #[cfg(target_endian = "little")]
+                {
                     if d.endianness == Endianness::Little{
                         self.read_bytemuck()
                     }else{
                         self.read_byteorder()
                     }
-                }else{
-                    panic!("unsuporrted endianess {:}" ,cfg!(endian))
                 }
             },
             _ => io::Result::Err(io::Error::new(io::ErrorKind::InvalidData, "only supported for plain data types"))
