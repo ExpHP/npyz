@@ -346,7 +346,7 @@ impl NpyHeader {
 
 impl<T: Deserialize, R: io::Read> NpyReader<T, R> {
     #[inline(always)]
-    fn reader(&self) -> &R {
+    pub fn reader(&self) -> &R {
         &self.reader_and_current_index.0
     }
 
