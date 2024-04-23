@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::f32::consts::E;
 use std::io;
 
 use crate::header::{Value, DType, read_header, convert_value_to_shape};
 use crate::serialize::{Deserialize, TypeRead, DTypeError};
+use crate::Endianness;
 
 /// Object for reading an `npy` file.
 ///
@@ -182,7 +184,7 @@ pub struct NpyReader<T: Deserialize, R: io::Read> {
     header: NpyHeader,
     type_reader: <T as Deserialize>::TypeReader,
     // stateful parts, put together like this to remind you to always update them in sync
-    pub reader_and_current_index: (R, u64),
+    reader_and_current_index: (R, u64),
 }
 
 /// Legacy type for reading `npy` files.
@@ -407,6 +409,44 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
 
         self.seek_to(index)?;
         self.next().unwrap()
+    }
+}
+
+/// # Bytemuck read
+#[cfg(feature = "bytemuck")]
+impl<R: io::Read, T: Deserialize + bytemuck::Pod> NpyReader<T, R> {
+
+    fn read_bytemuck(&mut self) -> io::Result<Vec<T>> {
+        let mut buffer = Vec::with_capacity(self.len() as usize*self.header.item_size);
+        self.reader_and_current_index.0.read_to_end(&mut buffer)?;
+        Ok(bytemuck::cast_slice(&buffer).to_vec())
+    }
+
+    fn read_byteorder(&mut self) -> io::Result<Vec<T>> {
+        todo!("implement me")
+    }
+    /// Read the remaining data as a slice of `T`.
+    pub fn read_complete(&mut self) -> io::Result<Vec<T>> {
+        match &self.header.dtype{
+            DType::Plain(d) =>{
+                if cfg!(endian = "big") {
+                    if d.endianness == Endianness::Big{
+                        self.read_bytemuck()
+                    }else{
+                        self.read_byteorder()
+                    }
+                }else if cfg!(endian = "big") {
+                    if d.endianness == Endianness::Little{
+                        self.read_bytemuck()
+                    }else{
+                        self.read_byteorder()
+                    }
+                }else{
+                    panic!("unsuporrted endianess {:}" ,cfg!(endian))
+                }
+            },
+            _ => io::Result::Err(io::Error::new(io::ErrorKind::InvalidData, "only supported for plain data types"))
+        }
     }
 }
 
