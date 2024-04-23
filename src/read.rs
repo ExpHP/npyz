@@ -182,7 +182,7 @@ pub struct NpyReader<T: Deserialize, R: io::Read> {
     header: NpyHeader,
     type_reader: <T as Deserialize>::TypeReader,
     // stateful parts, put together like this to remind you to always update them in sync
-    reader_and_current_index: (R, u64),
+    pub reader_and_current_index: (R, u64),
 }
 
 /// Legacy type for reading `npy` files.
@@ -346,7 +346,7 @@ impl NpyHeader {
 
 impl<T: Deserialize, R: io::Read> NpyReader<T, R> {
     #[inline(always)]
-    pub fn reader(&self) -> &R {
+    fn reader(&self) -> &R {
         &self.reader_and_current_index.0
     }
 
