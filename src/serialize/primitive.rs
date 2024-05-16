@@ -46,6 +46,7 @@ macro_rules! derive_int_primitive_read_write {
                 }
             }
 
+            #[cfg(feature = "bytemuck")]
             #[inline]
             fn primitive_read_many<R:io::Read>(mut reader: R, swap_bytes: bool,n:usize) -> io::Result<Vec<$int>> {
                 if !swap_bytes{
@@ -88,6 +89,7 @@ macro_rules! derive_float_primitive_read_write {
                 Ok(<$float>::from_bits(bits))
             }
 
+            #[cfg(feature = "bytemuck")]
             #[inline]
             fn primitive_read_many<R:io::Read>(mut reader: R, swap_bytes: bool,n:usize) -> io::Result<Vec<$float>> {
                 if !swap_bytes{
@@ -95,8 +97,7 @@ macro_rules! derive_float_primitive_read_write {
 
                     let mut buf:Vec<u8> = vec![0u8; size_of::<$int>()*n];
                     reader.read_exact(&mut buf)?;
-    
-                   Ok(bytemuck::cast_slice(&buf).to_vec())
+                    Ok(bytemuck::cast_slice(&buf).to_vec())
                 }else{
                     let mut vec = Vec::with_capacity(n);
                     for _ in 0..n {
