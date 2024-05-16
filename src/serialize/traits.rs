@@ -2,7 +2,7 @@ use std::io;
 use std::fmt;
 
 use crate::header::DType;
-use crate::type_str::{TypeStr};
+use crate::type_str::TypeStr;
 
 #[allow(unused)] // used by docstrings
 use crate::type_matchup_docs;
@@ -111,7 +111,17 @@ pub trait TypeRead {
 
     /// The function.
     fn read_one<R: io::Read>(&self, bytes: R) -> io::Result<Self::Value>
-        where Self: Sized;
+    where Self: Sized;
+
+    /// read n values from the reader
+    fn read_many<R: io::Read>(&self, mut bytes: R,n:usize) -> io::Result<Vec<Self::Value>>
+        where Self: Sized{
+        let mut vec = Vec::with_capacity(n);
+        for _ in 0..n {
+            vec.push(self.read_one(&mut bytes)?);
+        }
+        Ok(vec)
+    }
 }
 
 /// Like some sort of `for<W: io::Write> Fn(W, &T) -> io::Result<()>`.
@@ -141,12 +151,24 @@ pub trait TypeWrite {
 pub trait TypeReadDyn: TypeRead {
     #[doc(hidden)]
     fn read_one_dyn(&self, writer: &mut dyn io::Read) -> io::Result<Self::Value>;
+    #[doc(hidden)]
+    fn read_many_dyn(&self, mut reader: &mut dyn io::Read,n:usize) -> io::Result<Vec<Self::Value>>{
+        let mut data = Vec::with_capacity(n);
+        for _ in 0..n {
+            data.push(self.read_one_dyn(&mut reader)?);
+        }
+        Ok(data)
+    }
 }
 
 impl<T: TypeRead> TypeReadDyn for T {
     #[inline(always)]
     fn read_one_dyn(&self, reader: &mut dyn io::Read) -> io::Result<Self::Value> {
         self.read_one(reader)
+    }
+    
+    fn read_many_dyn(&self,  reader: &mut dyn io::Read,n:usize) -> io::Result<Vec<Self::Value>> {
+        self.read_many(reader, n)
     }
 }
 

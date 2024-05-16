@@ -16,9 +16,11 @@ mod traits;
 pub use slice::*;
 mod slice;
 
+#[allow(unused_imports)]
 pub use primitive::*;
 mod primitive;
 
+#[allow(unused_imports)]
 pub use array_member::*;
 mod array_member;
 

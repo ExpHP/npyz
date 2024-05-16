@@ -18,6 +18,14 @@ pub trait PrimitiveReadWrite: Sized {
     #[doc(hidden)]
     fn primitive_read_one<R: io::Read>(reader: R, swap_bytes: bool) -> io::Result<Self>;
     #[doc(hidden)]
+    fn primitive_read_many<R:io::Read>(mut reader: R, swap_bytes: bool,n:usize) -> io::Result<Vec<Self>> {
+        let mut vec = Vec::with_capacity(n);
+        for _ in 0..n {
+            vec.push(Self::primitive_read_one(&mut reader, swap_bytes)?);
+        }
+        Ok(vec)
+    }
+    #[doc(hidden)]
     fn primitive_write_one<W: io::Write>(&self, writer: W, swap_bytes: bool) -> io::Result<()>;
 }
 
@@ -35,6 +43,25 @@ macro_rules! derive_int_primitive_read_write {
                 match swap_bytes {
                     true => Ok(out.swap_bytes()),
                     false => Ok(out),
+                }
+            }
+
+            #[cfg(feature = "bytemuck")]
+            #[inline]
+            fn primitive_read_many<R:io::Read>(mut reader: R, swap_bytes: bool,n:usize) -> io::Result<Vec<$int>> {
+                if !swap_bytes{
+                    use std::mem::size_of;
+
+                    let mut buf:Vec<u8> = vec![0u8; size_of::<$int>()*n];
+                    reader.read_exact(&mut buf)?;
+    
+                   Ok(bytemuck::cast_slice(&buf).to_vec())
+                }else{
+                    let mut vec = Vec::with_capacity(n);
+                    for _ in 0..n {
+                        vec.push(Self::primitive_read_one(&mut reader, swap_bytes)?);
+                    }
+                    Ok(vec)
                 }
             }
 
@@ -61,6 +88,25 @@ macro_rules! derive_float_primitive_read_write {
                 let bits = <$int>::primitive_read_one(reader, swap_bytes)?;
                 Ok(<$float>::from_bits(bits))
             }
+
+            #[cfg(feature = "bytemuck")]
+            #[inline]
+            fn primitive_read_many<R:io::Read>(mut reader: R, swap_bytes: bool,n:usize) -> io::Result<Vec<$float>> {
+                if !swap_bytes{
+                    use std::mem::size_of;
+
+                    let mut buf:Vec<u8> = vec![0u8; size_of::<$int>()*n];
+                    reader.read_exact(&mut buf)?;
+                    Ok(bytemuck::cast_slice(&buf).to_vec())
+                }else{
+                    let mut vec = Vec::with_capacity(n);
+                    for _ in 0..n {
+                        vec.push(Self::primitive_read_one(&mut reader, swap_bytes)?);
+                    }
+                    Ok(vec)
+                }
+            }
+
 
             #[inline]
             fn primitive_write_one<W: io::Write>(&self, writer: W, swap_bytes: bool) -> io::Result<()> {
@@ -131,6 +177,11 @@ impl<T: PrimitiveReadWrite> TypeRead for PrimitiveReader<T> {
     fn read_one<R: io::Read>(&self, reader: R) -> io::Result<Self::Value> {
         T::primitive_read_one(reader, self.swap_bytes)
     }
+    
+    fn read_many<R: io::Read>(&self, mut bytes: R,n:usize) -> io::Result<Vec<Self::Value>> {
+        T::primitive_read_many(&mut bytes, self.swap_bytes,n)
+    }
+    
 }
 
 impl<T: PrimitiveReadWrite> TypeWrite for PrimitiveWriter<T> {

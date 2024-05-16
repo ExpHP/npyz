@@ -4,6 +4,7 @@ use std::io;
 use crate::header::{Value, DType, read_header, convert_value_to_shape};
 use crate::serialize::{Deserialize, TypeRead, DTypeError};
 
+
 /// Object for reading an `npy` file.
 ///
 /// This type represents a partially read `npy` file, where the header has been parsed
@@ -276,8 +277,12 @@ impl<R: io::Read> NpyFile<R> {
     ///
     /// This is a convenience wrapper around [`Self::data`] and [`Iterator::collect`].
     pub fn into_vec<T: Deserialize>(self) -> io::Result<Vec<T>> {
-        match self.data() {
-            Ok(r) => r.collect(),
+        match self.data::<T>() {
+            Ok(r) => {
+                let n = r.header.n_records as usize;
+                let reader: T::TypeReader = r.type_reader;
+                return reader.read_many(r.reader_and_current_index.0,n);
+            },
             Err(e) => Err(invalid_data(e)),
         }
     }
@@ -409,6 +414,7 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
         self.next().unwrap()
     }
 }
+
 
 #[allow(deprecated)]
 impl<'a, T: Deserialize> NpyData<'a, T> {
