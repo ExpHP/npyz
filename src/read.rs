@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::f32::consts::E;
 use std::io;
 
 use crate::header::{Value, DType, read_header, convert_value_to_shape};
 use crate::serialize::{Deserialize, TypeRead, DTypeError};
-use crate::Endianness;
+
 
 /// Object for reading an `npy` file.
 ///
