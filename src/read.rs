@@ -278,8 +278,12 @@ impl<R: io::Read> NpyFile<R> {
     ///
     /// This is a convenience wrapper around [`Self::data`] and [`Iterator::collect`].
     pub fn into_vec<T: Deserialize>(self) -> io::Result<Vec<T>> {
-        match self.data() {
-            Ok(r) => r.collect(),
+        match self.data::<T>() {
+            Ok(r) => {
+                let n = r.header.n_records as usize;
+                let reader: T::TypeReader = r.type_reader;
+                return reader.read_many(r.reader_and_current_index.0,n);
+            },
             Err(e) => Err(invalid_data(e)),
         }
     }
@@ -412,44 +416,6 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
     }
 }
 
-/// # Bytemuck read
-#[cfg(feature = "bytemuck")]
-impl<R: io::Read, T: Deserialize + bytemuck::Pod> NpyReader<T, R> {
-
-    fn read_bytemuck(&mut self) -> io::Result<Vec<T>> {
-        let mut buffer = Vec::with_capacity(self.len() as usize*self.header.item_size);
-        self.reader_and_current_index.0.read_to_end(&mut buffer)?;
-        Ok(bytemuck::cast_slice(&buffer).to_vec())
-    }
-
-    fn read_byteorder(&mut self) -> io::Result<Vec<T>> {
-        todo!("implement me")
-    }
-    /// Read the remaining data as a slice of `T`.
-    pub fn read_complete(&mut self) -> io::Result<Vec<T>> {
-        match &self.header.dtype{
-            DType::Plain(d) =>{
-                #[cfg(target_endian = "big")]
-                {
-                    if d.endianness == Endianness::Big{
-                        self.read_bytemuck()
-                    }else{
-                        self.read_byteorder()
-                    }
-                }
-                #[cfg(target_endian = "little")]
-                {
-                    if d.endianness == Endianness::Little{
-                        self.read_bytemuck()
-                    }else{
-                        self.read_byteorder()
-                    }
-                }
-            },
-            _ => io::Result::Err(io::Error::new(io::ErrorKind::InvalidData, "only supported for plain data types"))
-        }
-    }
-}
 
 #[allow(deprecated)]
 impl<'a, T: Deserialize> NpyData<'a, T> {
