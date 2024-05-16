@@ -70,7 +70,7 @@ arrayvec = ["dep:arrayvec"]
 complex = ["dep:num-complex"]
 half = ["dep:half"]
 npz = ["dep:zip"]
-bytemuck= ["dep:bytemuck"]
+bytemuck= ["dep:bytemuck","half/bytemuck"]
 
 [[bench]]
 name = "bench"
