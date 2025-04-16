@@ -288,7 +288,7 @@ macro_rules! impl_complex_serializable {
         /// _This impl is only available with the **`"complex"`** feature._
         impl AutoSerialize for Complex<$float> {
             fn default_dtype() -> DType {
-                DType::new_scalar(TypeStr::with_auto_endianness(TypeChar::Complex, $size, None))
+                DType::new_scalar(TypeStr::with_auto_endianness(TypeChar::Complex, 2 * $size, None))
             }
         }
     )+};
@@ -497,5 +497,12 @@ mod tests {
             assert_eq!(i64::default_dtype().descr(), "'<i8'");
             assert_eq!(u32::default_dtype().descr(), "'<u4'");
         }
+    }
+
+    #[test]
+    #[cfg(feature = "complex")]
+    fn default_complex_type_strs() {
+        assert_eq!(Complex::<f32>::default_dtype().descr(), "'<c8'");
+        assert_eq!(Complex::<f64>::default_dtype().descr(), "'<c16'");
     }
 }
