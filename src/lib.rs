@@ -286,7 +286,7 @@ pub mod type_matchup_docs;
 pub use num_complex;
 #[cfg(feature = "arrayvec")]
 pub use arrayvec;
-#[cfg(feature = "zip")]
+#[cfg(feature = "npz")]
 pub use zip;
 #[cfg(feature = "half")]
 pub use half;
