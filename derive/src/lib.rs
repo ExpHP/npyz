@@ -238,7 +238,9 @@ fn gen_field_dtypes_struct(
     }
 }
 
-// from the wonderful folks working on serde
+// from the wonderful folks working on serde.
+// By placing our generated impls inside a `const`, we can freely use `use`
+// and `extern crate` without them leaking into the module.
 fn wrap_in_const(
     trait_: &str,
     ty: &syn::Ident,
@@ -250,10 +252,13 @@ fn wrap_in_const(
     );
 
     quote! {
-        #[allow(non_upper_case_globals, unused_attributes, unused_qualifications)]
+        #[allow(non_upper_case_globals)]
+        #[allow(unused_attributes)]
+        #[allow(unused_qualifications)]
+        #[allow(non_local_definitions)]  // this warns on the impl-in-a-const technique, lol
         const #dummy_const: () = {
             #[allow(unknown_lints)]
-            #[cfg_attr(feature = "cargo-clippy", allow(useless_attribute))]
+            #[clippy::allow(useless_attribute)]
             #[allow(rust_2018_idioms)]
             extern crate npyz as _npyz;
 

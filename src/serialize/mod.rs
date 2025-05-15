@@ -13,13 +13,11 @@ use traits::{helper, ErrorKind};
 #[macro_use]
 mod traits;
 
-pub use slice::*;
+pub use slice::FixedSizeBytes;
 mod slice;
 
-pub use primitive::*;
 mod primitive;
 
-pub use array_member::*;
 mod array_member;
 
 // helpers
