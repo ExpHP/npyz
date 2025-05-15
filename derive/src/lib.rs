@@ -258,7 +258,7 @@ fn wrap_in_const(
         #[allow(non_local_definitions)]  // this warns on the impl-in-a-const technique, lol
         const #dummy_const: () = {
             #[allow(unknown_lints)]
-            #[clippy::allow(useless_attribute)]
+            #[allow(clippy::useless_attribute)]
             #[allow(rust_2018_idioms)]
             extern crate npyz as _npyz;
 
