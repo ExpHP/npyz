@@ -159,7 +159,7 @@ pub struct NpyHeader {
     /// Total number of elements, pre-computed from the shape.
     n_records: u64,
     /// Item size in bytes.
-    item_size: usize,
+    item_size: Option<usize>,
 }
 
 impl NpyHeader {
@@ -336,9 +336,9 @@ impl NpyHeader {
 
     fn from_parts(dtype: DType, shape: Vec<u64>, order: Order) -> io::Result<NpyHeader> {
         let n_records = shape.iter().product();
-        let item_size = dtype.num_bytes().ok_or_else(|| {
-            invalid_data(format_args!("dtype is larger than usize!"))
-        })?;
+        let item_size = dtype
+            .num_bytes()
+            .or_else(|_| Err(invalid_data(format_args!("dtype is larger than usize!"))))?;
         let strides = strides(order, &shape);
         Ok(NpyHeader { dtype, shape, strides, order, n_records, item_size })
     }
@@ -390,7 +390,11 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
         let (reader, current_index) = &mut self.reader_and_current_index;
         let delta = index as i64 - *current_index as i64;
         if delta != 0 {
-            reader.seek(io::SeekFrom::Current(delta * self.header.item_size as i64))?;
+            let item_size = self
+                .header
+                .item_size
+                .ok_or(io::Error::from(io::ErrorKind::Unsupported))?;
+            reader.seek(io::SeekFrom::Current(delta * item_size as i64))?;
             *current_index = index;
         }
         Ok(())
@@ -416,7 +420,10 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     pub fn from_bytes(bytes: &'a [u8]) -> io::Result<NpyData<'a, T>> {
         let inner = NpyFile::new(bytes)?.data().map_err(invalid_data)?;
 
-        assert_eq!(inner.header.item_size as u64 * inner.header.n_records, inner.reader().len() as u64);
+        assert_eq!(
+            inner.header.item_size.unwrap_or_default() as u64 * inner.header.n_records,
+            inner.reader().len() as u64
+        );
         Ok(NpyData { inner })
     }
 
@@ -457,7 +464,8 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Panics if the bytes stored for the element are invalid for the dtype,
     /// or if the index is out of bounds.
     pub fn get_unchecked(&self, i: usize) -> T {
-        let item_bytes = &self.get_data_slice()[i * self.inner.header.item_size..];
+        let item_size = self.inner.header.item_size.unwrap();
+        let item_bytes = &self.get_data_slice()[i * item_size..];
         self.inner.type_reader.read_one(item_bytes).unwrap()
     }
 
