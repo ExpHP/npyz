@@ -170,6 +170,10 @@ pub enum TypeChar {
     /// See [`type_matchup_docs`][`crate::type_matchup_docs`] for information on which types can
     /// use this for serialization.
     UnicodeStr,
+    /// Code `O`.
+    ///
+    /// Notice that numpy uses this to store pickled values.
+    Object,
     /// Code `V`.  Represents a binary blob of `size` bytes.
     ///
     /// Can use [`crate::FixedSizeBytes`] for serialization, or some other types; see
@@ -190,6 +194,7 @@ impl TypeChar {
             'M' => Some(TypeChar::DateTime),
             'S' | 'a' => Some(TypeChar::ByteStr),
             'U' => Some(TypeChar::UnicodeStr),
+            'O' => Some(TypeChar::Object),
             'V' => Some(TypeChar::RawData),
             _ => None,
         }
@@ -207,6 +212,7 @@ impl TypeChar {
             TypeChar::DateTime => "M",
             TypeChar::ByteStr => "S",
             TypeChar::UnicodeStr => "U",
+            TypeChar::Object => "O",
             TypeChar::RawData => "V",
         }
     }
@@ -235,6 +241,7 @@ impl TypeChar {
             //        changes them to `|S1` and `|U1`.)
             TypeChar::ByteStr |
             TypeChar::UnicodeStr |
+            TypeChar::Object |
             TypeChar::RawData => None,
         }
     }
@@ -253,6 +260,7 @@ impl TypeChar {
             TypeChar::UnicodeStr => true,
 
             TypeChar::ByteStr |
+            TypeChar::Object |
             TypeChar::RawData => false,
         }
     }
@@ -292,6 +300,8 @@ fn type_str_num_bytes_as_usize(type_str: &TypeStr) -> Option<usize> {
         TypeChar::RawData => Some(size_field),
 
         TypeChar::UnicodeStr => size_field.checked_mul(4),
+
+        TypeChar::Object =>None,
     }
 }
 
@@ -453,7 +463,7 @@ mod parse {
         fn from_str(input: &str) -> Result<Self, ParseTypeStrError> {
             use self::ErrorKind::*;
 
-            if input.len() < 3 {
+            if input.len() < 2 {
                 bail!(SyntaxError);
             }
 
@@ -476,13 +486,19 @@ mod parse {
                 remainder.bytes().position(|b| !b.is_ascii_digit())
                     .unwrap_or(remainder.len())
             };
-            if size_end == 0 {
-                bail!(SyntaxError);
-            }
             let (size, remainder) = remainder.split_at(size_end);
-            let size = match size.parse() {
-                Err(e) => bail!(ParseIntError(e)), // probably overflow
-                Ok(v) => v,
+            let size = if type_char == TypeChar::Object {
+                match size {
+                    "" => 0,
+                    _ => bail!(SyntaxError),
+                }
+            } else if size_end == 0 {
+                bail!(SyntaxError);
+            } else {
+                match size.parse() {
+                    Err(e) => bail!(ParseIntError(e)), // probably overflow
+                    Ok(v) => v,
+                }
             };
 
             let time_units = if remainder.is_empty() {
@@ -572,9 +588,11 @@ mod parse {
             check_err!("", SyntaxError);
             check_err!(">", SyntaxError);
             check_err!(">i", SyntaxError);
+            check_err!("|O4", SyntaxError);
             check_ok!(">i8");
             check_ok!(">c16");
             check_err!(">i8garbage", SyntaxError);
+            check_ok!("|O");
 
             // length-zero integer
             check_err!(">m[us]", SyntaxError);

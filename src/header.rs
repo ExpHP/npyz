@@ -1,6 +1,7 @@
 
 use std::io;
 use core::fmt;
+use core::num::TryFromIntError;
 
 use py_literal::ParseError;
 pub use py_literal::Value;
@@ -113,14 +114,22 @@ impl DType {
     /// Get the number of bytes that each item of this type occupies.
     ///
     /// If this value overflows the plaform's `usize` datatype, returns `None`.
-    pub fn num_bytes(&self) -> Option<usize> {
+    pub fn num_bytes(&self) -> Result<Option<usize>, TryFromIntError> {
         match self {
-            DType::Plain(ty) => ty.num_bytes(),
-            DType::Array(n, inner) => inner.num_bytes()?.checked_mul(usize::try_from(*n).ok()?),
-            DType::Record(fields) => {
-                fields.iter().map(|field| field.dtype.num_bytes())
-                    .fold(Some(0), |a, b| a?.checked_add(b?))
+            DType::Plain(ty) => Ok(ty.num_bytes()),
+            DType::Array(n, inner) => match inner.num_bytes()? {
+                Some(num_bytes) => Ok(num_bytes.checked_mul(usize::try_from(*n)?)),
+                None => Ok(None),
             },
+            DType::Record(fields) => {
+                fields
+                    .iter()
+                    .map(|field| field.dtype.num_bytes())
+                    .fold(Ok(Some(0)), |a, b| match (a?, b?) {
+                        (Some(a), Some(b)) => Ok(a.checked_add(b)),
+                        _ => Ok(None),
+                    })
+            }
         }
     }
 }
