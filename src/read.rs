@@ -158,7 +158,7 @@ pub struct NpyHeader {
     order: Order,
     /// Total number of elements, pre-computed from the shape.
     n_records: u64,
-    /// Item size in bytes.
+    /// Item size in bytes. `None` if elements are variable size.
     item_size: Option<usize>,
 }
 
@@ -336,9 +336,13 @@ impl NpyHeader {
 
     fn from_parts(dtype: DType, shape: Vec<u64>, order: Order) -> io::Result<NpyHeader> {
         let n_records = shape.iter().product();
-        let item_size = dtype
-            .num_bytes()
-            .or_else(|_| Err(invalid_data(format_args!("dtype is larger than usize!"))))?;
+        let item_size = match dtype.has_variable_size() {
+            true => None,
+            false => match dtype.num_bytes() {
+                Some(num) => Some(num),
+                None => Err(invalid_data(format_args!("dtype is larger than usize!")))?,
+            },
+        };
         let strides = strides(order, &shape);
         Ok(NpyHeader { dtype, shape, strides, order, n_records, item_size })
     }
@@ -384,6 +388,8 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
     ///
     /// Panics if the index is greater than [`Self::total_len`].
     pub fn seek_to(&mut self, index: u64) -> io::Result<()> {
+        const NO_SEEK_MSG: &str = "array with variable size elements does not support seeking";
+
         let len = self.total_len();
         assert!(index <= len, "index out of bounds for seeking (the index is {} but the len is {})", index, len);
 
@@ -393,7 +399,7 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
             let item_size = self
                 .header
                 .item_size
-                .ok_or(io::Error::from(io::ErrorKind::Unsupported))?;
+                .ok_or(io::Error::new(io::ErrorKind::Unsupported, NO_SEEK_MSG))?;
             reader.seek(io::SeekFrom::Current(delta * item_size as i64))?;
             *current_index = index;
         }
@@ -417,13 +423,23 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
 #[allow(deprecated)]
 impl<'a, T: Deserialize> NpyData<'a, T> {
     /// Deserialize a NPY file represented as bytes
+    ///
+    /// Returns `Err` if the header cannot be parsed.
+    ///
+    /// Panics if the buffer is not the correct size for the payload indicated by the header.
     pub fn from_bytes(bytes: &'a [u8]) -> io::Result<NpyData<'a, T>> {
         let inner = NpyFile::new(bytes)?.data().map_err(invalid_data)?;
 
-        assert_eq!(
-            inner.header.item_size.unwrap_or_default() as u64 * inner.header.n_records,
-            inner.reader().len() as u64
-        );
+        if let Some(item_size) = inner.header.item_size {
+            // FIXME: This is unfair.  The caller cannot verify that their buffer has the correct size in
+            // advance as they do not know the array shape or where the header ends.  This should go the
+            // same way as any "corrupt" file: io::Error.
+            assert_eq!(
+                item_size as u64 * inner.header.n_records,
+                inner.reader().len() as u64,
+            );
+        }
+
         Ok(NpyData { inner })
     }
 
@@ -444,11 +460,13 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
 
     /// Gets a single data-record with the specified flat index.
     ///
-    /// Returns None if the index is out of bounds.
+    /// Returns `None` if the index is out of bounds.
     ///
     /// # Panics
     ///
-    /// Panics if the bytes stored for the element are invalid for the dtype.
+    /// Panics in the following cases:
+    /// * The bytes stored for the element are invalid for the dtype.
+    /// * The type forbids random access due to having variable-size items.
     pub fn get(&self, i: usize) -> Option<T> {
         if i < self.len() {
             Some(self.get_unchecked(i))
@@ -461,8 +479,10 @@ impl<'a, T: Deserialize> NpyData<'a, T> {
     ///
     /// # Panics
     ///
-    /// Panics if the bytes stored for the element are invalid for the dtype,
-    /// or if the index is out of bounds.
+    /// Panics in the following cases:
+    /// * The index is out of bounds.
+    /// * The bytes stored for the element are invalid for the dtype.
+    /// * The type forbids random access due to having variable-size items.
     pub fn get_unchecked(&self, i: usize) -> T {
         let item_size = self.inner.header.item_size.unwrap();
         let item_bytes = &self.get_data_slice()[i * item_size..];
