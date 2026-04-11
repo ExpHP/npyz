@@ -1,7 +1,6 @@
 
 use std::io;
 use core::fmt;
-use core::num::TryFromIntError;
 
 use py_literal::ParseError;
 pub use py_literal::Value;
@@ -113,23 +112,25 @@ impl DType {
 
     /// Get the number of bytes that each item of this type occupies.
     ///
-    /// If this value overflows the plaform's `usize` datatype, returns `None`.
-    pub fn num_bytes(&self) -> Result<Option<usize>, TryFromIntError> {
+    /// If this size is not fixed (e.g. `|O`) or would overflow the platform's `usize` type, returns `None`.
+    /// You can differentiate between these two error cases by calling [`Self::has_variable_size`].
+    pub fn num_bytes(&self) -> Option<usize> {
         match self {
-            DType::Plain(ty) => Ok(ty.num_bytes()),
-            DType::Array(n, inner) => match inner.num_bytes()? {
-                Some(num_bytes) => Ok(num_bytes.checked_mul(usize::try_from(*n)?)),
-                None => Ok(None),
-            },
+            DType::Plain(ty) => ty.num_bytes(),
+            DType::Array(n, inner) => inner.num_bytes()?.checked_mul(usize::try_from(*n).ok()?),
             DType::Record(fields) => {
-                fields
-                    .iter()
-                    .map(|field| field.dtype.num_bytes())
-                    .fold(Ok(Some(0)), |a, b| match (a?, b?) {
-                        (Some(a), Some(b)) => Ok(a.checked_add(b)),
-                        _ => Ok(None),
-                    })
-            }
+                fields.iter().map(|field| field.dtype.num_bytes())
+                    .fold(Some(0), |a, b| a?.checked_add(b?))
+            },
+        }
+    }
+
+    /// `true` if the DType may have a variable number of bytes for each element.
+    pub fn has_variable_size(&self) -> bool {
+        match self {
+            DType::Plain(ty) => ty.has_variable_size(),
+            DType::Array(_, inner) => inner.has_variable_size(),
+            DType::Record(fields) => fields.iter().any(|field| field.dtype.has_variable_size()),
         }
     }
 }

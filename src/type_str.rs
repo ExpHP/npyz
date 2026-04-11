@@ -32,25 +32,29 @@ impl TypeStr {
     pub fn endianness(&self) -> Endianness { self.endianness }
 
     /// Extract the type character from the type string.
-    ///
-    /// For most **(but not all!)** types, this is the number of bytes that a single value occupies.
-    /// For the `U` type, it is the number of code units.
     pub fn type_char(&self) -> TypeChar { self.type_char }
 
     /// Extract the "size" field from the type string.  This is the number that appears after the type character.
     ///
-    /// For most **(but not all!)** types, this is the number of bytes that a single value occupies.
-    /// For the `U` type, it is the number of code units.
+    /// * For **most** types, this is the number of bytes that a single value occupies.
+    /// * For the [`'U'`](TypeChar::UnicodeStr) type, it is the number of code units.
+    /// * For the [`'O'`](TypeChar::Object) type, this returns zero. (the actual string does not contain a number here)
     pub fn size_field(&self) -> u64 { self.size }
 
-    /// Extract the time units, if this type string has any.  Only [`TypeChar::TimeDelta`] and
-    /// [`TypeChar::DateTime`] have time units.
+    /// Extract the time units, if this type string has any.  Only [`'m'`](TypeChar::TimeDelta) and
+    /// [`'M'`](TypeChar::DateTime) have time units.
     pub fn time_units(&self) -> Option<TimeUnits> { self.time_units }
 
     /// Get the number of bytes for a single value.
     ///
-    /// If this value would overflow the platform's `usize` type, returns `None`.
+    /// If this size is not fixed (e.g. `|O`) or would overflow the platform's `usize` type, returns `None`.
+    /// You can differentiate between these two error cases by calling [`Self::has_variable_size`].
     pub fn num_bytes(&self) -> Option<usize> { type_str_num_bytes_as_usize(self) }
+
+    /// Returns true if each element in the array can vary in size.
+    ///
+    /// This is true if and only if the type character is [`'O'`](TypeChar::Object).
+    pub fn has_variable_size(&self) -> bool { matches!(self.type_char, TypeChar::Object) }
 }
 
 /// Represents the first character in a [`TypeStr`], which describes endianness.
@@ -62,7 +66,10 @@ pub enum Endianness {
     Big,
     /// Code `|`. Used when endianness is irrelevant.
     ///
-    /// Only valid when the size is `1`, or the type character is [`TypeChar::ByteStr`].
+    /// Only used in the following cases:
+    /// * The size is `1`.
+    /// * The type character is [`TypeChar::ByteStr`].
+    /// * The type character is [`TypeChar::Object`].
     Irrelevant,
 }
 
@@ -487,17 +494,12 @@ mod parse {
                     .unwrap_or(remainder.len())
             };
             let (size, remainder) = remainder.split_at(size_end);
-            let size = if type_char == TypeChar::Object {
-                match size {
-                    "" => 0,
-                    _ => bail!(SyntaxError),
-                }
-            } else if size_end == 0 {
-                bail!(SyntaxError);
-            } else {
-                match size.parse() {
-                    Err(e) => bail!(ParseIntError(e)), // probably overflow
-                    Ok(v) => v,
+            let size = match (type_char, size) {
+                (TypeChar::Object, "") => 0,
+                (TypeChar::Object, _) | (_, "") => bail!(SyntaxError),
+                _ => match size.parse() {
+                    Ok(size) => size,
+                    Err(e) => bail!(ParseIntError(e)),
                 }
             };
 
