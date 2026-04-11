@@ -38,6 +38,8 @@ pub mod write_options {
     /// Construction of an [`NpyWriter`] always begins here, with a call to [`WriteOptions::new`].
     /// Then the methods of the [`WriterBuilder`] trait must be used to supply options.
     /// See that trait for more details.
+    ///
+    /// (Notice: This means you will have to `use npyz::WriterBuilder` to work with this...)
     #[derive(Debug)]
     pub struct WriteOptions<T: ?Sized> {
         order: Order,

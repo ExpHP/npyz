@@ -407,7 +407,10 @@ impl fmt::Display for TimeUnits {
 
 impl fmt::Display for TypeStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{}{}", self.endianness, self.type_char, self.size)?;
+        write!(f, "{}{}", self.endianness, self.type_char)?;
+        if !self.has_variable_size() {
+            write!(f, "{}", self.size)?;
+        }
         if let Some(time_units) = self.time_units {
             write!(f, "[{}]", time_units)?;
         }
@@ -668,6 +671,16 @@ mod tests {
 
         assert_eq!(
             TypeStr {
+                endianness: Endianness::Irrelevant,
+                type_char: TypeChar::Object,
+                size: 0,
+                time_units: None,
+            }.to_string(),
+            "|O",
+        );
+
+        assert_eq!(
+            TypeStr {
                 endianness: Endianness::Big,
                 type_char: TypeChar::TimeDelta,
                 size: 8,
@@ -699,6 +712,7 @@ mod tests {
         check_roundtrip!("|S0");
         check_roundtrip!("<S0");
         check_roundtrip!(">U3");
+        check_roundtrip!("|O");
         check_roundtrip!("<m8[D]");
         check_roundtrip!(">m8[ms]");
     }

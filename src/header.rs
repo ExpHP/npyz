@@ -102,6 +102,11 @@ impl DType {
         DType::Plain(ty)
     }
 
+    /// Construct a scalar `DType` of type `|O`, for pickled data.
+    pub fn new_pickled() -> Self {
+        DType::Plain("|O".parse().unwrap())
+    }
+
     /// Return a `TypeStr` only if the `DType` is a primitive scalar. (no arrays or record types)
     pub(crate) fn as_scalar(&self) -> Option<&TypeStr> {
         match self {
@@ -384,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn converts_simple_description_to_record_dtype() -> TestResult {
+    fn converts_simple_description_to_plain_dtype() -> TestResult {
         let dtype = ">f8";
         assert_eq!(
             DType::from_descr(&Value::String(dtype.to_string())).unwrap(),
@@ -394,8 +399,19 @@ mod tests {
     }
 
     #[test]
-    fn converts_non_endian_description_to_record_dtype() -> TestResult {
+    fn converts_non_endian_description_to_plain_dtype() -> TestResult {
         let dtype = "|u1";
+        assert_eq!(
+            DType::from_descr(&Value::String(dtype.to_string())).unwrap(),
+            DType::Plain(dtype.parse()?),
+        );
+        Ok(())
+    }
+
+
+    #[test]
+    fn converts_object_description_to_plain_dtype() -> TestResult {
+        let dtype = "|O";
         assert_eq!(
             DType::from_descr(&Value::String(dtype.to_string())).unwrap(),
             DType::Plain(dtype.parse()?),
@@ -414,6 +430,23 @@ mod tests {
             Field {
                 name: "b".to_string(),
                 dtype: DType::Plain("<f4".parse()?),
+            }
+        ]);
+        assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
+        Ok(())
+    }
+
+    #[test]
+    fn handles_variable_size_record() -> TestResult {
+        let descr = parse("[('a', '<u2'), ('b', '|O')]");
+        let expected_dtype = DType::Record(vec![
+            Field {
+                name: "a".to_string(),
+                dtype: DType::Plain("<u2".parse()?),
+            },
+            Field {
+                name: "b".to_string(),
+                dtype: DType::Plain("|O".parse()?),
             }
         ]);
         assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
@@ -479,6 +512,23 @@ mod tests {
             }
         ]);
         assert_eq!(DType::from_descr(&descr).unwrap(), expected_dtype);
+        Ok(())
+    }
+
+    #[test]
+    fn test_size_of_packed_data() -> TestResult {
+        let descr = parse("[('a', '<u2'), ('b', '>i4')]");
+        let dtype = DType::from_descr(&descr).unwrap();
+        assert_eq!(dtype.num_bytes(), Some(6));
+        Ok(())
+    }
+
+    #[test]
+    fn test_variable_size() -> TestResult {
+        let descr = parse("[('a', '<u2'), ('b', '|O')]");
+        let dtype = DType::from_descr(&descr).unwrap();
+        assert_eq!(dtype.num_bytes(), None);
+        assert!(dtype.has_variable_size());
         Ok(())
     }
 
