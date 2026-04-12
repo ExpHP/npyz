@@ -225,6 +225,7 @@ pub(crate) enum ErrorKind {
         verb: &'static str,
     },
     UsizeOverflow(u64),
+    RequiresPickle,
 }
 
 impl std::error::Error for DTypeError {}
@@ -292,6 +293,9 @@ impl fmt::Display for DTypeError {
             ErrorKind::UsizeOverflow(value) => {
                 write!(f, "cannot cast {} as usize", value)
             },
+            ErrorKind::RequiresPickle => {
+                write!(f, "this dtype uses a pickled array, which npyz's read/write APIs do not currently support")
+            }
         }
     }
 }

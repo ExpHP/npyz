@@ -26,7 +26,7 @@ No features are enabled by default.  Here is the list of existing features:
 * **`"derive"`** enables derives of traits for working with structured arrays.
 * **`"npz"`** enables adapters for working with NPZ files
   (including scipy sparse matrices),
-  adding a public dependency on the `zip` crate.
+  adding a public dependency on the [`zip`] crate.
   This requires opt-in because `zip` has a fair number of transitive dependencies.
   (note that some npz-related helper functions are available even without the feature)
 

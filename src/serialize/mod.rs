@@ -9,7 +9,8 @@ mod test_helpers;
 
 pub use traits::{Serialize, Deserialize, AutoSerialize};
 pub use traits::{TypeRead, TypeWrite, TypeWriteDyn, TypeReadDyn, DTypeError};
-use traits::{helper, ErrorKind};
+pub(crate) use traits::ErrorKind;
+use traits::helper;
 #[macro_use]
 mod traits;
 

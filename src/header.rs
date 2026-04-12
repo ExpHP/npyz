@@ -102,11 +102,6 @@ impl DType {
         DType::Plain(ty)
     }
 
-    /// Construct a scalar `DType` of type `|O`, for pickled data.
-    pub fn new_pickled() -> Self {
-        DType::Plain("|O".parse().unwrap())
-    }
-
     /// Return a `TypeStr` only if the `DType` is a primitive scalar. (no arrays or record types)
     pub(crate) fn as_scalar(&self) -> Option<&TypeStr> {
         match self {
@@ -130,12 +125,17 @@ impl DType {
         }
     }
 
-    /// `true` if the DType may have a variable number of bytes for each element.
-    pub fn has_variable_size(&self) -> bool {
+    /// `true` if an array using this `DType` is stored using `pickle`.
+    ///
+    /// This is true if and only if the type contains an [`'O'`](TypeChar::Object) dtype.
+    ///
+    /// Pickled arrays present unique challenges, and most of the `npyz` crate does not support them
+    /// beyond parsing or writing the file header.
+    pub fn uses_pickled_array(&self) -> bool {
         match self {
-            DType::Plain(ty) => ty.has_variable_size(),
-            DType::Array(_, inner) => inner.has_variable_size(),
-            DType::Record(fields) => fields.iter().any(|field| field.dtype.has_variable_size()),
+            DType::Plain(ty) => ty.uses_pickled_array(),
+            DType::Array(_, inner) => inner.uses_pickled_array(),
+            DType::Record(fields) => fields.iter().any(|field| field.dtype.uses_pickled_array()),
         }
     }
 }
@@ -528,7 +528,7 @@ mod tests {
         let descr = parse("[('a', '<u2'), ('b', '|O')]");
         let dtype = DType::from_descr(&descr).unwrap();
         assert_eq!(dtype.num_bytes(), None);
-        assert!(dtype.has_variable_size());
+        assert!(dtype.uses_pickled_array());
         Ok(())
     }
 
