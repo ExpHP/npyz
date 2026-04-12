@@ -4,9 +4,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased]  (major bump needed: 0.9.0)
 
-No unreleased changes yet!
+<!-- No unreleased changes yet! -->
+
+### Changed
+- The `T: Serialize` bound has been removed from the `WriterBuilder` trait.  This may introduce places in downstream code where a `T: npyz::Serialize` bound must now be explicitly added.
+
+### Added
+- Limited support for pickled arrays.  See `examples/pickle.rs`. Thanks, @paroga!
+  - `TypeChar::Object` (numpy's `"|O"`)
+  - `{TypeStr, DType NpyHeader}::uses_pickled_array()` boolean function.
+  - `NpyFile` can open files with pickled arrays, but it cannot extract items.
+  - `WriteOptions::new_header_only`, `WriterBuilder::write_header_only` makes it possible to write headers wwith object dtypes.
 
 ## [0.8.4] - 2025-05-14
 

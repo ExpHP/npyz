@@ -13,6 +13,13 @@ use serde_pickle;
 // np.save('test-data/pickle.npy', a)
 
 fn main() -> io::Result<()> {
+    read_example()?;
+    write_example()?;
+    Ok(())
+}
+
+// Example of reading a pickled ndarray's header.
+fn read_example() -> Result<(), io::Error> {
     let file = io::BufReader::new(File::open("test-data/pickle.npy")?);
     let npy = npyz::NpyFile::new(file)?;
 
@@ -30,7 +37,29 @@ fn main() -> io::Result<()> {
     // The pickled value begins with a bunch of array metadata that's tough to make sense of,
     // but at the end you will see the data, a flat list of the objects written by the python
     // snippet at the top of this file.
-    println!("Pickled value: {:#?}", value);
+    println!("Pickled value: {:?}", value);
+
+    Ok(())
+}
+
+// Example of writing a pickled ndarray's header.
+fn write_example() -> Result<(), io::Error> {
+    use npyz::WriterBuilder;
+
+    let type_str = "|O".parse().unwrap();
+    let dtype = npyz::DType::new_scalar(type_str);
+
+    let mut file = io::BufWriter::new(File::create("examples/output/pickle-corrupt.npy")?);
+
+    // With npyz it is possible to write the *header*...
+    npyz::WriteOptions::new_header_only()
+        .dtype(dtype)
+        .shape(&[2, 3])
+        .writer(&mut file)
+        .write_header_only()?;
+
+    // And beyond that I have positively no idea what you should do to write the payload.
+    // Have fun!
 
     Ok(())
 }
