@@ -51,10 +51,12 @@ impl TypeStr {
     /// You can differentiate between these two error cases by calling [`Self::has_variable_size`].
     pub fn num_bytes(&self) -> Option<usize> { type_str_num_bytes_as_usize(self) }
 
-    /// Returns true if each element in the array can vary in size.
+    /// Returns true if an array using this DType is stored using `pickle`.
     ///
     /// This is true if and only if the type character is [`'O'`](TypeChar::Object).
-    pub fn has_variable_size(&self) -> bool { matches!(self.type_char, TypeChar::Object) }
+    ///
+    /// Pickled arrays present unique challenges, and most of the `npyz` crate does not support them.
+    pub fn uses_pickled_array(&self) -> bool { matches!(self.type_char, TypeChar::Object) }
 }
 
 /// Represents the first character in a [`TypeStr`], which describes endianness.
@@ -408,7 +410,7 @@ impl fmt::Display for TimeUnits {
 impl fmt::Display for TypeStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}{}", self.endianness, self.type_char)?;
-        if !self.has_variable_size() {
+        if !self.uses_pickled_array() {
             write!(f, "{}", self.size)?;
         }
         if let Some(time_units) = self.time_units {

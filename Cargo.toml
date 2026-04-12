@@ -39,10 +39,11 @@ optional = true
 default-features = false
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-zip = { version = "0.6",optional = true}
+zip = { version = "0.6", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-zip = { version = "0.6", default-features = false,features = ["deflate"],optional = true}
+zip = { version = "0.6", default-features = false, features = ["deflate"], optional = true }
+
 
 [dev-dependencies]
 # For examples ONLY.  We don't want to provide a public interface because ndarray undergoes
@@ -58,7 +59,7 @@ bencher = { version = "0.1" }
 zip = { version = "0.6", default-features = true }  # NOTICE: also in dependencies
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-zip = { version = "0.6", default-features = false,features = ["deflate"]}
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-test = "0.3"
 

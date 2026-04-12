@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io;
 
 use crate::header::{Value, DType, read_header, convert_value_to_shape};
-use crate::serialize::{Deserialize, TypeRead, DTypeError};
+use crate::serialize::{Deserialize, TypeRead, DTypeError, ErrorKind as DTypeErrorKind};
 
 /// Object for reading an `npy` file.
 ///
@@ -160,6 +160,7 @@ pub struct NpyHeader {
     n_records: u64,
     /// Item size in bytes. `None` if elements are variable size.
     item_size: Option<usize>,
+    uses_pickled_array: bool,
 }
 
 impl NpyHeader {
@@ -229,6 +230,11 @@ impl<R: io::Read> NpyFile<R> {
     pub fn header(&self) -> &NpyHeader {
         &self.header
     }
+
+    /// Recover the wrapped [`io::Read`], which now points at the beginning of the raw data bytes.
+    pub fn into_inner(self) -> R {
+        self.reader
+    }
 }
 
 // Provided for backwards compatibility.
@@ -269,6 +275,25 @@ impl NpyHeader {
     pub fn len(&self) -> u64 {
         self.n_records
     }
+
+    /// `true` if an array using this `DType` is stored using [`pickle`](https://docs.python.org/3/library/pickle.html).
+    ///
+    /// This is true if and only if the type contains an [`'O'`](crate::TypeChar::Object) dtype.
+    ///
+    /// Pickled arrays present unique challenges, and you will be unable to extract items
+    /// from this array using this crate. However, you will be able to extract array metadata
+    /// such as [`Self::shape`].
+    pub fn uses_pickled_array(&self) -> bool {
+        self.uses_pickled_array
+    }
+
+    fn forbid_pickle(&self) -> Result<(), DTypeError> {
+        if self.uses_pickled_array {
+            Err(DTypeError(DTypeErrorKind::RequiresPickle))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl<R: io::Read> NpyFile<R> {
@@ -287,6 +312,8 @@ impl<R: io::Read> NpyFile<R> {
     /// The returned type implements [`Iterator`]`<Item=io::Result<T>>`, and provides additional methods
     /// for random access when `R: Seek`.  See [`NpyReader`] for more details.
     pub fn data<T: Deserialize>(self) -> Result<NpyReader<T, R>, DTypeError> {
+        self.forbid_pickle()?;
+
         let NpyFile { reader, header } = self;
         let type_reader = T::reader(&header.dtype)?;
         Ok(NpyReader { type_reader, header, reader_and_current_index: (reader, 0) })
@@ -296,6 +323,10 @@ impl<R: io::Read> NpyFile<R> {
     ///
     /// This fallible form of the function returns `self` on error, so that you can try again with a different `T`.
     pub fn try_data<T: Deserialize>(self) -> Result<NpyReader<T, R>, Self> {
+        if self.uses_pickled_array {
+            return Err(self);
+        }
+
         let type_reader = match T::reader(&self.header.dtype) {
             Ok(r) => r,
             Err(_) => return Err(self),
@@ -336,7 +367,8 @@ impl NpyHeader {
 
     fn from_parts(dtype: DType, shape: Vec<u64>, order: Order) -> io::Result<NpyHeader> {
         let n_records = shape.iter().product();
-        let item_size = match dtype.has_variable_size() {
+        let uses_pickled_array = dtype.uses_pickled_array();
+        let item_size = match uses_pickled_array {
             true => None,
             false => match dtype.num_bytes() {
                 Some(num) => Some(num),
@@ -344,7 +376,7 @@ impl NpyHeader {
             },
         };
         let strides = strides(order, &shape);
-        Ok(NpyHeader { dtype, shape, strides, order, n_records, item_size })
+        Ok(NpyHeader { dtype, shape, strides, order, n_records, item_size, uses_pickled_array })
     }
 }
 
@@ -388,6 +420,7 @@ impl<R: io::Read, T: Deserialize> NpyReader<T, R> where R: io::Seek {
     ///
     /// Panics if the index is greater than [`Self::total_len`].
     pub fn seek_to(&mut self, index: u64) -> io::Result<()> {
+        // NOTE: This error may be unreachable due to pickle errors taking priority.
         const NO_SEEK_MSG: &str = "array with variable size elements does not support seeking";
 
         let len = self.total_len();

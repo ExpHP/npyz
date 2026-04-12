@@ -17,27 +17,30 @@ Integers and floats correspond to simple dtypes:
 
 ### Integers
 
-* The rust types `i8`, `i16`, `i32`, `i64` use type code `i`.
-* The rust types `u8`, `u16`, `u32`, `u64` use type code `u`.
+* The rust types `i8`, `i16`, `i32`, `i64` use type code [`i`](TypeChar::Int).
+* The rust types `u8`, `u16`, `u32`, `u64` use type code [`u`](TypeChar::Uint).
 
 **Notice:** numpy does not support 128-bit integers</li>
 
 ### Floats
 
-* The rust types `f32`, `f64` use type code `f`.
+* The rust types `f32`, `f64` use type code [`f`](TypeChar::Float).
 * When the **`"half"`** feature is enabled, [`f16`] is also supported.
 
 **Notice:** numpy *does* have 128-bit floats, but it is not currently supported by `npyz`.
 
+(also, these might just be 80-bit floats on `X86_64`; there's a similar `np.float96` on 32 bit...)
+
 ### Complex
 
-When the **`"complex"`** feature is enabled, rust types [`Complex32`] and [`Complex64`] may use type code `c`.
+When the **`"complex"`** feature is enabled, rust types [`Complex32`] and [`Complex64`] may use type code
+[`c`](TypeChar::Complex).
 
 **Notice:** numpy does have have complex numbers backed by 128-bit floats, but this is not supported by `npyz`.
 
 ### Bool
 
-The rust type `bool` may be serialized as `|b1`.
+The rust type `bool` may be serialized as [`|b1`](TypeChar::Bool).
 
 ### Endianness
 
@@ -49,8 +52,8 @@ must match the size of the rust type used.
 
 There are two type codes used by numpy for time and date.
 
-* `m`: A `numpy.timedelta64`.
-* `M`: A `numpy.datetime64`.
+* [`m`](TypeChar::TimeDelta): A `numpy.timedelta64`.
+* [`M`](TypeChar::DateTime): A `numpy.datetime64`.
 
 Both of these are represented as 8-byte signed integers, and therefore can use **`i64`** in rust.
 
@@ -63,9 +66,9 @@ nanoseconds.
 
 There are three type codes for variable-sized strings of data found in npy files:
 
-* `|VN`: A fixed-size array of `N` bytes.
-* `|SN` (or `|aN`): A possibly-null-terminated sequence of bytes of length `<= N`.
-* `<UN`: An array of `N` Unicode code points, each encoded as a 4-byte integer.
+* [`|VN`](TypeChar::RawData): A fixed-size array of `N` bytes.
+* [`|SN`](TypeChar::ByteStr) (or `|aN`): A possibly-null-terminated sequence of bytes of length `<= N`.
+* [`<UN`](TypeChar::UnicodeStr): An array of `N` Unicode code points, each encoded as a 4-byte integer.
 
 Each will be described in its own section further below.
 The following support matrix shows how various rust types may serialize as these type codes.
@@ -191,19 +194,46 @@ struct Struct {
 /*!
 
 This type can deserialize the numpy dtype `np.dtype([('a', '<i4', (4, 3))])`.
+
+## Pickled object arrays
+
+Numpy arrays can hold arbitrary python objects via the pickle protocol.
+These use the endian-agnostic type code [`O`](TypeChar::Object).
+
+NPY files take an all-or-nothing approach to pickling.  If `O` appears anywhere in the [`DType`],
+then **the entire `ndarray` is pickled as a single object,** presumably to save space on repetitive
+global definitions. Unfortunately, this is incompatible with the design of [`crate::Serialize`]
+and [`crate::Deserialize`] which assume that each item in an array can be individually serialized and deserialized.
+
+Thus, **the majority of this crate cannot be used in the presence of an `O` type.**
+
+Things that you *can* do with pickled arrays:
+
+* Parse and format [`DType`] strings containing `|O`.
+* Read and write [`NpyHeader`], leaving the file cursor at the beginning of the pickle.
+* Open an [`NpyFile`].
+* Get [`shape`](NpyHeader::shape), [`strides`](NpyHeader::strides), [`len`](NpyHeader::len),
+  [`order`](NpyHeader::order), [`uses_pickled_array`](NpyHeader::uses_pickled_array) from an [`NpyHeader`] or [`NpyFile`].
+
+**See [`examples/pickle.rs`](https://github.com/ExpHP/npyz/blob/master/examples/pickle.rs) for a
+demonstration of how you could read one of these arrays using [`serde_pickle`](https://docs.rs/serde-pickle/latest/serde_pickle/).
+
 **/
 
-#[allow(unused)] // used by docstring
-use crate::{FixedSizeBytes, TypeStr, Deserialize, Serialize, AutoSerialize, DType};
+#[expect(unused)] // used by docstring
+use crate::{FixedSizeBytes, TypeStr, Deserialize, Serialize, AutoSerialize, DType, TypeChar};
+#[expect(unused)] // used by docstring
+use crate::{NpyFile, NpyHeader};
+
 
 #[cfg(feature = "arrayvec")]
-#[allow(unused)] // used by docstring
+#[expect(unused)] // used by docstring
 use arrayvec::{self, ArrayVec, ArrayString};
 
 #[cfg(feature = "half")]
-#[allow(unused)] // used by docstring
+#[expect(unused)] // used by docstring
 use half::f16;
 
 #[cfg(feature = "complex")]
-#[allow(unused)] // used by docstring
+#[expect(unused)] // used by docstring
 use num_complex::{Complex32, Complex64};
