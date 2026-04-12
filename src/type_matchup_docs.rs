@@ -216,7 +216,7 @@ Things that you *can* do with pickled arrays:
 * Get [`shape`](NpyHeader::shape), [`strides`](NpyHeader::strides), [`len`](NpyHeader::len),
   [`order`](NpyHeader::order), [`uses_pickled_array`](NpyHeader::uses_pickled_array) from an [`NpyHeader`] or [`NpyFile`].
 
-**See [`examples/pickle.rs`](https://github.com/ExpHP/npyz/blob/master/examples/pickle.rs) for a
+**See [`examples/pickle.rs`](https://github.com/ExpHP/npyz/blob/master/examples/pickle.rs)** for a
 demonstration of how you could read one of these arrays using [`serde_pickle`](https://docs.rs/serde-pickle/latest/serde_pickle/).
 
 **/
