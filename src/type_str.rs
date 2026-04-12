@@ -53,8 +53,6 @@ impl TypeStr {
 
     /// Returns true if an array using this DType is stored using `pickle`.
     ///
-    /// This is true if and only if the type character is [`'O'`](TypeChar::Object).
-    ///
     /// Pickled arrays present unique challenges, and most of the `npyz` crate does not support them.
     pub fn uses_pickled_array(&self) -> bool { matches!(self.type_char, TypeChar::Object) }
 }
@@ -179,9 +177,11 @@ pub enum TypeChar {
     /// See [`type_matchup_docs`][`crate::type_matchup_docs`] for information on which types can
     /// use this for serialization.
     UnicodeStr,
-    /// Code `O`.
+    /// Code `O`.  Represents an arbitrary python object.
     ///
-    /// Notice that numpy uses this to store pickled values.
+    /// Arbitrary python objects are stored using the [`pickle` protocol](https://docs.python.org/3/library/pickle.html).
+    /// Most of the `npyz` crate does not support these.  See [`type_matchup_docs`][`crate::type_matchup_docs`]
+    /// for more information.
     Object,
     /// Code `V`.  Represents a binary blob of `size` bytes.
     ///

@@ -211,7 +211,8 @@ Things that you *can* do with pickled arrays:
 
 * Parse and format [`DType`] strings containing `|O`.
 * Read and write [`NpyHeader`], leaving the file cursor at the beginning of the pickle.
-* Open an [`NpyFile`].
+    * Reading can be done by opening an [`NpyFile`].
+    * Writing can be done via [`WriteOptions::new_header_only`] and [`WriterBuilder::write_header_only`].
 * Get [`shape`](NpyHeader::shape), [`strides`](NpyHeader::strides), [`len`](NpyHeader::len),
   [`order`](NpyHeader::order), [`uses_pickled_array`](NpyHeader::uses_pickled_array) from an [`NpyHeader`] or [`NpyFile`].
 
@@ -223,7 +224,7 @@ demonstration of how you could read one of these arrays using [`serde_pickle`](h
 #[expect(unused)] // used by docstring
 use crate::{FixedSizeBytes, TypeStr, Deserialize, Serialize, AutoSerialize, DType, TypeChar};
 #[expect(unused)] // used by docstring
-use crate::{NpyFile, NpyHeader};
+use crate::{NpyFile, NpyHeader, WriteOptions, WriterBuilder};
 
 
 #[cfg(feature = "arrayvec")]

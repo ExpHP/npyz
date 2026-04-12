@@ -3,6 +3,8 @@ use std::fs::File;
 use std::path::Path;
 use std::marker::PhantomData;
 
+use std::convert::Infallible as Never;
+
 use byteorder::{WriteBytesExt, LittleEndian};
 
 use crate::serialize::{AutoSerialize, Serialize, TypeWrite};
@@ -54,6 +56,17 @@ pub mod write_options {
         }}
     }
 
+    impl WriteOptions<Never> {
+        /// Construct an almost empty Writer configuration, which will not be used to write any items.
+        ///
+        /// You will be able to call [`WriterBuilder::write_header_only`], but not [`WriterBuilder::begin_1d`]
+        /// or [`WriterBuilder::begin_nd`].
+        pub fn new_header_only() -> Self { WriteOptions {
+            order: Order::C,
+            _marker: PhantomData,
+        }}
+    }
+
     impl<T: ?Sized> Default for WriteOptions<T> {
         fn default() -> Self { Self::new() }
     }
@@ -68,7 +81,7 @@ pub mod write_options {
     ///
     /// The majority of methods return a type that also implements [`WriterBuilder`]; they are meant
     /// to be chained together to construct a full config.
-    pub trait WriterBuilder<T: Serialize + ?Sized>: Sized {
+    pub trait WriterBuilder<T: ?Sized>: Sized {
         /// Calls [`Self::dtype`] with the default dtype for the type to be serialized.
         ///
         /// **Calling this method or [`Self::dtype`] is required.**
@@ -104,6 +117,7 @@ pub mod write_options {
         /// Begin writing an array of the previously supplied [`shape`][Self::shape].
         fn begin_nd(self) -> io::Result<NpyWriter<T, <Self as HasWriter>::Writer>>
         where
+            T: Serialize,
             Self: HasDType + HasWriter + HasShape,
             <Self as HasWriter>::Writer: Write,
         {
@@ -124,6 +138,7 @@ pub mod write_options {
         /// validated against the number of elements written.  This may change in the future.
         fn begin_1d(self) -> io::Result<NpyWriter<T, <Self as HasWriter>::Writer>>
         where
+            T: Serialize,
             Self: HasDType + HasWriter,
             <Self as HasWriter>::Writer: Write + Seek,
         {
@@ -133,6 +148,27 @@ pub mod write_options {
                 shape: None,
                 _marker: PhantomData,
             }, MaybeSeek::new_seek(self.__into_writer()))
+        }
+
+        /// Write the header, and recover the writer, which now points to where the data should be written.
+        ///
+        /// (If the original writer object was passed in by reference, it too is guaranteed to point to this location
+        /// after calling this function, so you do not necessarily need to use the returned writer.)
+        ///
+        /// This is the only build method you can call if the WriteOptions were
+        /// created with [`WriteOptions::new_header_only`]
+        fn write_header_only(mut self) -> io::Result<<Self as HasWriter>::Writer>
+        where
+            Self: HasDType + HasWriter + HasShape,
+            <Self as HasWriter>::Writer: Write,
+        {
+            let dtype = self.__get_dtype();
+            let order = self.__get_order();
+            let shape = self.__get_shape();
+
+            write_header(self.__writer_mut(), &dtype, order, Some(shape.as_slice()))?;
+
+            Ok(self.__into_writer())
         }
     }
 
@@ -198,6 +234,8 @@ pub mod write_options {
         type Writer;
         #[doc(hidden)]
         fn __into_writer(self) -> Self::Writer;
+        #[doc(hidden)]
+        fn __writer_mut(&mut self) -> &mut Self::Writer;
     }
 
     // NOTE: This mainly exists to prevent the accidental usage of `.writer()` when working with NPZ files.
@@ -217,22 +255,22 @@ pub mod write_options {
     /// so you do not need to add one.
     pub trait MissingWriter {}
 
-    impl<T: Serialize + ?Sized> WriterBuilder<T> for WriteOptions<T> {
+    impl<T: ?Sized> WriterBuilder<T> for WriteOptions<T> {
         fn order(mut self, order: Order) -> Self { self.order = order; self }
         fn __get_order(&self) -> Order { self.order }
     }
 
-    impl<W, T: Serialize + ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithWriter<W, B> {
+    impl<W, T: ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithWriter<W, B> {
         fn order(mut self, order: Order) -> Self { self.inner = self.inner.order(order); self }
         fn __get_order(&self) -> Order { self.inner.__get_order() }
     }
 
-    impl<T: Serialize + ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithDType<B> {
+    impl<T: ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithDType<B> {
         fn order(mut self, order: Order) -> Self { self.inner = self.inner.order(order); self }
         fn __get_order(&self) -> Order { self.inner.__get_order() }
     }
 
-    impl<T: Serialize + ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithShape<B> {
+    impl<T: ?Sized, B: WriterBuilder<T>> WriterBuilder<T> for WithShape<B> {
         fn order(mut self, order: Order) -> Self { self.inner = self.inner.order(order); self }
         fn __get_order(&self) -> Order { self.inner.__get_order() }
     }
@@ -248,6 +286,7 @@ pub mod write_options {
     impl<W, B> HasWriter for WithWriter<W, B> {
         type Writer = W;
         fn __into_writer(self) -> Self::Writer { self.writer }
+        fn __writer_mut(&mut self) -> &mut Self::Writer { &mut self.writer }
     }
     impl<T: ?Sized> MissingWriter for WriteOptions<T> {}
 
@@ -273,6 +312,7 @@ pub mod write_options {
             impl<$($impl_generics)*> HasWriter for $Self where $inner: HasWriter {
                 type Writer = $inner::Writer;
                 fn __into_writer(self) -> Self::Writer { self.inner.__into_writer() }
+                fn __writer_mut(&mut self) -> &mut Self::Writer { self.inner.__writer_mut() }
             }
         };
         (@single [$inner:ident] [$($impl_generics:tt)*] [$Self:ty] [MissingWriter]) => {
@@ -372,29 +412,7 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
             MaybeSeek::Isnt(_) => None,
         };
 
-        if let DType::Array(..) = dtype {
-            panic!("the outermost dtype cannot be an array (got: {:?})", dtype);
-        }
-
-        let (dict_text, shape_info) = create_dict(&dtype, order, shape.as_deref());
-        let (header_text, version, version_props) = determine_required_version_and_pad_header(dict_text);
-
-        fw.write_all(&[0x93u8])?;
-        fw.write_all(b"NUMPY")?;
-        fw.write_all(&[version.0, version.1])?;
-
-        assert_eq!((header_text.len() + version_props.bytes_before_text()) % 16, 0);
-        match version_props.header_size_type {
-            HeaderSizeType::U16 => {
-                assert!(header_text.len() <= u16::MAX as usize);
-                fw.write_u16::<LittleEndian>(header_text.len() as u16)?;
-            },
-            HeaderSizeType::U32 => {
-                assert!(header_text.len() <= u32::MAX as usize);
-                fw.write_u32::<LittleEndian>(header_text.len() as u32)?;
-            },
-        }
-        fw.write_all(&header_text)?;
+        let (shape_info, version_props) = write_header(&mut fw, &dtype, order, shape.as_deref())?;
 
         let writer = match Row::writer(&dtype) {
             Ok(writer) => writer,
@@ -458,6 +476,39 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
     pub fn finish(mut self) -> io::Result<()> {
         self.finish_()
     }
+}
+
+fn write_header<W: Write>(
+    fw: &mut W,
+    dtype: &DType,
+    order: Order,
+    shape: Option<&[u64]>,
+) -> io::Result<(ShapeInfo, VersionProps)> {
+    if let DType::Array(..) = dtype {
+        panic!("the outermost dtype cannot be an array (got: {:?})", dtype);
+    }
+
+    let (dict_text, shape_info) = create_dict(dtype, order, shape);
+    let (header_text, version, version_props) = determine_required_version_and_pad_header(dict_text);
+
+    fw.write_all(&[0x93u8])?;
+    fw.write_all(b"NUMPY")?;
+    fw.write_all(&[version.0, version.1])?;
+
+    assert_eq!((header_text.len() + version_props.bytes_before_text()) % 16, 0);
+    match version_props.header_size_type {
+        HeaderSizeType::U16 => {
+            assert!(header_text.len() <= u16::MAX as usize);
+            fw.write_u16::<LittleEndian>(header_text.len() as u16)?;
+        },
+        HeaderSizeType::U32 => {
+            assert!(header_text.len() <= u32::MAX as usize);
+            fw.write_u32::<LittleEndian>(header_text.len() as u32)?;
+        },
+    }
+    fw.write_all(&header_text)?;
+
+    Ok((shape_info, version_props))
 }
 
 fn create_dict(dtype: &DType, order: Order, shape: Option<&[u64]>) -> (Vec<u8>, ShapeInfo) {
@@ -686,6 +737,7 @@ mod tests {
     use super::*;
     use std::io::{self, Cursor};
     use crate::NpyFile;
+    use crate::header::Field;
 
     fn bytestring_contains(haystack: &[u8], needle: &[u8]) -> bool {
         if needle.is_empty() {
@@ -773,6 +825,71 @@ mod tests {
         assert!(try_writing(&[00, 01, 02, 10, 11, 12]).is_ok());
         assert!(try_writing(&[00, 01, 02, 10, 11, 12, 20]).is_err());
 
+        Ok(())
+    }
+
+    #[test]
+    fn write_header_only_positions() -> io::Result<()> {
+        let mut cursor = Cursor::new(vec![]);
+
+        let dtype = DType::new_scalar("|O".parse().unwrap());
+
+        // bookend with garbage to make sure positions are correct.
+        cursor.write(b"ABCD")?;
+        let header_start_pos = cursor.position();
+
+        let returned_writer = WriteOptions::new_header_only()
+            .shape(&[2, 3])
+            .dtype(dtype.clone())
+            .writer(&mut cursor)
+            .write_header_only()?;
+        returned_writer.write(b"dcba")?;
+
+        cursor.set_position(header_start_pos);
+
+        // NpyFile should stop reading exactly where we stopped writing.
+        let npy = NpyFile::new(&mut cursor)?;
+        assert_eq!(npy.dtype(), dtype);
+        assert_eq!(npy.shape(), &[2, 3]);
+        assert_eq!(npy.len(), 6);
+        assert!(npy.uses_pickled_array());
+
+        let mut trailing_bytes = vec![];
+        std::io::Read::read_to_end(&mut cursor, &mut trailing_bytes)?;
+        assert_eq!(&trailing_bytes[..], b"dcba");
+        Ok(())
+    }
+
+    #[test]
+    fn write_header_only_funny_type() -> io::Result<()> {
+        let mut cursor = Cursor::new(vec![]);
+
+        let dtype = DType::Record(vec![
+            Field {
+                name: "parent".to_string(),
+                dtype: DType::Record(vec![
+                    Field {
+                        name: "child".to_string(),
+                        dtype: DType::Plain("|O".parse().unwrap()),
+                    },
+                ]),
+            }
+        ]);
+
+        WriteOptions::new_header_only()
+            .shape(&[2, 3])
+            .dtype(dtype.clone())
+            .writer(&mut cursor)
+            .write_header_only()?;
+
+        cursor.set_position(0);
+
+        // We should get back the same complicated DType.
+        let npy = NpyFile::new(&mut cursor)?;
+        assert_eq!(npy.dtype(), dtype);
+        assert_eq!(npy.shape(), &[2, 3]);
+        assert_eq!(npy.len(), 6);
+        assert!(npy.uses_pickled_array());
         Ok(())
     }
 }
