@@ -310,7 +310,7 @@ fn type_str_num_bytes_as_usize(type_str: &TypeStr) -> Option<usize> {
 
         TypeChar::UnicodeStr => size_field.checked_mul(4),
 
-        TypeChar::Object =>None,
+        TypeChar::Object => None,
     }
 }
 
@@ -505,7 +505,7 @@ mod parse {
                 _ => match size.parse() {
                     Ok(size) => size,
                     Err(e) => bail!(ParseIntError(e)),
-                }
+                },
             };
 
             let time_units = if remainder.is_empty() {
