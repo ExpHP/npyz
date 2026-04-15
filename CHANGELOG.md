@@ -6,7 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]  (major bump needed: 0.9.0)
 
-<!-- No unreleased changes yet! -->
+No unreleased changes yet!
+
+
+## [0.9.0] - 2026-04-14
 
 ### Changed
 - The `T: Serialize` bound has been removed from the `WriterBuilder` trait.  This may introduce places in downstream code where a `T: npyz::Serialize` bound must now be explicitly added.
@@ -17,7 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `{TypeStr, DType NpyHeader}::uses_pickled_array()` boolean function.
   - `NpyFile` can open files with pickled arrays, but it cannot extract items.
   - `WriteOptions::new_header_only`, `WriterBuilder::write_header_only` makes it possible to write headers wwith object dtypes.
-
 
 ## `npyz-derive` 0.7.1 - 2026-04-09
 
@@ -130,7 +132,8 @@ This is an extremely minor update that just updates the README.
 - Adds `NpyReader` for reading from an `io::Read`
 - Adds `Builder` and `NpyWriter` for writing to an `io::Write`
 
-[Unreleased]: https://github.com/ExpHP/npyz/compare/0.8.4...HEAD
+[Unreleased]: https://github.com/ExpHP/npyz/compare/0.9.0...HEAD
+[0.9.0]: https://github.com/ExpHP/npyz/compare/0.8.4...0.9.0
 [0.8.4]: https://github.com/ExpHP/npyz/compare/0.8.3...0.8.4
 [0.8.3]: https://github.com/ExpHP/npyz/compare/0.8.2...0.8.3
 [0.8.2]: https://github.com/ExpHP/npyz/compare/0.8.1...0.8.2
