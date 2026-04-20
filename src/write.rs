@@ -15,10 +15,16 @@ use crate::read::Order;
 // Used when no shape is provided.
 const FILLER_FOR_UNKNOWN_SIZE: &'static [u8] = &[b'*'; 19];
 
+enum ShapeHint {
+    NDimensional(Vec<u64>),
+    // TwoDimensional(u64),
+    OneDimensional,
+}
+
 struct DataFromBuilder<T: ?Sized> {
     order: Order,
     dtype: DType,
-    shape: Option<Vec<u64>>,
+    shape: ShapeHint,
     _marker: PhantomData<fn(&T)>, // contravariant
 }
 
@@ -124,7 +130,7 @@ pub mod write_options {
             NpyWriter::_begin(DataFromBuilder {
                 dtype: self.__get_dtype(),
                 order: self.__get_order(),
-                shape: Some(self.__get_shape()),
+                shape: ShapeHint::NDimensional(self.__get_shape()),
                 _marker: PhantomData,
             }, MaybeSeek::Isnt(self.__into_writer()))
         }
@@ -145,7 +151,7 @@ pub mod write_options {
             NpyWriter::_begin(DataFromBuilder {
                 dtype: self.__get_dtype(),
                 order: self.__get_order(),
-                shape: None,
+                shape: ShapeHint::OneDimensional,
                 _marker: PhantomData,
             }, MaybeSeek::new_seek(self.__into_writer()))
         }
@@ -166,7 +172,7 @@ pub mod write_options {
             let order = self.__get_order();
             let shape = self.__get_shape();
 
-            write_header(self.__writer_mut(), &dtype, order, Some(shape.as_slice()))?;
+            write_header(self.__writer_mut(), &dtype, order, &ShapeHint::NDimensional(shape))?;
 
             Ok(self.__into_writer())
         }
@@ -412,7 +418,7 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
             MaybeSeek::Isnt(_) => None,
         };
 
-        let (shape_info, version_props) = write_header(&mut fw, &dtype, order, shape.as_deref())?;
+        let (shape_info, version_props) = write_header(&mut fw, &dtype, order, &shape)?;
 
         let writer = match Row::writer(&dtype) {
             Ok(writer) => writer,
@@ -482,7 +488,7 @@ fn write_header<W: Write>(
     fw: &mut W,
     dtype: &DType,
     order: Order,
-    shape: Option<&[u64]>,
+    shape: &ShapeHint,
 ) -> io::Result<(ShapeInfo, VersionProps)> {
     if let DType::Array(..) = dtype {
         panic!("the outermost dtype cannot be an array (got: {:?})", dtype);
@@ -511,7 +517,7 @@ fn write_header<W: Write>(
     Ok((shape_info, version_props))
 }
 
-fn create_dict(dtype: &DType, order: Order, shape: Option<&[u64]>) -> (Vec<u8>, ShapeInfo) {
+fn create_dict(dtype: &DType, order: Order, shape: &ShapeHint) -> (Vec<u8>, ShapeInfo) {
     let mut header: Vec<u8> = vec![];
     header.extend(&b"{'descr': "[..]);
     header.extend(dtype.descr().as_bytes());
@@ -522,14 +528,14 @@ fn create_dict(dtype: &DType, order: Order, shape: Option<&[u64]>) -> (Vec<u8>, 
     }
     header.extend(&b", 'shape': ("[..]);
     let shape_info = match shape {
-        Some(shape) => {
+        ShapeHint::NDimensional(shape) => {
             for x in shape {
                 write!(header, "{}, ", x).unwrap();
             }
             header.extend(&b"), }"[..]);
             ShapeInfo::Known { expected_num_items: shape.iter().product() }
         },
-        None => {
+        ShapeHint::OneDimensional => {
             let shape_offset = header.len() as u64;
             header.extend(FILLER_FOR_UNKNOWN_SIZE);
             header.extend(&b",), }"[..]);
