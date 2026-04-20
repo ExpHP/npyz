@@ -17,7 +17,7 @@ const FILLER_FOR_UNKNOWN_SIZE: &'static [u8] = &[b'*'; 19];
 
 enum ShapeHint {
     NDimensional(Vec<u64>),
-    // TwoDimensional(u64),
+    TwoDimensional(u64),
     OneDimensional,
 }
 
@@ -152,6 +152,27 @@ pub mod write_options {
                 dtype: self.__get_dtype(),
                 order: self.__get_order(),
                 shape: ShapeHint::OneDimensional,
+                _marker: PhantomData,
+            }, MaybeSeek::new_seek(self.__into_writer()))
+        }
+
+        /// Begin writing a 2d array, of length to be inferred from the number of elements written.
+        ///
+        /// Notice that, in contrast to [`Self::begin_nd`], this method requires [`Seek`].  If you have
+        /// a `Vec<u8>`, you can wrap it in an [`io::Cursor`] to satisfy this requirement.
+        ///
+        /// **Note:** At present, any [`shape`][Self::shape] you *did* happen to provide will be ignored and not
+        /// validated against the number of elements written.  This may change in the future.
+        fn begin_2d(self, record_size: u64) -> io::Result<NpyWriter<T, <Self as HasWriter>::Writer>>
+        where
+            T: Serialize,
+            Self: HasDType + HasWriter,
+            <Self as HasWriter>::Writer: Write + Seek,
+        {
+            NpyWriter::_begin(DataFromBuilder {
+                dtype: self.__get_dtype(),
+                order: self.__get_order(),
+                shape: ShapeHint::TwoDimensional(record_size),
                 _marker: PhantomData,
             }, MaybeSeek::new_seek(self.__into_writer()))
         }
@@ -375,7 +396,9 @@ pub struct NpyWriter<Row: Serialize + ?Sized, W: Write> {
 
 enum ShapeInfo {
     // No shape was written; we'll return to write a 1D shape on `finish()`.
-    Automatic { offset_in_header_text: u64 },
+    Automatic1D { offset_in_header_text: u64 },
+    // Only partial shape was written; we'll return to write the missing part of shape on `finish()`.
+    Automatic2D { offset_in_header_text: u64, expected_record_size: u64 },
     // The complete shape has already been written.
     // Raise an error on `finish()` if the wrong number of elements is given.
     Known { expected_num_items: u64 },
@@ -455,7 +478,7 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
                     }));
                 }
             },
-            ShapeInfo::Automatic { offset_in_header_text } => {
+            ShapeInfo::Automatic1D { offset_in_header_text } => {
                 // Write the size to the header
                 let shape_pos = self.start_pos.unwrap() + self.version_props.bytes_before_text() as u64 + offset_in_header_text;
                 let end_pos = self.fw.seek(SeekFrom::Current(0))?;
@@ -467,6 +490,24 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
                 self.fw.write_all(&::std::iter::repeat(b' ').take(FILLER_FOR_UNKNOWN_SIZE.len() - length.len()).collect::<Vec<_>>())?;
                 self.fw.seek(SeekFrom::Start(end_pos))?;
             },
+            ShapeInfo::Automatic2D { offset_in_header_text, expected_record_size } => {
+                if self.num_items % expected_record_size != 0 {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, {
+                        format!("{} item(s) is not divisible by {}!", self.num_items, expected_record_size)
+                    }));
+                }
+
+                // Write the size to the header
+                let shape_pos = self.start_pos.unwrap() + self.version_props.bytes_before_text() as u64 + offset_in_header_text;
+                let end_pos = self.fw.seek(SeekFrom::Current(0))?;
+
+                self.fw.seek(SeekFrom::Start(shape_pos))?;
+                let length = format!("{}", self.num_items / expected_record_size);
+                self.fw.write_all(length.as_bytes())?;
+                write!(self.fw, ", {}), }}", expected_record_size).unwrap();
+                self.fw.write_all(&::std::iter::repeat(b' ').take(FILLER_FOR_UNKNOWN_SIZE.len() - length.len()).collect::<Vec<_>>())?;
+                self.fw.seek(SeekFrom::Start(end_pos))?;
+            }
         }
         self.fw.flush()?;
         Ok(())
@@ -535,11 +576,17 @@ fn create_dict(dtype: &DType, order: Order, shape: &ShapeHint) -> (Vec<u8>, Shap
             header.extend(&b"), }"[..]);
             ShapeInfo::Known { expected_num_items: shape.iter().product() }
         },
+        ShapeHint::TwoDimensional(record_size) => {
+            let shape_offset = header.len() as u64;
+            header.extend(FILLER_FOR_UNKNOWN_SIZE);
+            write!(header, ", {}), }}", record_size).unwrap();
+            ShapeInfo::Automatic2D { offset_in_header_text: shape_offset, expected_record_size: *record_size }
+        },
         ShapeHint::OneDimensional => {
             let shape_offset = header.len() as u64;
             header.extend(FILLER_FOR_UNKNOWN_SIZE);
             header.extend(&b",), }"[..]);
-            ShapeInfo::Automatic { offset_in_header_text: shape_offset }
+            ShapeInfo::Automatic1D { offset_in_header_text: shape_offset }
         },
     };
     (header, shape_info)
@@ -719,6 +766,21 @@ pub(crate) fn to_writer_1d<W: io::Write + io::Seek, T: AutoSerialize>(writer: W,
     to_writer_1d_with_seeking(writer, data)
 }
 
+/// Quick API for writing a 2D array to a vector of bytes.
+#[cfg(test)]
+pub(crate) fn to_bytes_2d<T: AutoSerialize>(record_size: u64, data: &[T]) -> io::Result<Vec<u8>> {
+    let mut cursor = io::Cursor::new(vec![]);
+    to_writer_2d(&mut cursor, record_size, data)?;
+    Ok(cursor.into_inner())
+}
+
+/// Quick API for writing a 2D array to an io::Write.
+#[cfg(test)]
+pub(crate) fn to_writer_2d<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, record_size: u64, data: &[T]) -> io::Result<()> {
+    // we might change this later and/or remove the Seek bound from the current function, but for now this will do
+    to_writer_2d_with_seeking(writer, record_size, data)
+}
+
 /// Quick API for writing an n-d array to an io::Write.
 #[cfg(test)]
 pub(crate) fn to_writer_nd<W: io::Write, T: AutoSerialize>(writer: W, data: &[T], shape: &[u64]) -> io::Result<()> {
@@ -734,6 +796,17 @@ pub(crate) fn to_writer_nd<W: io::Write, T: AutoSerialize>(writer: W, data: &[T]
 #[cfg(test)]
 pub(crate) fn to_writer_1d_with_seeking<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, data: &[T]) -> io::Result<()> {
     let mut writer = WriteOptions::new().default_dtype().writer(writer).begin_1d()?;
+    writer.extend(data)?;
+    writer.finish()
+}
+
+/// Quick API for writing a 2D array to an io::Write in a manner which makes use of io::Seek.
+///
+/// (tests will use this instead of 'to_writer_2d' if their purpose is to test the correctness of seek behavior,
+/// so that changing 'to_writer_2d' to be Seek-less won't affect these tests)
+#[cfg(test)]
+pub(crate) fn to_writer_2d_with_seeking<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, record_size: u64, data: &[T]) -> io::Result<()> {
+    let mut writer = WriteOptions::new().default_dtype().writer(writer).begin_2d(record_size)?;
     writer.extend(data)?;
     writer.finish()
 }
@@ -788,6 +861,51 @@ mod tests {
     }
 
     #[test]
+    fn write_2d_simple() -> io::Result<()> {
+        // 3 columns
+        let raw_buffer = to_bytes_2d(3, &[1.0, 3.0, 5.0, -4.0, 3.0, 2.0])?;
+
+        let reader = NpyFile::new(&raw_buffer[..])?;
+        assert_eq!(reader.shape(), &[2, 3][..]);
+        assert_eq!(reader.into_vec::<f64>()?, vec![1.0, 3.0, 5.0, -4.0, 3.0, 2.0]);
+
+        // same but with 2 columns
+        let raw_buffer = to_bytes_2d(2, &[1.0, 3.0, 5.0, -4.0, 3.0, 2.0])?;
+
+        let reader = NpyFile::new(&raw_buffer[..])?;
+        assert_eq!(reader.shape(), &[3, 2][..]);
+        assert_eq!(reader.into_vec::<f64>()?, vec![1.0, 3.0, 5.0, -4.0, 3.0, 2.0]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn write_2d_in_the_middle() -> io::Result<()> {
+        let mut cursor = Cursor::new(vec![]);
+
+        let prefix = b"lorem ipsum dolor sit amet.";
+        let suffix = b"and they lived happily ever after.";
+
+        // write to the cursor both before and after writing the file
+        cursor.write_all(prefix)?;
+        to_writer_2d_with_seeking(&mut cursor, 3, &[1.0, 3.0, 5.0, 6.0, -1.0, 4.0])?;
+        cursor.write_all(suffix)?;
+
+        // check that the seeking did not interfere with our extra writes
+        let raw_buffer = cursor.into_inner();
+        assert!(raw_buffer.starts_with(prefix));
+        assert!(raw_buffer.ends_with(suffix));
+
+        // check the bytes written by `OutFile`
+        let written_bytes = &raw_buffer[prefix.len()..raw_buffer.len() - suffix.len()];
+        let reader = NpyFile::new(&written_bytes[..])?;
+        assert_eq!(reader.shape(), &[2, 3][..]);
+        assert_eq!(reader.into_vec::<f64>()?, vec![1.0, 3.0, 5.0, 6.0, -1.0, 4.0]);
+
+        Ok(())
+    }
+
+    #[test]
     fn implicit_finish() -> io::Result<()> {
         let mut cursor = Cursor::new(vec![]);
 
@@ -821,6 +939,24 @@ mod tests {
         let try_writing = |elems: &[i32]| -> io::Result<()> {
             let mut buf = vec![];
             let mut writer = WriteOptions::new().default_dtype().writer(&mut buf).shape(&[2, 3]).begin_nd()?;
+            for &x in elems {
+                writer.push(&x)?;
+            }
+            writer.finish()?;
+            Ok(())
+        };
+        assert!(try_writing(&[00, 01, 02, 10, 11]).is_err());
+        assert!(try_writing(&[00, 01, 02, 10, 11, 12]).is_ok());
+        assert!(try_writing(&[00, 01, 02, 10, 11, 12, 20]).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn write_2d_wrong_len() -> io::Result<()> {
+        let try_writing = |elems: &[i32]| -> io::Result<()> {
+            let mut buf = io::Cursor::new(vec![]);
+            let mut writer = WriteOptions::new().default_dtype().writer(&mut buf).begin_2d(3)?;
             for &x in elems {
                 writer.push(&x)?;
             }
