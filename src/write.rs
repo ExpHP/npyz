@@ -163,7 +163,7 @@ pub mod write_options {
         ///
         /// **Note:** At present, any [`shape`][Self::shape] you *did* happen to provide will be ignored and not
         /// validated against the number of elements written.  This may change in the future.
-        fn begin_2d(self, record_size: u64) -> io::Result<NpyWriter<T, <Self as HasWriter>::Writer>>
+        fn begin_2d(self, record_len: u64) -> io::Result<NpyWriter<T, <Self as HasWriter>::Writer>>
         where
             T: Serialize,
             Self: HasDType + HasWriter,
@@ -172,7 +172,7 @@ pub mod write_options {
             NpyWriter::_begin(DataFromBuilder {
                 dtype: self.__get_dtype(),
                 order: self.__get_order(),
-                shape: ShapeHint::TwoDimensional(record_size),
+                shape: ShapeHint::TwoDimensional(record_len),
                 _marker: PhantomData,
             }, MaybeSeek::new_seek(self.__into_writer()))
         }
@@ -398,7 +398,7 @@ enum ShapeInfo {
     // No shape was written; we'll return to write a 1D shape on `finish()`.
     Automatic1D { offset_in_header_text: u64 },
     // Only partial shape was written; we'll return to write the missing part of shape on `finish()`.
-    Automatic2D { offset_in_header_text: u64, expected_record_size: u64 },
+    Automatic2D { offset_in_header_text: u64, record_len: u64 },
     // The complete shape has already been written.
     // Raise an error on `finish()` if the wrong number of elements is given.
     Known { expected_num_items: u64 },
@@ -490,10 +490,10 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
                 self.fw.write_all(&::std::iter::repeat(b' ').take(FILLER_FOR_UNKNOWN_SIZE.len() - length.len()).collect::<Vec<_>>())?;
                 self.fw.seek(SeekFrom::Start(end_pos))?;
             },
-            ShapeInfo::Automatic2D { offset_in_header_text, expected_record_size } => {
-                if self.num_items % expected_record_size != 0 {
+            ShapeInfo::Automatic2D { offset_in_header_text, record_len } => {
+                if self.num_items % record_len != 0 {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, {
-                        format!("{} item(s) is not divisible by {}!", self.num_items, expected_record_size)
+                        format!("{} item(s) is not divisible by {}!", self.num_items, record_len)
                     }));
                 }
 
@@ -502,9 +502,9 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
                 let end_pos = self.fw.seek(SeekFrom::Current(0))?;
 
                 self.fw.seek(SeekFrom::Start(shape_pos))?;
-                let length = format!("{}", self.num_items / expected_record_size);
+                let length = format!("{}", self.num_items / record_len);
                 self.fw.write_all(length.as_bytes())?;
-                write!(self.fw, ", {}), }}", expected_record_size).unwrap();
+                write!(self.fw, ", {}), }}", record_len).unwrap();
                 self.fw.write_all(&::std::iter::repeat(b' ').take(FILLER_FOR_UNKNOWN_SIZE.len() - length.len()).collect::<Vec<_>>())?;
                 self.fw.seek(SeekFrom::Start(end_pos))?;
             }
@@ -576,11 +576,11 @@ fn create_dict(dtype: &DType, order: Order, shape: &ShapeHint) -> (Vec<u8>, Shap
             header.extend(&b"), }"[..]);
             ShapeInfo::Known { expected_num_items: shape.iter().product() }
         },
-        ShapeHint::TwoDimensional(record_size) => {
+        ShapeHint::TwoDimensional(record_len) => {
             let shape_offset = header.len() as u64;
             header.extend(FILLER_FOR_UNKNOWN_SIZE);
-            write!(header, ", {}), }}", record_size).unwrap();
-            ShapeInfo::Automatic2D { offset_in_header_text: shape_offset, expected_record_size: *record_size }
+            write!(header, ", {}), }}", record_len).unwrap();
+            ShapeInfo::Automatic2D { offset_in_header_text: shape_offset, record_len: *record_len }
         },
         ShapeHint::OneDimensional => {
             let shape_offset = header.len() as u64;
@@ -768,17 +768,17 @@ pub(crate) fn to_writer_1d<W: io::Write + io::Seek, T: AutoSerialize>(writer: W,
 
 /// Quick API for writing a 2D array to a vector of bytes.
 #[cfg(test)]
-pub(crate) fn to_bytes_2d<T: AutoSerialize>(record_size: u64, data: &[T]) -> io::Result<Vec<u8>> {
+pub(crate) fn to_bytes_2d<T: AutoSerialize>(record_len: u64, data: &[T]) -> io::Result<Vec<u8>> {
     let mut cursor = io::Cursor::new(vec![]);
-    to_writer_2d(&mut cursor, record_size, data)?;
+    to_writer_2d(&mut cursor, record_len, data)?;
     Ok(cursor.into_inner())
 }
 
 /// Quick API for writing a 2D array to an io::Write.
 #[cfg(test)]
-pub(crate) fn to_writer_2d<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, record_size: u64, data: &[T]) -> io::Result<()> {
+pub(crate) fn to_writer_2d<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, record_len: u64, data: &[T]) -> io::Result<()> {
     // we might change this later and/or remove the Seek bound from the current function, but for now this will do
-    to_writer_2d_with_seeking(writer, record_size, data)
+    to_writer_2d_with_seeking(writer, record_len, data)
 }
 
 /// Quick API for writing an n-d array to an io::Write.
@@ -805,8 +805,8 @@ pub(crate) fn to_writer_1d_with_seeking<W: io::Write + io::Seek, T: AutoSerializ
 /// (tests will use this instead of 'to_writer_2d' if their purpose is to test the correctness of seek behavior,
 /// so that changing 'to_writer_2d' to be Seek-less won't affect these tests)
 #[cfg(test)]
-pub(crate) fn to_writer_2d_with_seeking<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, record_size: u64, data: &[T]) -> io::Result<()> {
-    let mut writer = WriteOptions::new().default_dtype().writer(writer).begin_2d(record_size)?;
+pub(crate) fn to_writer_2d_with_seeking<W: io::Write + io::Seek, T: AutoSerialize>(writer: W, record_len: u64, data: &[T]) -> io::Result<()> {
+    let mut writer = WriteOptions::new().default_dtype().writer(writer).begin_2d(record_len)?;
     writer.extend(data)?;
     writer.finish()
 }
