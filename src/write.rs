@@ -13,7 +13,7 @@ use crate::read::Order;
 
 // Long enough to accomodate a large integer followed by ",), }".
 // Used when no shape is provided.
-const FILLER_FOR_UNKNOWN_SIZE: &'static [u8] = &[b'*'; 19];
+const FILLER_FOR_UNKNOWN_SIZE: &'static [u8] = &[b'*'; 20];
 
 enum ShapeHint {
     NDimensional(Vec<u64>),
