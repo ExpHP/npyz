@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- No unreleased changes yet! -->
 
+## [0.9.0] - 2026-04-14
+
 ### Added
 - `WriterBuilder::begin_2d`. Similar to `begin_1d`, this allows the second dimension to be inferred based on the number of items written. Thanks, @Yomguithereal!
 
@@ -134,7 +136,8 @@ This is an extremely minor update that just updates the README.
 - Adds `NpyReader` for reading from an `io::Read`
 - Adds `Builder` and `NpyWriter` for writing to an `io::Write`
 
-[Unreleased]: https://github.com/ExpHP/npyz/compare/0.9.0...HEAD
+[Unreleased]: https://github.com/ExpHP/npyz/compare/0.9.1...HEAD
+[0.9.0]: https://github.com/ExpHP/npyz/compare/0.9.0...0.9.1
 [0.9.0]: https://github.com/ExpHP/npyz/compare/0.8.4...0.9.0
 [0.8.4]: https://github.com/ExpHP/npyz/compare/0.8.3...0.8.4
 [0.8.3]: https://github.com/ExpHP/npyz/compare/0.8.2...0.8.3
