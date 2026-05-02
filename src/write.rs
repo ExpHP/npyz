@@ -11,9 +11,14 @@ use crate::serialize::{AutoSerialize, Serialize, TypeWrite};
 use crate::header::{self, DType, VersionProps, HeaderSizeType, HeaderEncoding};
 use crate::read::Order;
 
-// Long enough to accomodate a large integer followed by ",), }".
-// Used when no shape is provided.
-const FILLER_FOR_UNKNOWN_SIZE: &'static [u8] = &[b'*'; 20];
+// Long enough for the longest u64.  We write '*' as a filler so that something can't try to parse it.
+#[allow(dead_code)]
+const FILLER_FOR_UNKNOWN_SIZE_LEN: usize = 20;
+const FILLER_FOR_UNKNOWN_SIZE: &'static str = "********************";
+
+// simple proof that the string is indeed exactly that long
+const _: [(); FILLER_FOR_UNKNOWN_SIZE_LEN] = [(); FILLER_FOR_UNKNOWN_SIZE.len()];
+
 
 enum ShapeHint {
     NDimensional(Vec<u64>),
@@ -394,6 +399,37 @@ pub struct NpyWriter<Row: Serialize + ?Sized, W: Write> {
     version_props: VersionProps,
 }
 
+fn shape_suffix_1d(variable_axis: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend(variable_axis.as_bytes());
+    out.extend(&b",), }"[..]);
+    out.extend(filler_space_padding(variable_axis.len()));
+    out
+}
+
+fn shape_suffix_2d(order: Order, record_len: u64, variable_axis: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    match order {
+        Order::C => write!(out, "{}, {}), }}", variable_axis, record_len).expect("Vec"),
+        Order::Fortran => write!(out, "{}, {}), }}", record_len, variable_axis).expect("Vec"),
+    }
+    out.extend(filler_space_padding(variable_axis.len()));
+    out
+}
+
+/// Get trailing space padding based on actual written length.
+///
+/// More precisely:  Supposing that `FILLER_FOR_UNKNOWN_SIZE` was used as a placeholder for some
+/// text, and that this text has now been replaced with text of length `actual_len`, this gives the
+/// padding that would need to be placed *somewhere* to ensure the same total number of bytes are
+/// written.
+fn filler_space_padding(actual_len: usize) -> &'static [u8] {
+    const SPACES: &'static [u8] = &[b' '; FILLER_FOR_UNKNOWN_SIZE.len()];
+
+    assert!(actual_len <= FILLER_FOR_UNKNOWN_SIZE.len());
+    &SPACES[..FILLER_FOR_UNKNOWN_SIZE.len() - actual_len]
+}
+
 enum ShapeInfo {
     // No shape was written; we'll return to write a 1D shape on `finish()`.
     Automatic1D { offset_in_header_text: u64 },
@@ -486,9 +522,7 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
 
                 self.fw.seek(SeekFrom::Start(shape_pos))?;
                 let length = format!("{}", self.num_items);
-                self.fw.write_all(length.as_bytes())?;
-                self.fw.write_all(&b",), }"[..])?;
-                self.fw.write_all(&::std::iter::repeat(b' ').take(FILLER_FOR_UNKNOWN_SIZE.len() - length.len()).collect::<Vec<_>>())?;
+                self.fw.write_all(&shape_suffix_1d(&length))?;
                 self.fw.seek(SeekFrom::Start(end_pos))?;
             },
             ShapeInfo::Automatic2D { offset_in_header_text, record_len, order } => {
@@ -504,17 +538,7 @@ impl<Row: Serialize + ?Sized , W: Write> NpyWriter<Row, W> {
 
                 self.fw.seek(SeekFrom::Start(shape_pos))?;
                 let length = format!("{}", self.num_items / record_len);
-
-                match order {
-                    Order::C => {
-                        write!(self.fw, "{}, {}), }}", length, record_len)?;
-                    },
-                    Order::Fortran => {
-                        write!(self.fw, "{}, {}), }}", record_len, length)?;
-                    }
-                };
-
-                self.fw.write_all(&::std::iter::repeat(b' ').take(FILLER_FOR_UNKNOWN_SIZE.len() - length.len()).collect::<Vec<_>>())?;
+                self.fw.write_all(&shape_suffix_2d(order, record_len, &length))?;
                 self.fw.seek(SeekFrom::Start(end_pos))?;
             }
         }
@@ -588,24 +612,13 @@ fn create_dict(dtype: &DType, order: Order, shape: &ShapeHint) -> (Vec<u8>, Shap
         ShapeHint::TwoDimensional(record_len) => {
             let shape_offset = header.len() as u64;
 
-            match order {
-                Order::C => {
-                    header.extend(FILLER_FOR_UNKNOWN_SIZE);
-                    write!(header, ", {}), }}", record_len).unwrap();
-                },
-                Order::Fortran => {
-                    write!(header, "{}, ", record_len).unwrap();
-                    header.extend(FILLER_FOR_UNKNOWN_SIZE);
-                    header.extend(b"), }");
-                }
-            };
+            header.extend(shape_suffix_2d(order, *record_len, FILLER_FOR_UNKNOWN_SIZE));
 
             ShapeInfo::Automatic2D { offset_in_header_text: shape_offset, record_len: *record_len, order }
         },
         ShapeHint::OneDimensional => {
             let shape_offset = header.len() as u64;
-            header.extend(FILLER_FOR_UNKNOWN_SIZE);
-            header.extend(&b",), }"[..]);
+            header.extend(shape_suffix_1d(FILLER_FOR_UNKNOWN_SIZE));
             ShapeInfo::Automatic1D { offset_in_header_text: shape_offset }
         },
     };
