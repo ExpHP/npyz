@@ -4,10 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]  (major bump needed: 0.9.0)
+## [Unreleased]
 
-No unreleased changes yet!
+<!-- No unreleased changes yet! -->
 
+### Added
+- `WriterBuilder::begin_2d`. Similar to `begin_1d`, this allows the second dimension to be inferred based on the number of items written. Thanks, @Yomguithereal!
 
 ## [0.9.0] - 2026-04-14
 

@@ -163,11 +163,14 @@ pub mod write_options {
 
         /// Begin writing a 2d array, of length to be inferred from the number of elements written.
         ///
+        /// `record_len` is the number of items in a row. Or technically, rather, it is the length
+        /// of the fast axis. (so for [`Order::Fortran`]` it is the length of a column instead)
+        ///
         /// Notice that, in contrast to [`Self::begin_nd`], this method requires [`Seek`].  If you have
         /// a `Vec<u8>`, you can wrap it in an [`io::Cursor`] to satisfy this requirement.
         ///
         /// **Note:** At present, any [`shape`][Self::shape] you *did* happen to provide will be ignored and not
-        /// validated against the number of elements written.  This may change in the future.
+        /// validated against either the record len or the number of elements written. This may change in the future.
         fn begin_2d(self, record_len: u64) -> io::Result<NpyWriter<T, <Self as HasWriter>::Writer>>
         where
             T: Serialize,
@@ -184,11 +187,11 @@ pub mod write_options {
 
         /// Write the header, and recover the writer, which now points to where the data should be written.
         ///
-        /// (If the original writer object was passed in by reference, it too is guaranteed to point to this location
-        /// after calling this function, so you do not necessarily need to use the returned writer.)
+        /// If the original writer object was passed in by reference, it too is guaranteed to point to this location
+        /// after calling this function... so you do not necessarily need to use the returned writer.
         ///
         /// This is the only build method you can call if the WriteOptions were
-        /// created with [`WriteOptions::new_header_only`]
+        /// created with [`WriteOptions::new_header_only`].
         fn write_header_only(mut self) -> io::Result<<Self as HasWriter>::Writer>
         where
             Self: HasDType + HasWriter + HasShape,
