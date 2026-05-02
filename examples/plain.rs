@@ -11,8 +11,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let file = io::BufReader::new(File::open("test-data/plain.npy")?);
 
     let npy = npyz::NpyFile::new(file)?;
-    for arr in npy.data::<f64>()? {
-        eprintln!("{:?}", arr?);
+    for value in npy.data::<f64>()? {
+        eprintln!("{:?}", value?);
     }
     Ok(())
 }

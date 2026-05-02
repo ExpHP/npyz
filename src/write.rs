@@ -901,7 +901,7 @@ mod tests {
 
     #[test]
     fn write_2d_simple_fortran_order() -> io::Result<()> {
-        // 3 columns
+        // 3 items per column
         let raw_buffer = to_bytes_2d(Order::Fortran, 3, &[1.0, 3.0, 5.0, -4.0, 3.0, 2.0])?;
 
         let reader = NpyFile::new(&raw_buffer[..])?;
@@ -909,7 +909,7 @@ mod tests {
         assert_eq!(reader.shape(), &[3, 2][..]);
         assert_eq!(reader.into_vec::<f64>()?, vec![1.0, 3.0, 5.0, -4.0, 3.0, 2.0]);
 
-        // same but with 2 columns
+        // same but with 2 items per column
         let raw_buffer = to_bytes_2d(Order::Fortran, 2, &[1.0, 3.0, 5.0, -4.0, 3.0, 2.0])?;
 
         let reader = NpyFile::new(&raw_buffer[..])?;
