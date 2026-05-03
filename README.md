@@ -17,14 +17,14 @@ read and write `*.npy` files. Files are handled using iterators, so they don't n
 
 ```toml
 [dependencies]
-npyz = "0.8"
+npyz = "0.9"
 ```
 
 You also may be interested in enabling some features:
 
 ```toml
 [dependencies]
-npyz = {version = "0.8", features = ["derive", "complex", "npz", "arrayvec", "half"]}
+npyz = {version = "0.9", features = ["derive", "complex", "npz", "arrayvec", "half"]}
 ```
 
 Data can now be read from a `*.npy` file:
