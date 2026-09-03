@@ -224,8 +224,22 @@ pub(crate) fn read_header(r: &mut dyn io::Read) -> io::Result<Value> {
 
     // FIXME: properly account for encoding
     let _ = version_props.encoding;
-    let mut header_text = vec![0; header_size];
-    r.read_exact(&mut header_text)?;
+    // SECURITY: `header_size` is read from the (untrusted) `.npy` pre-header. Allocating
+    // `vec![0; header_size]` up front would let a malicious file force an unbounded
+    // allocation (CWE-770 / CWE-400) before any bytes are actually read. Grow the buffer
+    // from the real data instead, and only error if the stream is truncated.
+    let mut header_text = Vec::with_capacity(header_size.min(64 * 1024));
+    let mut tmp = [0u8; 8192];
+    let mut total = 0usize;
+    while total < header_size {
+        let want = (header_size - total).min(tmp.len());
+        let n = io::Read::read(r, &mut tmp[..want])?;
+        if n == 0 {
+            return Err(invalid_data("truncated NPY header"));
+        }
+        header_text.extend_from_slice(&tmp[..n]);
+        total += n;
+    }
 
     parse_header_text_to_io_result(&header_text)
 }
